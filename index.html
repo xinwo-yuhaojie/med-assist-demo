@@ -1,16 +1,15 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<!-- 接口基址重写 + 云端问答应答适配：静态站点没有后端，把 /api/* 指向函数计算服务 -->
+<!-- 接口基址重写：静态站点没有后端，把 /api/* 指向函数计算服务；语音识别优先本机、失败走云端 -->
 <script>
 (function () {
-  var API_BASE = 'https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run';   // 云端（函数计算）
-  var ASR_CLOUD = API_BASE;                                            // 语音识别：云端（百炼 qwen3-asr-flash）
-  var ASR_LOCAL = 'http://127.0.0.1:8790';                             // 语音识别：本机本地模型（可选，优先且免费）
+  var API_BASE = 'https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run';
+  var ASR_CLOUD = API_BASE;
+  var ASR_LOCAL = 'http://127.0.0.1:8790';
   var _fetch = window.fetch ? window.fetch.bind(window) : null;
   if (!_fetch) return;
 
-  // 语音识别：先试本机本地服务（1.5 秒未响应就改用云端；云端所有人可用）
   function fetchAsr(path, init) {
     var local = _fetch(ASR_LOCAL + path, init);
     var timer = new Promise(function (_, rej) { setTimeout(function () { rej(new Error('local-timeout')); }, 1500); });
@@ -30,7 +29,7 @@
       }
     } catch (e) {}
     var p = _fetch(input, init);
-    // 后端返回 OpenAI 风格 {choices:[...]}，而页面 aiChat 期待 {text:"..."}，这里做适配
+    // 兼容旧后端：OpenAI 风格 {choices:[...]} -> {text:"..."}
     if (url.indexOf('/api/ai/chat') >= 0) {
       return p.then(function (res) {
         if (!res || !res.ok) return res;
@@ -38,11 +37,7 @@
           if (j && !j.text && j.choices && j.choices[0] && j.choices[0].message) {
             j.text = j.choices[0].message.content || '';
           }
-          return new Response(JSON.stringify(j), {
-            status: res.status,
-            statusText: res.statusText,
-            headers: { 'content-type': 'application/json; charset=utf-8' }
-          });
+          return new Response(JSON.stringify(j), { status: res.status, statusText: res.statusText, headers: { 'content-type': 'application/json; charset=utf-8' } });
         }).catch(function () { return res; });
       });
     }
@@ -51,11 +46,19 @@
 })();
 </script>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5">
+<!-- v21 P2-1：iOS Safari 会把页面里的数字（血压 135/85、药量 5mg）自动识别成电话号码，
+     点一下就弹出拨号盘，对老人极不友好；显式关闭 format-detection。
+     同时声明 theme-color 让 OLED 深色主题的顶栏/状态栏与页面底色一致。 -->
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
+<meta name="theme-color" content="#1F7A6B" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1A1D21" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>康伴 · 老年慢性病智能用药辅助智能体</title>
 <meta name="description" content="面向老年慢性病患者的适老化智能用药辅助智能体：语音交互、用药提醒、慢病知识答疑、用药风险筛查、健康档案、家属守护与用药行为数据汇总。">
-<style id="app-css">
-/* ==========================================================
+<style id="app-css">/* ==========================================================
  * 老年慢性病智能用药辅助智能体 · 适老化样式（v6 全面升级）
  * 设计原则：大字号、高对比、大按钮、单列布局、减少层级
  *
@@ -77,6 +80,11 @@
   --c-bg-elev:  #FFFFFF;   /* 卡片底（略亮于 bg） */
   --c-text:     #1A1A1A;   /* 主文字 */
   --c-text-sub: #4A5561;   /* 次级文字（须 ≥4.5:1） */
+  /* v21 P2-4：主色底上的前景色令牌。
+   * 明亮态主色 #1F7A6B 深，白字 5.18:1（AA 达标），故为白；
+   * 夜间/高对比态主色变亮（#5FD0BC / #00E5C0），白字只有 1.87:1，
+   * 必须改为深墨色前景（8.93:1 / 15.6:1），否则主按钮在夜间几乎不可读。 */
+  --c-on-primary: #FFFFFF;
 
   /* —— 边框 / 阴影 —— */
   --c-border:   #E4DDD0;
@@ -93,18 +101,35 @@
   --c-warn-soft:    #FCEFD9;
   --c-danger-soft:  #FBE7E5;
 
-  /* —— 字号令牌 —— */
-  --fs-body:  20px;        /* 正文 */
+  /* —— 字号令牌（v19 P0-5：正文 ≥21px / 辅助 ≥18px / 大数字 32px） —— */
+  --fs-body:  21px;        /* 正文 */
   --fs-title: 28px;        /* 标题 */
-  --fs-btn:   20px;        /* 按钮文字 */
-  --fs-small: 16px;        /* 辅助说明 */
+  --fs-btn:   21px;        /* 按钮文字 */
+  --fs-small: 18px;        /* 辅助说明 */
+  --fs-display: 32px;      /* 大数字（血压值等） */
   --fs: var(--fs-body);    /* 兼容旧档位引用 */
+
+  /* —— v19 P0-2/P0-4：安全区与视口令牌（由 visualViewport JS 实时写入） —— */
+  --sat: env(safe-area-inset-top, 0px);     /* 刘海 / 状态栏 */
+  --sar: env(safe-area-inset-right, 0px);    /* 横屏右侧 */
+  --sab: env(safe-area-inset-bottom, 0px);   /* home indicator */
+  --sal: env(safe-area-inset-left, 0px);     /* 横屏左侧 */
+  --kb: 0px;                 /* 软键盘高度，由 JS 写入 */
+  --vvh: 100vh;              /* visualViewport 高度，由 JS 覆写 */
+  --tabh: 64px;              /* 底部导航实测高度，供吸底/悬浮层避让 */
 
   /* —— 圆角 / 热区 / 动效 —— */
   --radius:   16px;
   --radius-lg:20px;
   --tap:      48px;        /* 最小点击热区（v13 适老化：44px → 48px） */
-  --motion:   300ms;
+
+  /* —— v21 P2-2：动效系统化令牌（全站唯一的时长/缓动来源） ——
+   * 设计约束（PRD 4.6）：过渡 ≤240ms、缓动统一、只保留按压反馈与淡入。
+   * --motion 为历史别名，保留映射到 --dur，避免既有内联 var(--motion) 失效。 */
+  --dur-fast: 120ms;                            /* 按压反馈 / 微状态切换 */
+  --dur:      200ms;                            /* 常规过渡（Toast、卡片、页面淡入） */
+  --ease:     cubic-bezier(.2, .8, .2, 1);      /* 全站统一缓动 */
+  --motion:   var(--dur);
 
   /* —— 旧版别名（保留以兼容既有 HTML/JS 内联 var(--brand) 等引用，仅映射令牌） —— */
   --ink: var(--c-text);
@@ -136,7 +161,15 @@
   --c-text:     #F5F5F5;
   --c-text-sub: #B8C0C8;
 
-  --c-border:   #353A42;
+  /* v21 P2-4：OLED 夜间主题对比度微调（仅改颜色令牌，不动布局）
+   *  1) --c-on-primary：主色 #5FD0BC 很亮，主按钮/顶栏/发送键上的白字仅 1.87:1，
+   *     改为深墨 #08221E → 8.93:1（AA 达标且远高于 AAA 之外的 AA 红线）。
+   *  2) --c-danger #EF5350 → #FF7B78：作正文/告警文字时 4.25:1 → 5.89:1。
+   *  3) --c-accent #E07A2F → #E89154：强调色文字 4.93:1 → 6.07:1。
+   *  4) --c-border #353A42 → #6B7684：夜间边框仅 1.29:1（OLED 上卡片几乎糊成一片），
+   *     提到 3.21:1，满足 WCAG 1.4.11 非文本对比度 3:1。 */
+  --c-on-primary: #08221E;
+  --c-border:   #6B7684;
   --c-shadow:   0 2px 12px rgba(0, 0, 0, .45);
 
   --c-p1: #5FD0BC; --c-p2: #E89154; --c-p3: #4FB37E; --c-p4: #EF5350;
@@ -164,6 +197,8 @@
 
   --c-border:   #FFFFFF;     /* 加粗亮边框 */
   --c-shadow:   0 0 0 2px rgba(255, 255, 255, .25);
+  /* v21 P2-4：高对比态主色为亮青，白字不可读 → 深墨前景（≈15.6:1） */
+  --c-on-primary: #000000;
 
   --c-p1: #00E5C0; --c-p2: #FFB300; --c-p3: #00E676; --c-p4: #FF5252;
   --c-p5: #B388FF; --c-p6: #40C4FF; --c-p7: #FFD740; --c-p8: #FF80AB;
@@ -207,27 +242,43 @@ button { cursor: pointer; }
 a { color: var(--c-primary); }
 
 /* ---------- 布局 ---------- */
-.app { max-width: 520px; margin: 0 auto; min-height: 100vh; background: var(--c-bg); padding-bottom: 110px; }
+/* v19 P0-7：100vh 后补 100dvh，双写兜底（iOS 地址栏收放不再留白/跳动） */
+.app { max-width: 520px; margin: 0 auto; min-height: 100vh; min-height: 100dvh; background: var(--c-bg); padding-bottom: 110px; }
 .app.wide { max-width: 1100px; }
 
 .topbar {
   position: sticky; top: 0; z-index: 30;
-  background: var(--c-primary); color: #fff;
-  padding: 12px 16px;
+  /* v21 P2-4：顶栏为 --c-primary 底色，前景走 --c-on-primary（夜间/高对比自动转深墨） */
+  background: var(--c-primary); color: var(--c-on-primary);
+  /* v19 P0-2：顶栏避让刘海/状态栏与横屏左右安全区 */
+  padding: calc(10px + var(--sat)) calc(16px + var(--sar)) 12px calc(16px + var(--sal));
   display: flex; align-items: center; gap: 10px;
   box-shadow: var(--c-shadow);
+  /* v19 P0-3：图标按钮 ::after 把热区外扩 8px，桌面单行顶栏需裁掉外扩部分，
+   * 否则会撑出 8px 造成桌面横向滚动。裁剪不影响按钮本身的 48px 命中区。 */
+  overflow: hidden;
 }
 .topbar .logo { font-size: 1.15em; font-weight: 700; letter-spacing: .5px; flex: 1; }
 .topbar .sub { display: block; font-size: .62em; font-weight: 400; opacity: .9; letter-spacing: 0; }
 .icon-btn {
   background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .35);
-  color: #fff; border-radius: var(--radius); min-width: 46px; min-height: var(--tap);
+  color: var(--c-on-primary); border-radius: var(--radius); min-width: var(--tap); min-height: var(--tap);
   font-size: .82em; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center;
+  /* v21 修复：.icon-btn::after 用 position:absolute; inset:-8px 把热区外扩，
+   * 但 .icon-btn 自身不是定位容器，::after 会退回最近的定位祖先（.topbar，sticky），
+   * 于是**每个**图标按钮的伪元素都铺满整条顶栏互相盖住 —— 后面的按钮
+   * （accountBtn）会拦截前面按钮（退出极简）的点击，表现为「点不到」。
+   * 显式 position:relative 让 ::after 正确锚定到按钮自身，热区外扩才符合原设计。 */
+  position: relative;
 }
 .icon-btn.active { background: #fff; color: var(--c-primary); }
-.topbar-tools { display: flex; gap: 6px; }
+/* v19 P0-3：工具按钮间距 ≥8px（原 6px 易误触） */
+.topbar-tools { display: flex; gap: 8px; }
 
-main { padding: 14px 14px 0; }
+/* v19 P0-2：内容区左右安全区（横屏刘海侧不贴边） */
+main { padding: 14px calc(14px + var(--sar)) 0 calc(14px + var(--sal)); }
+/* v19 P0-2：body 兜底，避免 home indicator 遮住页面最底部 */
+body { padding-bottom: var(--sab); }
 
 /* ---------- 通用卡片 ---------- */
 .card {
@@ -249,11 +300,11 @@ main { padding: 14px 14px 0; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: 56px; min-width: var(--tap); padding: 12px 18px; border-radius: var(--radius);
-  border: 2px solid var(--c-primary); background: var(--c-primary); color: #fff;
+  border: 2px solid var(--c-primary); background: var(--c-primary); color: var(--c-on-primary);
   font-weight: 700; font-size: var(--fs-btn); width: 100%;
-  transition: transform var(--motion) ease, filter var(--motion) ease;
+  transition: transform var(--dur) var(--ease), filter var(--dur) var(--ease);
 }
-.btn:active { transform: scale(.97); filter: brightness(.96); }
+.btn:active { transform: scale(.97); filter: brightness(.96); transition-duration: var(--dur-fast); }
 .btn.ghost { background: var(--c-bg-elev); color: var(--c-primary); }
 .btn.orange { background: var(--c-accent); border-color: var(--c-accent); }
 .btn.gray { background: var(--c-bg-elev); color: var(--c-text-sub); border-color: var(--c-border); }
@@ -267,18 +318,19 @@ main { padding: 14px 14px 0; }
   min-height: 56px; min-width: 88px; font-size: var(--fs-btn); padding: 14px 20px;
   border-radius: var(--radius); font-weight: 700; width: 100%;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  background: var(--c-primary); color: #fff; border: 2px solid var(--c-primary);
-  transition: transform var(--motion) ease, filter var(--motion) ease;
+  background: var(--c-primary); color: var(--c-on-primary); border: 2px solid var(--c-primary);
+  transition: transform var(--dur) var(--ease), filter var(--dur) var(--ease);
 }
 .btn-lg:active { transform: scale(.97); filter: brightness(.96); }
 .btn-lg.orange { background: var(--c-accent); border-color: var(--c-accent); }
 .btn-lg.gray { background: var(--c-bg-elev); color: var(--c-text-sub); border-color: var(--c-border); }
 
 /* ---------- 底部导航（6 项重做） ---------- */
+/* v19 P0-2：底部导航避让 home indicator，统一走 --sab 令牌 */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
   background: var(--c-bg-elev); border-top: 2px solid var(--c-border);
-  display: flex; padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  display: flex; padding: 6px calc(4px + var(--sar)) calc(6px + var(--sab)) calc(4px + var(--sal));
   max-width: 520px; margin: 0 auto;
 }
 .tabbar.wide { max-width: 1100px; }
@@ -286,18 +338,28 @@ main { padding: 14px 14px 0; }
   flex: 1; background: none; border: 0; padding: 6px 2px; color: var(--c-text-sub);
   font-size: .66em; font-weight: 700; display: flex; flex-direction: column; align-items: center; gap: 2px;
   min-height: var(--tap);
-  transition: transform var(--motion) ease, color var(--motion) ease;
+  transition: transform var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .tabbar button .ic { font-size: 1.7em; line-height: 1.1; min-height: 28px; display: flex; align-items: center; }
 .tabbar button.on { color: var(--c-primary); }
-.tabbar button.on .ic { color: var(--c-primary); transform: translateY(-4px) scale(1.1); }
+.tabbar button.on .ic {
+  color: var(--c-primary); transform: translateY(-4px) scale(1.1);
+  /* v21 P2-2：图标位移过渡收敛到 --dur-fast（120ms），按压无拖尾 */
+  transition: transform var(--dur-fast) var(--ease);
+}
 .tabbar button:active .ic { transform: translateY(-4px) scale(1.1); }
 
 /* ---------- 对话区 ---------- */
 .chat-wrap { display: flex; flex-direction: column; }
+/* v19 P0-1：聊天区高度跟随「真实可视视口」--vvh（由 visualViewport 写入），
+ * 键盘弹起时可视区变小，聊天区随之收缩，保证输入区与发送键始终在视口内。
+ * 桌面（≥1024px）另由 @media 覆写为 52vh。 */
 .chat-scroll {
   background: var(--c-bg-elev); border: 1px solid var(--c-border); border-radius: var(--radius);
-  padding: 12px; height: 46vh; overflow-y: auto; box-shadow: var(--c-shadow);
+  padding: 12px; overflow-y: auto; box-shadow: var(--c-shadow);
+  height: calc(var(--vvh, 100dvh) * 0.42 - 40px);
+  min-height: 180px;
+  overscroll-behavior: contain;
 }
 .msg { display: flex; margin-bottom: 14px; gap: 8px; }
 .msg.user { flex-direction: row-reverse; }
@@ -333,7 +395,23 @@ main { padding: 14px 14px 0; }
 .followups .chip { border-color: var(--c-accent-soft); color: var(--c-accent); }
 
 /* 输入区 */
-.composer { display: flex; gap: 8px; align-items: stretch; margin-top: 10px; }
+.composer {
+  display: flex; gap: 8px; align-items: stretch; margin-top: 10px;
+  position: relative; z-index: 30;
+  transition: box-shadow var(--dur) var(--ease);
+}
+/* v19 P0-1：软键盘弹起态（JS 检测 visualViewport 高度下降 >15% 时加 .kb-up）
+ * 输入区吸底 + 不透明底 + 上边线，避免被半透明内容穿透而点不到发送键。 */
+.composer.kb-up {
+  position: sticky; bottom: 0; z-index: 60;
+  margin-top: 0; padding: 8px 0 6px;
+  background: var(--c-bg);
+  box-shadow: 0 -6px 16px rgba(31, 41, 51, .12);
+}
+/* 键盘弹起时底部导航与悬浮球让位，避免遮挡输入框与发送键 */
+body.kb-open .tabbar { transform: translateY(130%); transition: transform var(--dur) var(--ease); }
+body.kb-open #sosFloat, body.kb-open #backTop { opacity: 0; pointer-events: none; }
+.tabbar { transition: transform var(--dur) var(--ease); }
 .composer input {
   flex: 1; min-height: 56px; border: 2px solid var(--c-border); border-radius: var(--radius);
   padding: 8px 14px; background: var(--c-bg-elev); font-size: var(--fs);
@@ -341,12 +419,102 @@ main { padding: 14px 14px 0; }
 .composer input:focus { outline: 3px solid var(--c-primary-soft); border-color: var(--c-primary); }
 .composer .mic, .composer .send {
   flex: 0 0 60px; min-height: 56px; border-radius: var(--radius); border: 2px solid var(--c-primary);
-  background: var(--c-primary); color: #fff; font-size: 1.4em;
-  min-width: var(--tap);
+  background: var(--c-primary); color: var(--c-on-primary); font-size: 1.4em;
+  min-width: var(--tap); position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+/* v19 P0-3：伪元素把图标按钮热区向外扩 8px，视觉尺寸不变、手指更好点 */
+.composer .mic::after, .composer .send::after, .icon-btn::after,
+.date-bar button::after, .seg > button::after {
+  content: ''; position: absolute; inset: -8px; border-radius: inherit;
 }
 .composer .mic { background: var(--c-bg-elev); color: var(--c-accent); border-color: var(--c-accent); }
 .composer .mic.rec { background: var(--c-accent); color: #fff; }
+/* v19 P0-4：等待大模型回答时禁用发送键，避免老人以为没点上而反复点击 */
+.composer.is-busy { pointer-events: none; }
+.composer.is-busy .send { opacity: .5; filter: grayscale(.35); cursor: progress; }
+.composer.is-busy input { opacity: .7; }
 .asr-tip { min-height: 24px; font-size: .82em; color: var(--c-accent); text-align: center; margin-top: 6px; }
+
+/* v19 P0-4：等待态（思考中）三点动画 + 人话文案（bot/agent 两类名均命中） */
+.msg.bot.thinking .bubble, .msg.agent.thinking .bubble { color: var(--c-text-sub); }
+.thinking-dots { display: inline-flex; gap: 6px; vertical-align: middle; margin-right: 8px; }
+.thinking-dots i {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--c-primary);
+  display: inline-block; animation: thinking-blink calc(var(--dur) * 5.5) infinite var(--ease);
+}
+.thinking-dots i:nth-child(2) { animation-delay: .18s; }
+.thinking-dots i:nth-child(3) { animation-delay: .36s; }
+@keyframes thinking-blink {
+  0%, 80%, 100% { opacity: .25; transform: scale(.8); }
+  40% { opacity: 1; transform: scale(1.15); }
+}
+/* v19 P0-4：失败卡（网络断开/服务器忙）——纯中文文案 + 「再试一次」 */
+.msg.bot.failed .bubble { background: var(--c-danger-soft); border-color: var(--c-danger); }
+.retry-btn {
+  margin-top: 10px; min-height: var(--tap);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 20px; border-radius: var(--radius);
+  border: 2px solid var(--c-primary); background: var(--c-primary); color: var(--c-on-primary);
+  font-weight: 700; font-size: var(--fs-small); cursor: pointer;
+}
+.retry-btn:active { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dots i { animation: none !important; opacity: .7; }
+}
+
+/* v19 P1-10：「回到最新」悬浮钮（用户上滑后暂停自动滚动时出现） */
+#toLatest {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--tabh) + var(--sab) + var(--kb) + 12px);
+  z-index: 42; min-height: var(--tap); padding: 10px 18px;
+  border: 2px solid var(--c-primary); border-radius: 999px;
+  background: var(--c-bg-elev); color: var(--c-primary);
+  font-size: var(--fs-small); font-weight: 700; cursor: pointer;
+  box-shadow: var(--c-shadow); display: none;
+}
+#toLatest.show { display: block; }
+
+/* v19 P1-11：长页面「回到顶部」按钮（避开 SOS 悬浮球） */
+#backTop {
+  position: fixed; right: 16px;
+  bottom: calc(var(--tabh) + var(--sab) + var(--kb) + 76px);
+  z-index: 44; width: var(--tap); height: var(--tap); border-radius: 50%;
+  border: 2px solid var(--c-border); background: var(--c-bg-elev); color: var(--c-primary);
+  font-size: 1.2em; cursor: pointer; box-shadow: var(--c-shadow);
+  display: none; align-items: center; justify-content: center;
+}
+#backTop.show { display: flex; }
+
+/* v19 P1-15：骨架屏（弱网首屏 / 列表加载占位） */
+.skeleton {
+  background: linear-gradient(90deg, var(--c-bg) 25%, var(--c-border) 37%, var(--c-bg) 63%);
+  background-size: 400% 100%; animation: skeleton-shine calc(var(--dur) * 7) infinite var(--ease);
+  border-radius: 10px; min-height: 18px; margin-bottom: 10px;
+}
+.skeleton.w70 { width: 70%; } .skeleton.w45 { width: 45%; } .skeleton.w90 { width: 90%; }
+@keyframes skeleton-shine { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none !important; background: var(--c-border); }
+}
+
+/* v19 P1-15：弱网离线横幅 */
+#offlineBar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 90;
+  background: var(--c-warn); color: #fff; text-align: center;
+  padding: calc(6px + var(--sat)) 12px 6px;
+  font-size: var(--fs-small); font-weight: 700; display: none;
+}
+#offlineBar.show { display: block; }
+
+/* v19 P1-6 / P1-13：全局无障碍播报区（视觉隐藏，读屏可读）
+ * 必须固定在左上角：否则其 nowrap 文本宽度会撑大父级 scrollWidth 造成横向滚动。 */
+.sr-only {
+  position: absolute; left: 0; top: 0;
+  width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
+  white-space: nowrap; border: 0; pointer-events: none;
+}
 
 /* ---------- 统一卡片模板（v6 新增） ---------- */
 .card-med, .card-risk, .card-knowledge {
@@ -398,7 +566,7 @@ main { padding: 14px 14px 0; }
 }
 .med-remain .bar > i {
   display: block; height: 100%; border-radius: 999px; background: var(--c-ok);
-  transition: width var(--motion) ease;
+  transition: width var(--dur) var(--ease);
 }
 .med-remain.low .bar > i { background: var(--c-danger); }
 .med-remain.warn .bar > i { background: var(--c-warn); }
@@ -516,10 +684,24 @@ table.grid th { background: var(--c-primary-soft); color: var(--c-primary); }
   padding: 10px 12px; font-size: .84em; color: var(--c-accent); margin-bottom: 12px;
 }
 
-/* 字号档位（基线提升，均不小于最小字号） */
-body.fs-1 { --fs: 20px; }
-body.fs-2 { --fs: 23px; }
-body.fs-3 { --fs: 27px; }
+/* 字号档位（v19 P0-5：21 / 24 / 28 / 32，设置项文案「小/中/大/特大」） */
+body.fs-1 { --fs: 21px; }
+body.fs-2 { --fs: 24px; }
+body.fs-3 { --fs: 28px; }
+body.fs-4 { --fs: 32px; }
+
+/* ---------- v19 P0-3：触控热区统一（--tap:48px） ----------
+ * 只施加最小热区尺寸，不改既有布局流式（避免把卡片类挤成横排）。 */
+.med-item, .risk-item, .health-item, .ov-cell, .chronic-item, .care-item, .notify-item,
+.chip, .seg > button, .date-bar button, .auth-tabs button, .filt, .icon-btn {
+  min-height: var(--tap);
+  min-width: var(--tap);
+}
+.ov-cell { display: flex; align-items: center; justify-content: center; }
+.chip, .seg > button, .date-bar button, .auth-tabs button, .filt {
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.seg > button, .date-bar button, .auth-tabs button { position: relative; }
 
 /* ---------- 顶部今日概览卡（卡片化） ---------- */
 .overview-card {
@@ -529,7 +711,7 @@ body.fs-3 { --fs: 27px; }
 }
 .ov-cell {
   padding: 16px 6px; text-align: center; cursor: pointer;
-  border-right: 1px solid var(--c-border); transition: background var(--motion) ease;
+  border-right: 1px solid var(--c-border); transition: background var(--dur) var(--ease);
 }
 .ov-cell:last-child { border-right: 0; }
 .ov-cell:active { background: var(--c-primary-soft); transform: scale(.97); }
@@ -574,7 +756,7 @@ body.fs-3 { --fs: 27px; }
 .filt-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .filt-label { font-size: .82em; color: var(--c-text-sub); font-weight: 700; }
 .filt { min-height: var(--tap); font-size: .82em; padding: 6px 14px; }
-.filt.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+.filt.on { background: var(--c-primary); color: var(--c-on-primary); border-color: var(--c-primary); }
 .notify-item { border-bottom: 1px dashed var(--c-border); padding: 8px 0; font-size: .85em; }
 .notify-item .t { color: var(--c-text-sub); font-size: .8em; }
 
@@ -584,7 +766,8 @@ body.fs-3 { --fs: 27px; }
 .dialog.sos h3 { color: var(--c-danger); }
 
 #sosFloat {
-  position: fixed; right: 16px; bottom: calc(78px + env(safe-area-inset-bottom));
+  /* v19 P0-2：底部避让统一走 --sab / --kb 令牌（不再直接写 env()） */
+  position: fixed; right: calc(16px + var(--sar)); bottom: calc(78px + var(--sab) + var(--kb));
   z-index: 45; width: 60px; height: 60px; border-radius: 50%;
   border: 3px solid #fff; background: var(--c-danger); color: #fff;
   font-size: 1.5em; box-shadow: var(--c-shadow);
@@ -596,7 +779,10 @@ body.fs-3 { --fs: 27px; }
 .toast {
   position: fixed; left: 50%; top: 76px; transform: translateX(-50%) translateY(-12px);
   background: rgba(31, 41, 51, .92); color: #fff; padding: 10px 18px; border-radius: var(--radius);
-  font-size: .85em; z-index: 80; opacity: 0; transition: all var(--motion) ease; max-width: 86%;
+  font-size: .85em; z-index: 80; opacity: 0;
+  /* v21 P2-2：Toast 滑入 160ms → 用 --dur-fast 上浮一档，仍在 240ms 红线内 */
+  transition: opacity var(--dur) var(--ease), transform var(--dur-fast) var(--ease);
+  max-width: 86%;
   box-shadow: 0 6px 20px rgba(0, 0, 0, .3); pointer-events: none; text-align: center;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -630,7 +816,7 @@ body.fs-3 { --fs: 27px; }
 .nb-demo { background: var(--c-warn-soft); color: var(--c-warn); }
 
 /* 治理端筛选控件（跨页面共用） */
-.filt-bar .filt-group .filt.on { background: var(--c-primary); color: #fff; }
+.filt-bar .filt-group .filt.on { background: var(--c-primary); color: var(--c-on-primary); }
 
 /* ---------- 主题切换控件（用户中心 / 治理端） ---------- */
 .theme-row { display: flex; gap: 10px; margin: 6px 0 4px; }
@@ -667,15 +853,15 @@ body.fs-3 { --fs: 27px; }
   /* v10 S-05：隐藏态同时屏蔽可见性与命中测试，避免透明的 0~58px 全宽条
      长期覆盖顶部按钮（对鼠标命中与读屏软件都是隐患） */
   visibility: hidden; pointer-events: none;
-  transition: transform var(--motion) ease, opacity var(--motion) ease, visibility 0s linear var(--motion);
+  transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease), visibility 0s linear var(--dur);
   display: flex; align-items: center; justify-content: center; gap: 8px;
 }
 .voice-state.show {
   transform: translateY(0); opacity: 1;
   visibility: visible; pointer-events: auto;
-  transition: transform var(--motion) ease, opacity var(--motion) ease, visibility 0s linear 0s;
+  transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease), visibility 0s linear 0s;
 }
-.voice-state::before { content: '🔊'; animation: voicePulse 1.2s ease-in-out infinite; }
+.voice-state::before { content: '🔊'; animation: voicePulse calc(var(--dur) * 6) infinite var(--ease); }
 @keyframes voicePulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
 
 /* ==========================================================
@@ -704,7 +890,7 @@ body.fs-3 { --fs: 27px; }
   display: block; width: 4px; border-radius: 2px;
   background: var(--c-accent);
   height: calc(6px + var(--lv, .5) * 16px);
-  animation: micBounce .9s ease-in-out infinite;
+  animation: micBounce calc(var(--dur) * 4.5) infinite var(--ease);
 }
 .mic-wave i:nth-child(2) { animation-delay: .12s; }
 .mic-wave i:nth-child(3) { animation-delay: .24s; }
@@ -837,7 +1023,7 @@ input[type="range"] {
 .reminder-full .rem-body {
   background: var(--c-bg-elev); border: 2px solid var(--c-danger); border-radius: var(--radius-lg);
   padding: 22px 20px; width: 100%; max-width: 460px; box-shadow: var(--c-shadow); text-align: center;
-  animation: fadeIn var(--motion) ease both;
+  animation: fadeIn var(--dur) var(--ease) both;   /* v21 P2-2：服药提醒整屏淡入 */
   max-height: 100%; overflow-y: auto;   /* 小屏不撑破浮层，自身可滚动 */
 }
 .reminder-full .rem-title { font-size: var(--fs-title); font-weight: 800; color: var(--c-danger); margin: 0 0 10px; }
@@ -880,8 +1066,8 @@ input[type="range"] {
 
 /* ---------- 渐显动画（仅在切到可见 tab 时重绘触发） ---------- */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.fade-in { animation: fadeIn var(--motion) ease both; }
-#dataCharts .card { animation: fadeIn var(--motion) ease both; }
+.fade-in { animation: fadeIn var(--dur) var(--ease) both; }
+#dataCharts .card { animation: fadeIn var(--dur) var(--ease) both; }
 
 /* ---------- 对话气泡 / 意图标签 / 推理链 美化 ---------- */
 .bubble { border-radius: var(--radius); box-shadow: var(--c-shadow); }
@@ -890,32 +1076,47 @@ input[type="range"] {
 .chain summary { color: var(--c-primary); }
 
 /* ---------- 打卡状态 pill 动效增强 ---------- */
-.pill { transition: transform var(--motion) ease; }
+.pill { transition: transform var(--dur-fast) var(--ease); }
 .pill.taken { box-shadow: 0 1px 5px rgba(46, 139, 87, .28); }
 .pill.missed { box-shadow: 0 1px 5px rgba(198, 40, 40, .28); }
 .pill.pending { box-shadow: 0 1px 5px rgba(224, 138, 30, .28); }
 
 /* ---------- 按钮 active 态更明显 ---------- */
-.btn:active, .btn.sm:active, .btn-lg:active { transform: scale(.97); filter: brightness(.96); }
-.chip:active { transform: scale(.97); }
+.btn:active, .btn.sm:active, .btn-lg:active { transform: scale(.97); filter: brightness(.96); transition-duration: var(--dur-fast); }
+.chip:active { transform: scale(.97); transition-duration: var(--dur-fast); }
 
 /* ---------- 联调动效规范（v6）：统一 ≤300ms 淡入/渐显 ---------- */
 .tabbar button, .ov-cell, .card, .btn, .btn-lg, .chip, .med-item, .risk-item, .stat, .kpi, .panel {
-  transition: transform var(--motion) ease, background var(--motion) ease, color var(--motion) ease, box-shadow var(--motion) ease, border-color var(--motion) ease;
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease), color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
 /* 高对比主题下语音条渐变改为实色，保证对比 */
 [data-theme="contrast"] .voice-state { background: var(--c-primary); }
 [data-theme="contrast"] .topbar { color: #000; }
 
-/* 降低动效偏好：关闭位移动画，仅保留必要状态切换 */
+/* v21 P2-2：降低动效偏好 —— 全量禁用位移与动画（本块为「总闸」，位于全部动效定义之后）
+ * 目标（PRD 4.6）：prefers-reduced-motion: reduce 时全部降级为无位移、无循环动画。
+ * 手段：
+ *   1) animation-duration/transition-duration 压到 0.01ms（保留 transitionend 回调，避免依赖动画完成的逻辑失效）
+ *   2) animation 归零 + iteration 1，禁掉 .thinking / .mic-wave / .skeleton / .voicePulse 等循环动画
+ *   3) 对**带位移动画**的选择器显式 transform:none（通用 * 选择器无法覆盖 transition 过程中的 transform）
+ * 组件级的零散 prefers-reduced-motion 块（thinking-dots / skeleton / mic-wave / hm-cell / hov-cell）
+ * 保留不动，本块已覆盖其效果，此处仅做兜底强化。 */
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
-  .fade-in { animation: none !important; }
-  #dataCharts .card { animation: none !important; }
-  .tabbar button.on .ic, .tabbar button:active .ic { transform: none !important; }
-  .tabbar button, .ov-cell, .card, .btn, .btn-lg, .chip, .med-item, .risk-item, .stat, .kpi, .panel { transition: none !important; }
-  .voice-state::before { animation: none !important; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .fade-in, #dataCharts .card, .thinking-dots i, .mic-wave i,
+  .skeleton, .voice-state::before { animation: none !important; }
+  /* 位移类动效全量禁用（含按压 scale，仅保留颜色/透明度反馈） */
+  .tabbar button.on .ic, .tabbar button:active .ic,
+  .btn:active, .btn.sm:active, .btn-lg:active, .chip:active, .pill:active,
+  .retry-btn:active, .reminder-full .rem-close:active { transform: none !important; }
+  .tabbar button, .ov-cell, .card, .btn, .btn-lg, .chip, .med-item, .risk-item, .stat, .kpi, .panel,
+  .hm-cell, .care-item, .tl-item, .hov-cell, .entry-card, .side-nav button { transition: none !important; }
 }
 
 /* ==========================================================
@@ -949,7 +1150,7 @@ input[type="range"] {
   background: var(--c-danger); color: #fff;
 }
 .ia-bar.ia-warn .ia-pill { background: var(--c-warn); color: #1A1A1A; }
-.ia-bar.ia-info .ia-pill { background: var(--c-primary); color: #fff; }
+.ia-bar.ia-info .ia-pill { background: var(--c-primary); color: var(--c-on-primary); }
 .ia-bar.ia-ok .ia-pill   { background: var(--c-ok); color: #fff; }
 .ia-title { font-weight: 800; margin-top: 6px; line-height: 1.6; }
 .ia-more { margin-top: 8px; }
@@ -1072,7 +1273,8 @@ input[type="range"] {
 
 /* ---------- v8 T05：今日对话回顾时间线 ---------- */
 .chat-history { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; padding: 4px 2px; }
-.ch-row { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-small, 16px); line-height: 1.4; padding: 4px 8px; border-radius: 10px; }
+/* v19 P0-5：聊天消息行高 1.4 → 1.7（老人读长回答更省力） */
+.ch-row { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-small, 18px); line-height: 1.7; padding: 4px 8px; border-radius: 10px; }
 .ch-row.a { background: var(--c-bg-elev); }
 .ch-row.u { background: color-mix(in srgb, var(--c-primary) 10%, var(--c-bg-elev)); }
 .ch-time { color: var(--c-text-sub); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
@@ -1084,7 +1286,7 @@ input[type="range"] {
 
 /* ---------- v8 T06：依从日历热力图 ---------- */
 .heatmap { display: grid; grid-template-columns: repeat(15, 1fr); gap: 5px; margin-bottom: 10px; }
-.hm-cell { aspect-ratio: 1 / 1; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--c-text-sub); background: var(--c-border); border: 1px solid var(--c-border); transition: transform var(--motion, 300ms) ease; }
+.hm-cell { aspect-ratio: 1 / 1; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--c-text-sub); background: var(--c-border); border: 1px solid var(--c-border); transition: transform var(--dur) var(--ease); }
 .hm-cell.ok { background: color-mix(in srgb, var(--c-ok) 45%, var(--c-bg-elev)); border-color: var(--c-ok); color: var(--c-ok); }
 .hm-cell.warn { background: color-mix(in srgb, var(--c-warn) 45%, var(--c-bg-elev)); border-color: var(--c-warn); color: var(--c-warn); }
 .hm-cell.danger { background: color-mix(in srgb, var(--c-danger) 42%, var(--c-bg-elev)); border-color: var(--c-danger); color: var(--c-danger); }
@@ -1128,7 +1330,7 @@ input[type="range"] {
 .care-add { display: flex; gap: 8px; margin-bottom: 12px; }
 .care-add input { flex: 1 1 auto; min-width: 0; }
 .care-list { display: flex; flex-direction: column; gap: 8px; }
-.care-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--c-bg-elev); border: 1px solid var(--c-border); transition: opacity var(--motion, 300ms) ease; }
+.care-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--c-bg-elev); border: 1px solid var(--c-border); transition: opacity var(--dur) var(--ease); }
 .care-item.done { opacity: .6; }
 .care-item.done .care-text { text-decoration: line-through; }
 .care-item .care-text { flex: 1 1 auto; color: var(--c-text); word-break: break-word; }
@@ -1155,7 +1357,7 @@ body.printing .print-area { display: block !important; position: static !importa
   border: 2px solid var(--c-border); border-radius: 12px;
   background: var(--c-bg-elev); cursor: pointer;
   font-size: var(--fs-body); font-weight: 600;
-  transition: border-color var(--motion) ease, background var(--motion) ease;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 .chronic-item input { width: auto; min-height: auto; margin: 0; flex: 0 0 auto; }
 .chronic-item .ci-icon { font-size: 1.25em; line-height: 1; }
@@ -1284,7 +1486,7 @@ html { overflow-x: hidden; }
 .side-brand { display: flex; align-items: center; gap: 12px; padding: 4px 6px 16px; }
 .side-brand .sb-logo {
   width: 46px; height: 46px; flex: 0 0 46px; border-radius: 14px;
-  background: var(--c-primary); color: #fff; font-weight: 800; font-size: 1.2em;
+  background: var(--c-primary); color: var(--c-on-primary); font-weight: 800; font-size: 1.2em;
   display: flex; align-items: center; justify-content: center;
 }
 .side-brand .sb-t { font-weight: 800; font-size: 1em; line-height: 1.35; color: var(--c-text); }
@@ -1296,7 +1498,7 @@ html { overflow-x: hidden; }
   border: 2px solid transparent; border-radius: 14px;
   background: transparent; color: var(--c-text-sub);
   font-weight: 700; font-size: .95em; text-align: left; line-height: 1.3;
-  transition: background var(--motion) ease, color var(--motion) ease, border-color var(--motion) ease;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .side-nav button .ic { font-size: 1.25em; flex: 0 0 auto; line-height: 1; }
 .side-nav button:hover { background: var(--c-primary-soft); color: var(--c-primary); }
@@ -1325,7 +1527,7 @@ html { overflow-x: hidden; }
   min-height: 92px; padding: 12px 10px; text-align: center; cursor: pointer;
   border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-bg);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  transition: transform var(--motion) ease, background var(--motion) ease;
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 .hov-cell:active { background: var(--c-primary-soft); transform: scale(.97); }
 .hov-cell .v { font-size: 1.3em; font-weight: 800; color: var(--c-primary); line-height: 1.25; word-break: break-word; }
@@ -1338,7 +1540,7 @@ html { overflow-x: hidden; }
   display: flex; align-items: flex-start; gap: 12px; text-align: left;
   border: 2px solid var(--c-border); border-radius: var(--radius);
   background: var(--c-bg-elev); color: var(--c-text);
-  transition: transform var(--motion) ease, border-color var(--motion) ease, box-shadow var(--motion) ease;
+  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .entry-card:active { transform: scale(.97); border-color: var(--c-primary); }
 .entry-card .e-ic {
@@ -1367,7 +1569,48 @@ html { overflow-x: hidden; }
 
 /* ====================== 手机（<768px）：留白加大 + 底部导航精简 ====================== */
 @media (max-width: 767px) {
-  main { padding: 16px 14px 12px; }
+  /* v19 P0-2：移动端内容区同样保留左右安全区 */
+  main { padding: 16px calc(14px + var(--sar)) 12px calc(14px + var(--sal)); }
+
+  /* ---- v17 P0 移动端「完全动不了」根因修复：顶栏压屏 ----
+   * 症状：手机端整页点不动，底部导航/输入框/发送键全部失效。
+   * 根因：.topbar 是 position:sticky; z-index:30 的单行 flex（flex-wrap:nowrap），
+   *       窄屏下 5 个 .icon-btn（约 311px 宽）把 .logo 挤到 37px 宽，
+   *       logo 内文字逐字换行 → 顶栏实际高度飙到 560px（视口仅 664px），
+   *       整个顶栏覆盖视口并拦截所有 pointer 事件，页面「全部点不动」。
+   * 修复：① 顶栏允许换行，logo 独占一行不再被压扁；
+   *       ② logo 文字不逐字换行；③ 给顶栏设 max-height 兜底，
+   *       即使极端窄屏也不得高于视口 1/3，避免再次压屏。
+   * 说明：桌面（≥768px）保持原单行样式，不受影响。 */
+  .topbar {
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 8px;
+    max-height: 34vh;
+    overflow: hidden;
+  }
+  .topbar .logo {
+    flex: 1 1 100%;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* 工具按钮整行排布：空间不足时换行，不再挤压 logo */
+  .topbar .topbar-tools {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .topbar .topbar-tools .icon-btn {
+    /* v19 P0-3：移动端热区统一提到 48px，文字不撑宽 */
+    min-width: var(--tap);
+    min-height: var(--tap);
+    padding: 0 8px;
+    font-size: .78em;
+    white-space: nowrap;
+  }
+
   .card { padding: 16px; margin-bottom: 16px; }
   .overview-card { margin: 14px 14px 0; }
   .grid2 { grid-template-columns: 1fr 1fr; }
@@ -1391,6 +1634,14 @@ html { overflow-x: hidden; }
   .quick-row .btn { flex: 1 1 100%; }
 }
 
+/* v19 P1-9：紧凑档（360–389px，主流千元机）—— 收紧内边距，杜绝横向滚动 */
+@media (min-width: 360px) and (max-width: 389px) {
+  main { padding-left: calc(12px + var(--sal)); padding-right: calc(12px + var(--sar)); }
+  .card { padding: 14px; }
+  .grid2, .grid3 { grid-template-columns: 1fr; }
+  .chip { padding: 10px 12px; }
+}
+
 /* ====================== 平板（768–1023px）：内容加宽 ====================== */
 @media (min-width: 768px) and (max-width: 1023px) {
   .app { max-width: 760px; }
@@ -1412,7 +1663,8 @@ html { overflow-x: hidden; }
   .sidebar {
     display: flex; flex: 0 0 248px; width: 248px;
     position: sticky; top: 0; align-self: flex-start;
-    height: 100vh; overflow-y: auto;
+    /* v19 P0-7：100vh 后补 100dvh */
+    height: 100vh; height: 100dvh; overflow-y: auto;
   }
   /* 桌面隐藏底部 tabbar（治理端 .tabbar 不在 .app 内，不受影响） */
   .app .tabbar { display: none !important; }
@@ -1422,7 +1674,7 @@ html { overflow-x: hidden; }
   .overview-card { margin: 22px 28px 0; }
   .voice-state { left: 248px; }
   #sosFloat { right: 28px; bottom: 28px; }
-  .chat-scroll { height: 52vh; }
+  .chat-scroll { height: 52vh; height: 52dvh; }
 
   .home-ov { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .home-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
@@ -1491,6 +1743,231 @@ html { overflow-x: hidden; }
   .chart-box, .kpi, .panel, .stat { break-inside: avoid; page-break-inside: avoid; }
 }
 
+/* ==========================================================
+ * v21 P2-5：极简模式（.simple-mode）
+ * 目标：面向不熟悉智能体的老人，只留三件核心事——吃药提醒 / 量血压 / 求助。
+ * 做法：body 上加 .simple-mode，用 CSS 隐藏次要卡片与专业术语卡，
+ *       并放大字号、放松行距；JS 侧只负责切类名与持久化（settings.simpleMode）。
+ * 安全：退出入口 #btnSimpleExit 常驻顶栏（顶栏本身在极简下仍显示），
+ *      绝不把老人困在极简模式里。
+ * ========================================================== */
+/* 极简模式字号偏大：在当前字号档位（html 上由 body.fs-N 写入的 --fs）基础上 +12%，
+ * 行距放到 1.95。直接给 body 设 font-size（而不是重写 --fs 令牌），
+ * 避免 calc(var(--fs)) 造成自引用循环，也保留用户选择的字号档。 */
+body.simple-mode { font-size: calc(var(--fs, var(--fs-body)) * 1.12); line-height: 1.95; }
+body.simple-mode main { padding-left: calc(18px + var(--sal)); padding-right: calc(18px + var(--sar)); }
+
+/* 核心三件事：把首页/助手页收敛为 3 个大按钮 */
+body.simple-mode .simple-only { display: block !important; }
+.simple-only { display: none; }
+body.simple-mode .simple-hero { padding: 20px 16px; }
+body.simple-mode .simple-hero .hh-title { font-size: 1.5em; }
+body.simple-mode .simple-grid {
+  display: grid; grid-template-columns: 1fr; gap: 14px; margin: 0 0 16px;
+}
+body.simple-mode .simple-btn {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; min-height: 84px; padding: 16px 18px;
+  border-radius: var(--radius-lg); border: 2px solid var(--c-primary);
+  background: var(--c-primary); color: var(--c-on-primary);
+  font-size: 1.28em; font-weight: 800; text-align: left; cursor: pointer;
+}
+body.simple-mode .simple-btn .s-ic { font-size: 1.7em; line-height: 1; flex: 0 0 auto; }
+body.simple-mode .simple-btn .s-tx { display: block; }
+body.simple-mode .simple-btn .s-sub {
+  display: block; font-size: .68em; font-weight: 600; opacity: .92; margin-top: 3px;
+}
+body.simple-mode .simple-btn.s-orange { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
+body.simple-mode .simple-btn.s-ghost {
+  background: var(--c-bg-elev); color: var(--c-primary); border-color: var(--c-primary);
+}
+
+/* 隐藏次要卡片 / 专业术语卡 / 复杂统计 */
+body.simple-mode #homeOverview,
+body.simple-mode #homeEntries,
+body.simple-mode .card-entries,
+body.simple-mode #overviewCard,
+body.simple-mode .quick-row .ghost,
+body.simple-mode .chain,
+body.simple-mode .ia-bar,
+body.simple-mode .ia-detail,
+body.simple-mode .bubble .intent,
+body.simple-mode .sc-card,
+body.simple-mode .sc-row,
+body.simple-mode .hot-table,
+body.simple-mode #dataCharts .kpi,
+body.simple-mode #dataCharts .chart-box,
+body.simple-mode .ov-cell,
+body.simple-mode .care-item,
+body.simple-mode .tl-item,
+/* 助手页：隐藏「子智能体列表」介绍卡与「今日对话回顾」（术语+历史噪音） */
+body.simple-mode #chatHistoryCard,
+body.simple-mode #chatStarters,
+body.simple-mode #chatHistoryCard + .card { display: none !important; }
+body.simple-mode #tab-chat > .card:first-of-type { display: none !important; }
+body.simple-mode .card { padding: 16px; }
+body.simple-mode .card-title { font-size: 1.15em; }
+
+/* 极简下隐藏「全部功能」等入口卡，但保留三件事与退出按钮所在的顶栏 */
+body.simple-mode .h-item .small,
+body.simple-mode .ia-bar + .ia-detail { display: none !important; }
+
+/* 极简模式「进入」入口：首页/助手页各一张大卡片（普通态显示）
+   「退出极简」顶栏按钮：极简态显示
+   两者互斥，避免顶栏挤不下 6 个按钮（顶栏仅够 5 个 48px 按钮，见 v19 P0-3 热区约束）。 */
+#btnSimpleExit {
+  display: none; align-items: center; justify-content: center; font-weight: 800;
+  background: #fff; color: #08221E; border-color: #08221E;
+}
+body.simple-mode #btnSimpleExit { display: inline-flex; }
+
+.simple-toggle-card { display: block; }
+body.simple-mode .simple-toggle-card { display: none !important; }
+.simple-toggle {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  min-height: 72px; padding: 14px 16px; cursor: pointer;
+  background: var(--c-primary-soft); border: 2px solid var(--c-primary);
+  border-radius: var(--radius-lg); color: var(--c-primary);
+  font-size: 1.12em; font-weight: 800; text-align: left;
+}
+.simple-toggle .s-ic { font-size: 1.8em; line-height: 1; flex: 0 0 auto; }
+.simple-toggle .s-tx { display: block; }
+.simple-toggle .s-sub { display: block; font-size: .7em; font-weight: 600; margin-top: 3px; }
+.simple-toggle:active { transform: scale(.985); transition-duration: var(--dur-fast); }
+
+/* 极简态顶栏空间不够 6 个 48px 按钮：让出「看板」这个低频次要入口，
+   给「退出」腾位置，保证退出按钮与 accountBtn 同排、不会被压住点不到。
+   （看板是社区治理端，属低频功能，从「我的」/底部导航仍可进入，不丢功能） */
+body.simple-mode .topbar-tools > a[href="dashboard.html"] { display: none; }
+/* 顶栏不换行：一旦换行会把顶栏撑成两行，违反 v19 红线 A13（390px 下顶栏 <120px） */
+.topbar-tools { flex-wrap: nowrap; }
+/* 极简态字号偏大时，退出按钮适当收窄以保住单排 */
+body.simple-mode #btnSimpleExit { padding: 0 8px; font-size: .78em; }
+
+/* 极简态的第二个退出入口：三件事正下方的大白底按钮（顶栏之外再备一个） */
+.simple-exit {
+  display: block; width: 100%; min-height: var(--tap); padding: 14px 16px;
+  margin: 4px 0 8px; cursor: pointer; text-align: center;
+  background: var(--c-bg-elev); color: var(--c-text);
+  border: 3px solid var(--c-primary); border-radius: var(--radius-lg);
+  font-size: 1.05em; font-weight: 800;
+}
+body:not(.simple-mode) .simple-exit { display: none; }
+
+/* ==========================================================
+ * v22 P1-12：低频入口「更多」聚合面板
+ * 【为什么要做】底部导航只有 5 个位置，老人高频用的是
+ *   首页 / 助手 / 用药 / 健康 / 守护。风险筛查、我的数据这类
+ *   低频功能，以及账号、帮助、社区看板等非板块入口，全挤在
+ *   主导航里既挤又找不到。本段把它们收进一个「更多」面板：
+ *   主导航只留高频 5 项 + 「更多」，低频入口点「更多」进入。
+ * 【样式复用】全部沿用既有令牌与类（--tap / --radius-lg /
+ *   --c-border / active 缩放），不另造样式体系。
+ * ========================================================== */
+/* 主导航里的「更多」入口：做成停在底栏上方的悬浮按钮。
+   【为什么不放进 .tabbar】390px 宽的底栏放 5 项已每项仅 ~60px，
+   再加第 6 项会把「智能助手 / 用药管理 / 健康档案」文字挤到截断，
+   违反 v19 适老化红线。悬浮按钮不占底栏宽度，高频项尺寸完全不变。 */
+.more-fab {
+  position: fixed; left: 12px; z-index: 41;
+  /* 让开底栏高度、home indicator 与软键盘，与 #toLatest 同一套避让公式 */
+  bottom: calc(var(--tabh) + var(--sab) + var(--kb) + 12px);
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: var(--tap); padding: 8px 16px; cursor: pointer;
+  background: var(--c-primary); color: #fff;
+  border: 2px solid var(--c-primary); border-radius: 999px;
+  font-size: .86em; font-weight: 800; white-space: nowrap;
+  box-shadow: var(--c-shadow);
+}
+.more-fab .ic { font-size: 1.3em; line-height: 1; font-weight: 900; }
+.more-fab:active { transform: scale(.96); }
+/* 桌面端底栏隐藏，左侧栏已有「更多」(#btnMoreSide)，此处不重复出现 */
+@media (min-width: 1024px) { .more-fab { display: none !important; } }
+
+/* 侧边栏「更多」按钮：与 .side-nav button 同构，视觉上分隔开低频入口 */
+.side-more {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: var(--tap); margin-top: 10px; padding: 10px 12px; cursor: pointer;
+  background: var(--c-primary-soft); color: var(--c-primary);
+  border: 2px solid var(--c-primary); border-radius: var(--radius);
+  font-size: .95em; font-weight: 800; text-align: left;
+}
+.side-more .ic { font-size: 1.5em; line-height: 1; }
+.side-more:active { transform: scale(.98); }
+
+/* 面板容器：复用 .mask/.dialog，仅加宽并允许内部滚动 */
+.more-panel { max-width: 560px; max-height: 86vh; overflow-y: auto; }
+/* 帮助弹窗正文较长：限高并允许内部滚动，保证「我知道了」按钮
+   始终留在可视区内（v19 红线：关键按钮不得被挤出视口） */
+#helpModal .dialog { max-width: 520px; max-height: 86vh; overflow-y: auto; }
+/* 入口网格：两列，超窄屏（<420px）降为单列，避免文字被挤断 */
+.more-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.more-item {
+  display: flex; align-items: center; gap: 10px;
+  /* 触控热区 ≥48px（--tap），与主导航按钮同级 */
+  min-height: var(--tap); min-width: var(--tap);
+  padding: 12px 14px; cursor: pointer; text-align: left; text-decoration: none;
+  background: var(--c-bg-elev); color: var(--c-text);
+  border: 2px solid var(--c-border); border-radius: var(--radius-lg);
+  font-size: 1em; font-weight: 800; box-shadow: var(--c-shadow);
+}
+.more-item .mi-ic { font-size: 1.6em; line-height: 1; flex: 0 0 auto; }
+.more-item .mi-tx { display: block; min-width: 0; }
+.more-item .mi-sub {
+  display: block; font-size: .62em; font-weight: 600;
+  color: var(--c-text-sub); margin-top: 2px; line-height: 1.4;
+}
+.more-item:active { transform: scale(.98); }
+/* 极简模式：帮助类入口次要，降一档视觉权重但热区不变 */
+body.simple-mode .more-item { font-size: .95em; }
+
+/* 「帮助与说明」弹窗内的正文（老人向：一段一句、短行） */
+.help-body { font-size: .95em; line-height: 1.9; }
+.help-body h4 { margin: 12px 0 4px; font-size: 1em; color: var(--c-primary); }
+.help-body ul { margin: 4px 0; padding-left: 22px; }
+.help-body li { margin: 3px 0; }
+
+/* ==========================================================
+ * v22 P1-14：回答「逐段朗读」按钮
+ * 【为什么要做】老人拿到一段长回答时，往往只想重听其中一句
+ *   （比如「这个药能不能和另一个一起吃」）。原来只有整条重读，
+ *   一次要听完十几秒才知道对不对。这一段给每个自然段配一个
+ *   独立朗读按钮，点哪段读哪段，可再点一次停止。
+ * 【不重造轮子】点击后走的是既有 EMC.Voice（V.speak /
+ *   V.stop / V.humanizeForTts），与全局自动播报共用同一队列。
+ * ========================================================== */
+.speak-paras { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.speak-para {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  /* 移动端热区 ≥48px（与 v19 P0-3 触控热区红线一致） */
+  min-height: var(--tap); min-width: var(--tap);
+  padding: 8px 14px; cursor: pointer;
+  font-size: .78em; font-weight: 700;
+  color: var(--c-primary); background: var(--c-primary-soft);
+  border: 2px solid var(--c-primary); border-radius: 999px;
+}
+.speak-para:active { transform: scale(.97); }
+/* 朗读中：反白显示，老人一眼看出「现在正在读这一段」 */
+.speak-para.on { color: var(--c-bg-elev); background: var(--c-primary); }
+.speak-para .sp-idx { font-weight: 800; opacity: .75; }
+/* 只有一个自然段时不必显示序号，直接写「朗读这一段」 */
+.speak-para.single .sp-idx { display: none; }
+
+/* 历史记录行内的小朗读按钮（只给助手回答加） */
+.ch-row .ch-speak {
+  flex: 0 0 auto; align-self: center;
+  min-width: var(--tap); min-height: var(--tap);
+  padding: 0 8px; cursor: pointer;
+  font-size: .82em; font-weight: 700;
+  color: var(--c-primary); background: var(--c-primary-soft);
+  border: 2px solid var(--c-primary); border-radius: 999px;
+}
+.ch-row .ch-speak.on { color: var(--c-bg-elev); background: var(--c-primary); }
+
+/* 超窄屏（<420px）：「更多」面板降为单列 */
+@media (max-width: 419px) {
+  .more-list { grid-template-columns: 1fr; }
+}
 </style>
 <script>
   /* 提前应用主题，避免首屏闪烁（FOUC） */
@@ -1523,6 +2000,11 @@ html { overflow-x: hidden; }
       <button data-tab="risk"><span class="ic">🛡️</span>风险筛查</button>
       <button data-tab="data"><span class="ic">📊</span>我的数据</button>
     </nav>
+    <!-- v22 P1-12：低频入口聚合。侧边栏保留全部 7 个 data-tab 项（桌面空间充足、
+         历史 QA 依赖其存在），「更多」只承载非板块类低频入口（账号 / 帮助 / 看板）。 -->
+    <button class="side-more" id="btnMoreSide" type="button">
+      <span class="ic" aria-hidden="true">⋯</span>更多
+    </button>
     <div class="side-foot">
       电脑版：左侧导航可直达各板块。<br>
       右上角可切换字号、语音播报与显示模式。
@@ -1534,11 +2016,20 @@ html { overflow-x: hidden; }
   <header class="topbar">
     <div class="logo">康伴 · 老年用药智能体<span class="sub">老年慢性病居家用药辅助</span></div>
     <div class="topbar-tools">
-      <button class="icon-btn" id="btnFs" title="切换字号">A</button>
-      <button class="icon-btn" id="btnVoice" title="语音播报开关">🔊</button>
-      <button class="icon-btn" id="btnTheme" title="切换显示模式（明亮 / 夜间 / 高对比）">🌗</button>
-      <a class="icon-btn" href="dashboard.html" title="社区治理数据看板" style="text-decoration:none">看板</a>
-      <button class="icon-btn" id="accountBtn" title="登录或注册云端账号">登录/注册</button>
+      <button class="icon-btn" id="btnFs" title="切换字号" aria-label="切换字号，当前小字">A</button>
+      <button class="icon-btn" id="btnVoice" title="语音播报开关" aria-label="语音播报开关">🔊</button>
+      <button class="icon-btn" id="btnTheme" title="切换显示模式（明亮 / 夜间 / 高对比）" aria-label="切换显示模式">🌗</button>
+      <!-- v21 P2-5：极简模式的「退出」入口。
+           只在极简态出现（与顶栏「进入」入口互斥），并显式加高对比描边+加重文字，
+           确保老人在任何页面都能一键退回完整界面，不会被困住。
+           说明：顶栏空间只够 5 个 48px 按钮，进入入口放在首页/助手页的
+           #simpleToggle 大卡片上（更显眼、更好点），退出入口才上顶栏。 -->
+      <!-- 文案刻意压到「退出」两字：顶栏 .topbar-tools 是 flex-wrap，
+           按钮宽一涨就会换行把顶栏撑成两行（v19 红线 A13：390px 下顶栏 <120px）。
+           完整语义放在 title/aria-label 与页面内的 #simpleExitInline 大按钮上。 -->
+      <button class="icon-btn" id="btnSimpleExit" title="退出极简模式，恢复完整界面" aria-label="退出极简模式，恢复完整界面">退出</button>
+      <a class="icon-btn" href="dashboard.html" title="社区治理数据看板" aria-label="社区治理数据看板" style="text-decoration:none">看板</a>
+      <button class="icon-btn" id="accountBtn" title="登录或注册云端账号" aria-label="登录或注册云端账号">登录/注册</button>
     </div>
   </header>
 
@@ -1551,6 +2042,50 @@ html { overflow-x: hidden; }
   <main>
     <!-- ============ 首页（默认页）：聚合全部板块入口 ============ -->
     <section id="tab-home" class="tab-on">
+      <!-- v21 P2-5：极简模式专属区块（默认隐藏，由 body.simple-mode 显示）。
+           只保留三件核心事：吃药提醒 / 量血压 / 求助，字大、按钮大、无术语。 -->
+      <div class="simple-only">
+        <div class="card simple-hero">
+          <div class="hh-row">
+            <div class="hh-avatar" aria-hidden="true">👴</div>
+            <div>
+              <div class="hh-title" id="simpleHello">您好！</div>
+              <div class="hh-sub" id="simpleDate">—</div>
+            </div>
+          </div>
+          <div class="hh-tip">下面三件事，点一下就能用。</div>
+        </div>
+        <div class="simple-grid">
+          <button class="simple-btn" id="simpleMed">
+            <span class="s-ic" aria-hidden="true">💊</span>
+            <span class="s-tx">吃药提醒<span class="s-sub">看看今天该吃什么药</span></span>
+          </button>
+          <button class="simple-btn s-ghost" id="simpleBp">
+            <span class="s-ic" aria-hidden="true">🩸</span>
+            <span class="s-tx">量血压<span class="s-sub">记一个数，看看高不高</span></span>
+          </button>
+          <button class="simple-btn s-orange" id="simpleSos">
+            <span class="s-ic" aria-hidden="true">🆘</span>
+            <span class="s-tx">求助<span class="s-sub">不舒服，立刻通知家人</span></span>
+          </button>
+        </div>
+        <!-- 极简态的第二个退出入口：就放在三件事正下方，老人用完顺手就能退回 -->
+        <button class="simple-exit" id="simpleExitInline">
+          退出极简模式，恢复完整界面
+        </button>
+      </div>
+
+      <!-- v21 P2-5：极简模式「进入」入口（大卡片，老人一眼看到、一点就中）。
+           游客态也可用：顶栏「登录/注册」只打开登录弹窗，到不了用户中心，
+           所以首页/助手页各放一个显式大按钮，是真正无门槛的入口。
+           与顶栏「退出极简」互斥显示：普通态显示本卡片，极简态显示顶栏退出按钮。 -->
+      <div class="card simple-toggle-card" id="simpleToggle">
+        <button class="simple-toggle" id="simpleToggleBtn">
+          <span class="s-ic" aria-hidden="true">🧓</span>
+          <span class="s-tx">极简模式<span class="s-sub">只留吃药、量血压、求助，字更大</span></span>
+        </button>
+      </div>
+
       <div class="card home-hero">
         <div class="hh-row">
           <div class="hh-avatar" aria-hidden="true">👴</div>
@@ -1586,6 +2121,34 @@ html { overflow-x: hidden; }
 
     <!-- ============ 智能助手 ============ -->
     <section id="tab-chat" style="display:none">
+      <!-- v21 P2-5：极简模式下助手页也收敛为三件事（隐藏子智能体列表与对话回顾） -->
+      <div class="simple-only">
+        <div class="simple-grid" style="margin-top:12px">
+          <button class="simple-btn" data-simple-act="med">
+            <span class="s-ic" aria-hidden="true">💊</span>
+            <span class="s-tx">吃药提醒<span class="s-sub">今天该吃什么药</span></span>
+          </button>
+          <button class="simple-btn s-ghost" data-simple-act="bp">
+            <span class="s-ic" aria-hidden="true">🩸</span>
+            <span class="s-tx">量血压<span class="s-sub">记一个数</span></span>
+          </button>
+          <button class="simple-btn s-orange" data-simple-act="sos">
+            <span class="s-ic" aria-hidden="true">🆘</span>
+            <span class="s-tx">求助<span class="s-sub">通知家人</span></span>
+          </button>
+        </div>
+      </div>
+      <!-- v21 P2-5：极简模式「进入」入口（大卡片，老人一眼看到、一点就中）。
+           游客态也可用：顶栏「登录/注册」只打开登录弹窗，到不了用户中心，
+           所以首页/助手页各放一个显式大按钮，是真正无门槛的入口。
+           与顶栏「退出极简」互斥显示：普通态显示本卡片，极简态显示顶栏退出按钮。 -->
+      <div class="card simple-toggle-card simple-toggle-chat">
+        <button class="simple-toggle" id="simpleToggleBtn2">
+          <span class="s-ic" aria-hidden="true">🧓</span>
+          <span class="s-tx">极简模式<span class="s-sub">只留吃药、量血压、求助，字更大</span></span>
+        </button>
+      </div>
+
       <div class="card" style="padding:10px 12px">
         <div class="card-title" style="margin-bottom:4px">🤖 用药智能体 <span class="tag">语音 / 文字都能用</span></div>
         <div class="muted small">已接入子智能体：用药提醒、慢病知识答疑、用药风险筛查、健康档案、余药管理、周报生成、紧急求助。</div>
@@ -1595,11 +2158,11 @@ html { overflow-x: hidden; }
       <!-- 快捷提问（对话空态展示，首次发言后自动收起） -->
       <div class="chips starters" id="chatStarters"></div>
       <div class="chips" id="chips"></div>
-      <div class="composer">
+      <div class="composer" id="composer">
         <div class="mic-wave" id="micWave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
-        <input id="chatInput" type="text" placeholder="说出您的问题，例如：这两种药能一起吃吗" aria-label="输入您的问题">
-        <button class="mic" id="btnMic" title="点按说话">🎤</button>
-        <button class="send" id="btnSend" title="发送">➤</button>
+        <input id="chatInput" type="text" enterkeyhint="send" placeholder="说出您的问题，例如：这两种药能一起吃吗" aria-label="输入您的问题">
+        <button class="mic" id="btnMic" title="点按说话" aria-label="点按说话，开始语音提问">🎤</button>
+        <button class="send" id="btnSend" title="发送" aria-label="发送问题">➤</button>
       </div>
       <div class="asr-tip" id="asrTip"></div>
       <div class="card" id="chatHistoryCard" style="margin-top:10px">
@@ -1705,16 +2268,16 @@ html { overflow-x: hidden; }
             <select id="medDisease"><option value="">（不指定，由智能体自动判断）</option></select>
           </div>
           <div class="form-row">
-            <label>④ 余量（片），用于余药提醒（可不填，默认 30）</label>
-            <input id="medRemain" type="number" min="0" step="1" placeholder="如 30（可用天数 = 余量 ÷ 每日次数）">
+            <label for="medRemain">④ 余量（片），用于余药提醒（可不填，默认 30）</label>
+            <input id="medRemain" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="余量片数" placeholder="如 30（可用天数 = 余量 ÷ 每日次数）">
           </div>
           <div class="form-row">
-            <label>④-② 满盒量（片，用于「一键补充」补满，可不填，默认 30）</label>
-            <input id="medTotal" type="number" min="0" step="1" placeholder="如 30">
+            <label for="medTotal">④-② 满盒量（片，用于「一键补充」补满，可不填，默认 30）</label>
+            <input id="medTotal" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="满盒量片数" placeholder="如 30">
           </div>
           <div class="form-row">
-            <label>⑤ 备注（可不填）</label>
-            <input id="medNote" type="text" placeholder="如：随餐服用 / 半片 / 医生交代">
+            <label for="medNote">⑤ 备注（可不填）</label>
+            <input id="medNote" type="text" autocomplete="off" aria-label="用药备注" placeholder="如：随餐服用 / 半片 / 医生交代">
           </div>
           <div class="btn-row">
             <button class="btn" id="btnSaveMed">保存药品</button>
@@ -1764,15 +2327,15 @@ html { overflow-x: hidden; }
         </div>
         <div class="form-row" id="bpFields" style="margin-top:12px">
           <div class="grid3">
-            <div><label>收缩压</label><input id="bpSys" type="number" step="1" placeholder="如 135"></div>
-            <div><label>舒张压</label><input id="bpDia" type="number" step="1" placeholder="如 88"></div>
-            <div><label>心率（选填）</label><input id="bpHr" type="number" step="1" placeholder="如 75"></div>
+            <div><label for="bpSys">收缩压</label><input id="bpSys" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="收缩压" placeholder="如 135"></div>
+            <div><label for="bpDia">舒张压</label><input id="bpDia" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="舒张压" placeholder="如 88"></div>
+            <div><label for="bpHr">心率（选填）</label><input id="bpHr" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="心率" placeholder="如 75"></div>
           </div>
         </div>
         <div class="form-row" id="gluFields" style="display:none;margin-top:12px">
           <div class="grid2">
-            <div><label>血糖值 (mmol/L)</label><input id="gluVal" type="number" step="0.1" placeholder="如 6.5"></div>
-            <div><label>类型</label>
+            <div><label for="gluVal">血糖值 (mmol/L)</label><input id="gluVal" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="血糖值" placeholder="如 6.5"></div>
+            <div><label for="gluMeal">类型</label>
               <select id="gluMeal">
                 <option value="fasting">空腹</option>
                 <option value="post">餐后</option>
@@ -1819,8 +2382,8 @@ html { overflow-x: hidden; }
       <div class="card">
         <div class="card-title">👨‍👩‍👧 老人信息</div>
         <div class="grid2">
-          <div class="form-row" style="margin-bottom:8px"><label>姓名</label><input id="profileName" type="text" placeholder="如 张桂芳"></div>
-          <div class="form-row" style="margin-bottom:8px"><label>年龄</label><input id="profileAge" type="number" placeholder="如 78"></div>
+          <div class="form-row" style="margin-bottom:8px"><label for="profileName">姓名</label><input id="profileName" type="text" autocomplete="name" aria-label="老人姓名" placeholder="如 张桂芳"></div>
+          <div class="form-row" style="margin-bottom:8px"><label for="profileAge">年龄</label><input id="profileAge" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="年龄" placeholder="如 78"></div>
         </div>
         <button class="btn sm" id="btnSaveProfile">保存老人信息</button>
       </div>
@@ -1829,9 +2392,9 @@ html { overflow-x: hidden; }
         <div class="card-title">📞 紧急联系人 <span class="tag">最多 3 位</span></div>
         <div id="guardianContacts"></div>
         <div class="grid3" style="margin-top:10px">
-          <div class="form-row" style="margin-bottom:6px"><label>姓名</label><input id="contactName" type="text" placeholder="如 张伟"></div>
-          <div class="form-row" style="margin-bottom:6px"><label>关系</label><input id="contactRel" type="text" placeholder="如 儿子"></div>
-          <div class="form-row" style="margin-bottom:6px"><label>电话</label><input id="contactPhone" type="text" placeholder="如 13800000000"></div>
+          <div class="form-row" style="margin-bottom:6px"><label for="contactName">姓名</label><input id="contactName" type="text" autocomplete="off" aria-label="联系人姓名" placeholder="如 张伟"></div>
+          <div class="form-row" style="margin-bottom:6px"><label for="contactRel">关系</label><input id="contactRel" type="text" autocomplete="off" aria-label="与老人关系" placeholder="如 儿子"></div>
+          <div class="form-row" style="margin-bottom:6px"><label for="contactPhone">电话</label><input id="contactPhone" type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="联系人电话" placeholder="如 13800000000"></div>
         </div>
         <button class="btn sm" id="btnAddContact">＋ 添加联系人</button>
         <div class="form-row" style="margin-top:12px">
@@ -1936,18 +2499,43 @@ html { overflow-x: hidden; }
   </main>
   </div><!-- /.app-body -->
 
-  <nav class="tabbar">
-    <button data-tab="home" class="on"><span class="ic">🏠</span>首页</button>
-    <button data-tab="chat"><span class="ic">🤖</span>智能助手</button>
-    <button data-tab="meds"><span class="ic">💊</span>用药管理</button>
-    <button data-tab="health"><span class="ic">🩺</span>健康档案</button>
-    <button data-tab="guardian"><span class="ic">👨‍👩‍👧</span>家属守护</button>
-    <button data-tab="risk" class="tab-secondary"><span class="ic">🛡️</span>风险筛查</button>
-    <button data-tab="data" class="tab-secondary"><span class="ic">📊</span>我的数据</button>
+  <!-- v19 P1-13：底部导航补 tablist / tab 语义，读屏可朗读当前板块 -->
+  <nav class="tabbar" role="tablist" aria-label="板块导航">
+    <button role="tab" data-tab="home" class="on" aria-selected="true"><span class="ic" aria-hidden="true">🏠</span>首页</button>
+    <button role="tab" data-tab="chat" aria-selected="false"><span class="ic" aria-hidden="true">🤖</span>智能助手</button>
+    <button role="tab" data-tab="meds" aria-selected="false"><span class="ic" aria-hidden="true">💊</span>用药管理</button>
+    <button role="tab" data-tab="health" aria-selected="false"><span class="ic" aria-hidden="true">🩺</span>健康档案</button>
+    <button role="tab" data-tab="guardian" aria-selected="false"><span class="ic" aria-hidden="true">👨‍👩‍👧</span>家属守护</button>
+    <button role="tab" data-tab="risk" class="tab-secondary" aria-selected="false"><span class="ic" aria-hidden="true">🛡️</span>风险筛查</button>
+    <button role="tab" data-tab="data" class="tab-secondary" aria-selected="false"><span class="ic" aria-hidden="true">📊</span>我的数据</button>
   </nav>
 
+  <!-- v22 P1-12：低频入口聚合入口（移动端）。
+       【为什么放在 tabbar 外面】底栏只有 390px，5 个高频项已把每项压到 ~60px，
+       再塞第 6 项会把「智能助手 / 用药管理 / 健康档案」挤到文字截断（违反
+       v19适老化红线）。因此「更多」做成悬浮按钮停在底栏上方：
+         ① 不占底栏宽度，高频 5 项尺寸与截断行为完全不变；
+         ② 拇指可及、热区仍是 --tap(48px)；
+         ③ 风险筛查 / 我的数据 两个按钮**保留在 tabbar DOM 里**
+            （移动端由既有 .tab-secondary 规则隐藏，switchTab 仍按 [data-tab] 命中），
+            由本面板统一承载。
+       桌面端（≥1024px）底栏整体隐藏，改用左侧栏的「#btnMoreSide」。 -->
+  <button type="button" id="btnMore" class="more-fab" aria-haspopup="dialog" aria-expanded="false" aria-controls="morePanel">
+    <span class="ic" aria-hidden="true">⋯</span><span class="mf-tx">更多</span>
+  </button>
+
+  <!-- v19 P1-11 / P1-10：长页回顶、聊天「回到最新」 -->
+  <button id="backTop" type="button" aria-label="回到页面顶部" title="回到顶部">↑</button>
+  <button id="toLatest" type="button" aria-label="回到最新消息" title="回到最新">↓ 回到最新</button>
+
+  <!-- v19 P1-15：弱网离线横幅 -->
+  <div id="offlineBar" role="status">当前没网，已为您显示上次内容</div>
+
   <!-- 全局 SOS 悬浮按钮 -->
-  <button id="sosFloat" title="紧急求助">🆘</button>
+  <button id="sosFloat" title="紧急求助" aria-label="紧急求助">🆘</button>
+
+  <!-- v19 P1-6/P1-13：动态内容无障碍播报区（Toast / 加载完成 / 用药提醒） -->
+  <div id="livePolite" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
   <!-- ============ 登录 / 注册 模态框 ============ -->
   <div class="mask" id="authModal" style="display:none">
@@ -1958,33 +2546,72 @@ html { overflow-x: hidden; }
         <button id="authTabReg">注册</button>
       </div>
       <div class="form-row">
-        <label>账号（手机号 / 用户名）</label>
-        <input id="authUser" type="text" placeholder="如 13800000000 或 张桂芳">
+        <label for="authUser">账号（手机号 / 用户名）</label>
+        <input id="authUser" type="text" autocomplete="username" aria-label="账号，支持手机号或用户名" placeholder="如 13800000000 或 张桂芳">
       </div>
       <div class="form-row" id="authNameRow" style="display:none">
-        <label>昵称</label>
-        <input id="authName" type="text" placeholder="如 张桂芳">
+        <label for="authName">昵称</label>
+        <input id="authName" type="text" autocomplete="nickname" aria-label="昵称" placeholder="如 张桂芳">
+      </div>
+      <div class="form-row" id="authPhoneRow" style="display:none">
+        <label for="authPhone">手机号（必填）</label>
+        <input id="authPhone" type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="tel" aria-label="手机号" placeholder="如 13800138000">
+      </div>
+      <div class="form-row" id="authEmailRow" style="display:none">
+        <label for="authEmail">邮箱（选填）</label>
+        <input id="authEmail" type="email" inputmode="email" autocomplete="email" aria-label="邮箱" placeholder="如 a@b.com">
       </div>
       <div class="form-row" id="authAgeRow" style="display:none">
-        <label>年龄</label>
-        <input id="authAge" type="number" placeholder="如 78">
+        <label for="authAge">年龄</label>
+        <input id="authAge" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="年龄" placeholder="如 78">
       </div>
       <div class="form-row">
-        <label>密码（至少 6 位）</label>
-        <input id="authPwd" type="password" placeholder="请输入密码">
+        <label for="authPwd">密码（至少 6 位）</label>
+        <input id="authPwd" type="password" autocomplete="current-password" aria-label="密码" placeholder="请输入密码">
       </div>
       <div class="form-row" id="authPwd2Row" style="display:none">
-        <label>再次输入密码</label>
-        <input id="authPwd2" type="password" placeholder="请再次输入密码">
+        <label for="authPwd2">再次输入密码</label>
+        <input id="authPwd2" type="password" autocomplete="new-password" aria-label="再次输入密码" placeholder="请再次输入密码">
       </div>
       <div id="authMsg" class="auth-msg"></div>
       <div class="btn-row">
         <button class="btn" id="authSubmit">登录</button>
         <button class="btn gray" id="authCancel">取消</button>
       </div>
+      <div class="muted small" id="authForgotRow" style="margin-top:8px;text-align:right">
+        <span id="authForgot" style="color:#2b7de9;cursor:pointer;text-decoration:none">忘记密码？</span>
+      </div>
       <button class="btn ghost sm" id="authGuest" style="margin-top:12px">先以游客身份体验（数据仅存本机）</button>
       <div class="muted small" style="margin-top:10px;text-align:center">
         家人可用同一账号密码登录，远程查看老人用药 / 健康 / 风险记录。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 找回密码 模态框 ============ -->
+  <div class="mask" id="resetModal" style="display:none">
+    <div class="dialog auth-dialog">
+      <h3>找回密码</h3>
+      <div class="form-row">
+        <label for="resetUser">账号</label>
+        <input id="resetUser" type="text" autocomplete="username" aria-label="账号" placeholder="请输入注册时的账号">
+      </div>
+      <div class="form-row">
+        <label for="resetPhone">注册手机号</label>
+        <input id="resetPhone" type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="tel" aria-label="注册手机号" placeholder="如 13800138000">
+      </div>
+      <div class="form-row">
+        <label for="resetPwd">新密码（至少 6 位）</label>
+        <input id="resetPwd" type="password" autocomplete="new-password" aria-label="新密码" placeholder="请输入新密码">
+      </div>
+      <div class="form-row">
+        <label>再次输入新密码</label>
+        <input id="resetPwd2" type="password" placeholder="请再次输入新密码">
+      </div>
+      <div id="resetMsg" class="auth-msg"></div>
+      <div class="btn-row">
+        <button class="btn" id="resetSubmit">重置密码</button>
+        <button class="btn gray" id="resetCancel">返回登录</button>
       </div>
     </div>
   </div>
@@ -1994,6 +2621,33 @@ html { overflow-x: hidden; }
     <div class="dialog uc-dialog">
       <h3>👤 用户中心</h3>
       <div id="ucBody"></div>
+    </div>
+  </div>
+
+  <!-- ============ v22 P1-12：低频入口「更多」聚合面板 ============
+       低频但仍需保留的入口（风险筛查 / 我的数据 / 账号 / 显示与朗读设置 /
+       帮助 / 社区看板）从主导航收进这里。面板只是入口集合，
+       每个入口点击后仍走原switchTab / openUserCenter 等既有逻辑，
+       不新增第二套路由。 -->
+  <div class="mask" id="morePanel" style="display:none" role="dialog" aria-modal="true" aria-labelledby="moreTitle">
+    <div class="dialog more-panel">
+      <h3 id="moreTitle">更多功能</h3>
+      <div class="muted small">下面是不常用的功能，用得少但都给您留着。</div>
+      <div class="more-list" id="moreList"></div>
+      <div class="btn-row">
+        <button class="btn gray btn-lg" id="moreCancel">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ v22 P1-12：帮助与说明 模态框 ============ -->
+  <div class="mask" id="helpModal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="dialog">
+      <h3 id="helpTitle">帮助与说明</h3>
+      <div class="help-body" id="helpBody"></div>
+      <div class="btn-row">
+        <button class="btn" id="helpClose">我知道了</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3183,7 +3837,7 @@ EMC.Engine = (function () {
     { intent: 'knowledge', kw: ['怎么办', '能不能', '可以吗', '要不要', '注意什么', '为什么', '是什么', '怎么吃', '饭前', '饭后', '空腹', '停药', '保健品', '过期', '复查', '副作用', '知识', '低血糖', '行不行', '要紧不', '严不严重', '咋弄', '咋办', '咋吃', '能停不', '别吃了'], w: 2 },
     { intent: 'greeting',  kw: ['你好', '您好', '在吗', '早上好', '晚上好', '谢谢', '你是谁', '能做什么'], w: 2 },
     /* 新增：健康档案 / 余药 / 周报 / 紧急求助（含口语/方言） */
-    { intent: 'health',    kw: ['血压', '血糖', '记一下', '记录血压', '记录血糖', '量血压', '量了血', '高压', '低压', '心率', '空腹', '餐后', '血是多少', '血压正常', '血糖正常', '测了', '今天量', '最近血', '血压飙了', '低压高', '高压高', '压高', '糖高了', '糖低了', '血糖低了'], w: 3 },
+    { intent: 'health',    kw: ['血压', '血糖', '记一下', '记录血压', '记录血糖', '量血压', '量了血', '高压', '低压', '心率', '空腹', '餐后', '血是多少', '血压正常', '血糖正常', '测了', '今天量', '最近血', '血压飙了', '低压高', '高压高', '压高', '糖高了', '糖低了', '血糖低了', '健康', '健康档案', '身体', '身体怎么样', '健康状况', '健康问题', '健康记录', '体检'], w: 3 },
     { intent: 'refill',    kw: ['余量', '剩下几', '快吃完', '不够吃', '还够吃几天', '药快吃完', '补充', '余药', '还剩多少', '药还有', '够吃吗', '快没', '快完了', '剩多少', '剩的不多', '够不够'], w: 3 },
     { intent: 'report',    kw: ['周报', '这周总结', '本周总结', '本周小结', '周总结', '生成报告', '一周总结', '给我总结'], w: 3 },
     { intent: 'sos',       kw: ['救命', '紧急求助', '打120', '呼叫家属', '联系家属', '求助', '120', '紧急情况', '快叫', '救我'], w: 4 }
@@ -3233,7 +3887,7 @@ EMC.Engine = (function () {
       lines.push('现在有 ' + pending.length + ' 项药还没有打卡：');
       pending.slice(0, 6).forEach(function (it, i) {
         var d = drugOf(it.mid);
-        lines.push((i + 1) + '. ' + (d ? d.name : it.mid) + '　' + (d ? d.dose : '') + '　【' + EMC.slotOf(it.slot).label + '】');
+        lines.push((i + 1) + '. ' + (it.name || (d ? d.name : it.mid)) + '　' + (d ? d.dose : '') + '　【' + EMC.slotOf(it.slot).label + '】');
       });
       lines.push('服完后请点击「已服用」，我会帮您记下来。');
     } else if (curSlot) {
@@ -3265,7 +3919,7 @@ EMC.Engine = (function () {
       var s = EMC.SLOTS[i];
       if (s.hour > cur) {
         var names = (ctx.meds || []).filter(function (m) { return m.slots.indexOf(s.key) >= 0; })
-          .map(function (m) { var d = drugOf(m.mid); return d ? d.name : m.mid; });
+          .map(function (m) { var d = drugOf(m.mid); return m.name || (d ? d.name : m.mid); });
         if (names.length) return { label: s.label + '（' + s.range + '）', names: names };
       }
     }
@@ -3754,7 +4408,7 @@ EMC.Engine = (function () {
   }
 
   /* ---------- 6.6 子智能体：健康档案（录入 / 查询） ---------- */
-  function agentHealth(text, ctx) {
+  async function agentHealth(text, ctx) {
     var t = String(text || '');
     var nums = parseNumbers(t);
     var isBp = /血压|高压|低压|收(缩)?压|舒(张)?压|压差/.test(t);
@@ -3804,51 +4458,70 @@ EMC.Engine = (function () {
     var lines = ['为您汇总近期的血压 / 血糖情况：\n'];
     var bp = health.filter(function (h) { return h.type === 'bp'; });
     var glu = health.filter(function (h) { return h.type === 'glu'; });
+    var facts = [];   // 仅收集代码已统计出的真实数字，供大模型解读（不得虚构）
     if (bp.length) {
       var sAvg = avg(bp.map(function (x) { return x.sys; }));
       var dAvg = avg(bp.map(function (x) { return x.dia; }));
       var bpAno = bp.filter(function (x) { return bpStatus(x.sys, x.dia) !== 'normal'; }).length;
       lines.push('· 血压：共 ' + bp.length + ' 次，收缩压均值 ' + sAvg + '、舒张压均值 ' + dAvg + '（mmHg）' + (bpAno ? '，其中 ' + bpAno + ' 次异常' : '，未见明显异常'));
-    } else lines.push('· 血压：尚未录入');
+      facts.push('血压共记录 ' + bp.length + ' 次，收缩压均值 ' + sAvg + ' mmHg，舒张压均值 ' + dAvg + ' mmHg，异常 ' + bpAno + ' 次。');
+    } else { lines.push('· 血压：尚未录入'); facts.push('暂无血压记录。'); }
     if (glu.length) {
       var gAvg = avg(glu.map(function (x) { return x.val; }));
       var gAno = glu.filter(function (x) { return gluStatus(x.val, x.meal) !== 'normal'; }).length;
       lines.push('· 血糖：共 ' + glu.length + ' 次，均值 ' + gAvg + ' mmol/L' + (gAno ? '，其中 ' + gAno + ' 次异常' : '，未见明显异常'));
-    } else lines.push('· 血糖：尚未录入');
-    lines.push('\n趋势点评：' + healthTrend(health));
+      facts.push('血糖共记录 ' + glu.length + ' 次，均值 ' + gAvg + ' mmol/L，异常 ' + gAno + ' 次。');
+    } else { lines.push('· 血糖：尚未录入'); facts.push('暂无血糖记录。'); }
+    var trendTxt = healthTrend(health);
+    lines.push('\n趋势点评：' + trendTxt);
+    facts.push('趋势判断：' + trendTxt);
+
+    // 尝试用大模型生成个性化智能解读；失败（null）则保持上方模板输出不变
+    var steps = ['读取健康档案 ' + health.length + ' 条', '计算血压/血糖均值', '比对阈值统计异常', '生成趋势点评'];
+    var enrich = await llmEnrich('health', facts.join(''), ctx);
+    if (enrich) {
+      lines.push('\n智能解读：' + enrich);
+      steps = steps.concat(['调用大模型生成个性化解读']);
+    }
     lines.push('\n详细图表可在「健康档案」中查看。');
     return {
       text: lines.join('\n'),
-      steps: ['读取健康档案 ' + health.length + ' 条', '计算血压/血糖均值', '比对阈值统计异常', '生成趋势点评'],
+      steps: steps,
       action: { type: 'goto', tab: 'health' }
     };
   }
 
   /* ---------- 6.7 子智能体：余药管理 ---------- */
-  function agentRefill(ctx) {
+  async function agentRefill(ctx) {
     var meds = ctx.meds || [];
     if (!meds.length) return { text: '您还没有登记药品。请到「用药管理」中添加，我会帮您跟踪余量。', steps: ['读取用药档案', '为空 → 引导登记'] };
     var list = meds.filter(function (m) { return typeof m.remain === 'number'; });
     if (!list.length) return { text: '当前药品尚未登记余量，无法估算可用天数。请在「用药管理」中为每种药填写余量。', steps: ['读取用药档案', '余量字段缺失'] };
-    var lines = ['为您清点各药品余量与预计可用天数：\n'], warn = [];
+    var lines = ['为您清点各药品余量与预计可用天数：\n'], warn = [], facts = [];
     list.forEach(function (m) {
       var d = drugOf(m.mid);
+      var nm = m.name || (d ? d.name : m.mid);
       var daily = (m.slots || []).length || 1;
       var days = Math.floor(m.remain / daily);
-      lines.push('· ' + (d ? d.name : m.mid) + '：余 ' + m.remain + ' 片，每日 ' + daily + ' 次，约可用 ' + days + ' 天');
-      if (days < 7) warn.push((d ? d.name : m.mid) + '（约 ' + days + ' 天）');
+      lines.push('· ' + nm + '：余 ' + m.remain + ' 片，每日 ' + daily + ' 次，约可用 ' + days + ' 天');
+      facts.push(nm + '剩余 ' + m.remain + ' 片，每日 ' + daily + ' 次，约可用 ' + days + ' 天。');
+      if (days < 7) warn.push(nm + '（约 ' + days + ' 天）');
     });
-    if (warn.length) lines.push('\n🔔 余药不足：' + warn.join('、') + ' 即将用完，请尽快补充。');
-    else lines.push('\n当前余量充足，请继续保持。');
+    if (warn.length) { lines.push('\n🔔 余药不足：' + warn.join('、') + ' 即将用完，请尽快补充。'); facts.push('其中 ' + warn.length + ' 种药不足 7 天：' + warn.join('、') + '。'); }
+    else { lines.push('\n当前余量充足，请继续保持。'); facts.push('全部药品余量均充足 7 天以上。'); }
+
+    var steps = ['读取 ' + list.length + ' 种药余量', '按每日次数推算可用天数', '标记不足 7 天的药品'];
+    var enrich = await llmEnrich('refill', facts.join(''), ctx);
+    if (enrich) { lines.push('\n余药建议：' + enrich); steps = steps.concat(['调用大模型生成余药补充建议']); }
     return {
       text: lines.join('\n'),
-      steps: ['读取 ' + list.length + ' 种药余量', '按每日次数推算可用天数', '标记不足 7 天的药品'],
+      steps: steps,
       action: { type: 'goto', tab: 'meds' }
     };
   }
 
   /* ---------- 6.8 子智能体：周报生成 ---------- */
-  function agentReport(ctx) {
+  async function agentReport(ctx) {
     var s = summary(ctx.records, ctx.meds, 7);
     var res = screen(ctx.meds);
     var health = (ctx.health) || [];
@@ -3860,10 +4533,20 @@ EMC.Engine = (function () {
     lines.push('二、用药风险：综合判定 ' + res.level + '，命中提示 ' + res.count + ' 项。');
     lines.push('三、健康指标：血压异常 ' + bpAno + ' 次、血糖异常 ' + gluAno + ' 次（共录入 ' + health.length + ' 条）。');
     lines.push('四、余药管理：' + (lowMeds.length ? ('有 ' + lowMeds.length + ' 种药余量不足 7 天，请及时补充') : '余量充足'));
+
+    // 事实串：只放上面已统计出的真实数字，供大模型做本周建议
+    var facts = '近 7 天应服 ' + s.total + ' 次，已服 ' + s.taken + ' 次，漏服 ' + s.missed + ' 次，依从率 ' + s.rate + '%，连续按时 ' + s.streak + ' 天；'
+      + '用药风险综合判定为' + res.level + '，命中提示 ' + res.count + ' 项；'
+      + '血压异常 ' + bpAno + ' 次，血糖异常 ' + gluAno + ' 次，共录入健康数据 ' + health.length + ' 条；'
+      + '余量不足 7 天的药品 ' + lowMeds.length + ' 种。';
+    var steps = ['汇总近 7 天用药行为', '调用风险筛查', '统计健康异常与余药', '生成周报文本'];
+    var enrich = await llmEnrich('report', facts, ctx);
+    if (enrich) { lines.push('\n本周建议：' + enrich); steps = steps.concat(['调用大模型生成个性化本周建议']); }
+
     lines.push('\n以上为本周智能小结，点击「再读一遍」可听我念一遍，也可在「我的数据」中导出完整记录。');
     return {
       text: lines.join('\n'),
-      steps: ['汇总近 7 天用药行为', '调用风险筛查', '统计健康异常与余药', '生成周报文本'],
+      steps: steps,
       action: { type: 'goto', tab: 'data' }
     };
   }
@@ -4099,9 +4782,217 @@ EMC.Engine = (function () {
     fallback: '兜底应答'
   };
 
-  function chat(text, ctx) {
+  // 构建系统提示词：注入用户用药上下文，使回答个性化且适老化
+  function buildLlmSystem(ctx) {
     ctx = ctx || {};
-    var resolved = resolveEntity(ctx, text);   // v8 T01 多轮实体回溯
+    var meds = (ctx.meds || []).map(function (m) {
+      return (m.name || m.mid || '药品') + (m.dose ? '（' + m.dose + '）' : '') + '，服用时段：' + (m.slots || []).join('、');
+    });
+    var cond = (ctx.profile && ctx.profile.conditions) ? ctx.profile.conditions : [];
+    var name = (ctx.profile && ctx.profile.name) || '';
+    var age = (ctx.profile && ctx.profile.age) || '';
+    var L = [];
+    L.push('你是「康伴」老年慢性病智能用药辅助助手，像家人一样陪在老人身边，服务对象是老年慢性病患者及其家属。');
+    L.push('不要透露你底层的大模型名称（如通义千问），始终以「康伴」的身份和口吻、温和耐心地回答。');
+    L.push('请用通俗易懂、温和、简短的中文回答，像陪在身边的家人一样，适合老年人听读。');
+    L.push('【输出格式硬性要求】回答控制在 100 字以内；最多 2 段，每段只写一行；不要使用任何 Markdown 符号（如 **、#、-、*、`、>、数字列表序号）；用纯中文口语表达，不要分点罗列。');
+    L.push('您可以慢慢说，别着急，我陪着您；用药或身体上有任何小问题，都可以随时问我。');
+    L.push('你可以讲解用药知识、药物注意事项、慢病管理、健康生活方式，并提醒按时服药。');
+    L.push('涉及具体诊断、调整药量、换药等医疗决策时，必须明确提醒：以医生或药师意见为准，不能替代医生诊断。');
+    if (name) L.push('用户称呼：' + name + (age ? '（' + age + '岁）' : '') + '。');
+    if (cond.length) L.push('慢病档案：' + cond.join('、') + '。');
+    if (meds.length) L.push('当前用药：' + meds.join('；') + '。');
+    return L.join('\n');
+  }
+
+  /* ---------- 文本净化：去 Markdown + 归一空白 + 兜底截断 ---------- */
+  var LLM_TEXT_MAX = 160;   // 净化后硬上限（字）
+  var LLM_TEXT_MIN = 120;   // 截断时允许的最短保留长度（字）
+  var LLM_END_PUNCT = '。！？；!?;';
+
+  /**
+   * 净化大模型返回的文本，使其适合适老化 TTS 播报与前端气泡展示。
+   * 规则（按顺序执行）：
+   *  1. 去 Markdown：代码块、行内代码、标题井号、粗斜体、删除线、引用、列表符号；
+   *  2. 归一空白：3 个以上连续换行压成 2 个、行首行尾去空格、中文全角冒号后的换行合并；
+   *  3. 兜底截断：超过 LLM_TEXT_MAX 时在 [LLM_TEXT_MIN, MAX] 区间找中文句末标点断句，
+   *     末尾补「…」；找不到标点才按上限硬切，绝不切在词中间。
+   * @param {string} t 原始文本
+   * @return {string} 净化后的纯文本（不含 Markdown 标记）
+   */
+  function sanitizeLlmText(t) {
+    if (t == null) return '';
+    var s = String(t);
+    if (!s) return '';
+
+    // 1) 去 Markdown 标记
+    s = s.replace(/```[\s\S]*?```/g, '')          // 整块代码
+         .replace(/~~~[\s\S]*?~~~/g, '')
+         .replace(/`([^`]*)`/g, '$1')             // 行内代码
+         .replace(/^\s{0,3}#{1,6}\s*/gm, '')      // 标题 # ## ###
+         .replace(/^\s{0,3}>\s?/gm, '')          // 引用 >
+         .replace(/^\s*[-*+•·]\s+/gm, '')        // 无序列表符号
+         .replace(/^\s*\d+[.、)]\s+/gm, '')      // 有序列表序号
+         .replace(/\*\*\*([\s\S]*?)\*\*\*/g, '$1')
+         .replace(/\*\*([\s\S]*?)\*\*/g, '$1')   // **重点** → 重点
+         .replace(/\*([\s\S]*?)\*/g, '$1')
+         .replace(/__([\s\S]*?)__/g, '$1')
+         .replace(/(^|[^\w])_([^_\n]*)_(?=[^\w]|$)/g, '$1$2')
+         .replace(/~~([\s\S]*?)~~/g, '$1')
+         .replace(/\*\*\*\*|___/g, '');          // 残留孤立标记
+
+    // 2) 归一空白
+    s = s.replace(/\r\n?/g, '\n')
+         .replace(/[ \t\u3000]+/g, ' ')
+         .replace(/\n{3,}/g, '\n\n')                       // 3+ 换行 → 2 个
+         .replace(/(^|\n)[ \t]+/g, '$1')                    // 行首空格
+         .replace(/[ \t]+(\n|$)/g, '$1')                    // 行尾空格
+         .replace(/([：:])\s*\n+\s*/g, '$1')  // 全角冒号后的换行合并
+         .replace(/([。！？；])\s*\n+\s*/g, '$1\n')          // 句末标点后最多保留 1 个换行
+         .trim();
+
+    // 3) 兜底截断
+    var chars = Array.from(s);
+    if (chars.length <= LLM_TEXT_MAX) return s;
+
+    var hi = LLM_TEXT_MAX - 1;                 // 给末尾「…」留 1 字
+    var lo = Math.min(LLM_TEXT_MIN, hi);
+    var cut = -1;
+    for (var i = hi - 1; i >= lo; i--) {       // 在 [lo, hi) 区间从后往前找句末标点
+      if (LLM_END_PUNCT.indexOf(chars[i]) >= 0) { cut = i + 1; break; }
+    }
+    if (cut < 0) cut = hi;                     // 无标点：按上限硬切（兜底）
+    var body = chars.slice(0, cut).join('').replace(/[\s、，,]+$/, '');
+    // 二次保险：确保加「…」后仍不超上限
+    while (Array.from(body).length > LLM_TEXT_MAX - 1) {
+      body = Array.from(body).slice(0, -1).join('').replace(/[\s、，,]+$/, '');
+    }
+    return body + '…';
+  }
+
+  // 各类解读任务的系统提示：温和、简洁适老、不编造数字、以医嘱为准
+  var LLM_ENRICH_KIND = {
+    health: {
+      label: '健康解读',
+      prompt: '你是在为一位老人做健康监测数据解读。语气温和、简洁、像家人陪伴。回答不超过 120 字，最多 2 段，纯中文口语，不要使用任何 Markdown 符号（如 **、#、-）。只能使用我提供的事实数字，绝对不得编造或推测未提供的数值、次数或结论。如数值异常，请温和提醒并建议咨询医生。所有建议以医生或药师意见为准，不能替代医生诊断。'
+    },
+    report: {
+      label: '本周建议',
+      prompt: '你是在为一位老人撰写本周健康用药小结后的建议部分。语气温和、简洁、像家人陪伴。回答不超过 120 字，最多 2 段，纯中文口语，不要使用任何 Markdown 符号（如 **、#、-）。只能使用我提供的事实数字，绝对不得编造或推测未提供的数据。要挑出最需要注意的一两件事给出可执行的温和提醒。所有建议以医生或药师意见为准，不能替代医生诊断。'
+    },
+    refill: {
+      label: '余药建议',
+      prompt: '你是在为一位老人给出剩余药量的补充建议。语气温和、简洁、像家人陪伴。回答不超过 120 字，最多 2 段，纯中文口语，不要使用任何 Markdown 符号（如 **、#、-）。只能使用我提供的事实数字，绝对不得编造或推测未提供的用量或天数。请给出什么时候去取药、怎样按时服药的温和提醒。所有建议以医生或药师意见为准，不能替代医生诊断。'
+    }
+  };
+
+  /**
+   * 用大模型为「已统计好的客观事实」补充一段个性化解读。
+   * 任何失败（网络/鉴权/超时/空返回）均返回 null，由调用方回退本地模板，保证向后兼容。
+   * @param {string} kind 'health' | 'report' | 'refill'
+   * @param {string} factsText 仅包含代码已统计出的真实数字的事实串
+   * @param {Object} ctx 上下文（用于注入用户档案）
+   * @return {Promise<string|null>} 净化后的解读文本，或 null
+   */
+  async function llmEnrich(kind, factsText, ctx) {
+    try {
+      var conf = LLM_ENRICH_KIND[kind];
+      if (!conf) return null;
+      if (!factsText) return null;
+      if (!(EMC.Voice && typeof EMC.Voice.aiChat === 'function')) return null;
+      var sys = buildLlmSystem(ctx) + '\n\n【本次任务】' + conf.prompt;
+      var messages = [
+        { role: 'system', content: sys },
+        { role: 'user', content: '以下是系统已经统计好的客观事实，请基于这些事实做' + conf.label + '：\n' + String(factsText) }
+      ];
+      var ans = await EMC.Voice.aiChat(messages, 300);
+      if (!ans) return null;
+      ans = ans.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').trim();
+      ans = sanitizeLlmText(ans);
+      return ans || null;
+    } catch (e) { return null; }
+  }
+
+  // v19 P0-4：记录最近一次大模型调用失败原因（供前端展示人话错误 + 「再试一次」）
+  var llmLastError = null;
+  function llmStatus() { return llmLastError; }
+
+  // 调用真实大模型；任何失败都返回 null（由调用方回退本地）
+  async function llmAnswer(text, ctx) {
+    try {
+      llmLastError = null;
+      if (!(EMC.Voice && typeof EMC.Voice.aiChat === 'function')) return null;
+      var messages = [{ role: 'system', content: buildLlmSystem(ctx) }];
+      var hist = (ctx && ctx.history) ? ctx.history.slice(-6) : [];
+      hist.forEach(function (h) {
+        if (h && h.role && h.text) messages.push({ role: (h.role === 'agent' ? 'assistant' : 'user'), content: String(h.text) });
+      });
+      messages.push({ role: 'user', content: String(text || '') });
+      var ans = await EMC.Voice.aiChat(messages, 240);
+      if (ans) {
+        ans = ans.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*/gi, '').trim();
+        ans = sanitizeLlmText(ans);   // 去 Markdown + 归一空白 + 超长兜底截断
+      }
+      if (!ans || !ans.trim()) { llmLastError = { name: 'EmptyAnswer' }; return null; }
+      return ans.trim();
+    } catch (e) { llmLastError = e; return null; }
+  }
+
+  async function chat(text, ctx) {
+    ctx = ctx || {};
+    llmLastError = null;      // 每次提问重置失败状态
+    var resolved = resolveEntity(ctx, text);
+    var intent = detectIntent(resolved);
+    var STRUCTURED = { reminder: 1, risk: 1, record: 1, symptom: 1, health: 1, refill: 1, report: 1, sos: 1 };
+    if (!STRUCTURED[intent.intent]) {
+      var ans = await llmAnswer(text, ctx);
+      if (ans) {
+        return {
+          intent: intent.intent,
+          intentLabel: (intent.intent === 'greeting') ? '陪伴问候' : '用药答疑',
+          hits: intent.hits,
+          text: ans,
+          steps: ['调用通义千问大模型（qwen3.8-flash）生成回复'],
+          action: null, drug: null, card: null,
+          followups: genFollowups(intent.intent, text),
+          ts: Date.now(), llm: true
+        };
+      }
+    }
+    var out;
+    switch (intent.intent) {
+      case 'reminder': out = agentReminder(ctx); break;
+      case 'risk': out = agentRisk(ctx, resolved); break;
+      case 'record': out = agentRecord(ctx); break;
+      case 'symptom': out = agentSymptom(resolved); break;
+      case 'greeting': out = agentGreeting(); break;
+      case 'health': out = await agentHealth(resolved, ctx); break;
+      case 'refill': out = await agentRefill(ctx); break;
+      case 'report': out = await agentReport(ctx); break;
+      case 'sos': out = agentSos(ctx); break;
+      case 'knowledge': out = agentKnowledge(resolved); break;
+      default: out = agentKnowledge(resolved); intent = { intent: 'knowledge', score: 0, hits: [] };
+    }
+    return {
+      intent: intent.intent,
+      intentLabel: INTENT_LABEL[intent.intent] || '智能助手',
+      hits: intent.hits,
+      text: out.text,
+      steps: out.steps || [],
+      action: out.action || null,
+      drug: out.drug || null,
+      card: (out && out.card) ? out.card : null,
+      followups: genFollowups(intent.intent, text),
+      ts: Date.now()
+    };
+  }
+
+  /* 本地规则引擎答复（v19 P0-4 降级用）：完全跳过 llmAnswer，
+   * 大模型超时/断网时仍能给老人一个有据可查的人话答案，避免白屏。 */
+  async function localChat(text, ctx) {
+    ctx = ctx || {};
+    llmLastError = null;      // 本地链路不涉及大模型，清掉旧失败状态，避免误报「再试一次」
+    var resolved = resolveEntity(ctx, text);
     var intent = detectIntent(resolved);
     var out;
     switch (intent.intent) {
@@ -4110,9 +5001,9 @@ EMC.Engine = (function () {
       case 'record': out = agentRecord(ctx); break;
       case 'symptom': out = agentSymptom(resolved); break;
       case 'greeting': out = agentGreeting(); break;
-      case 'health': out = agentHealth(resolved, ctx); break;
-      case 'refill': out = agentRefill(ctx); break;
-      case 'report': out = agentReport(ctx); break;
+      case 'health': out = await agentHealth(resolved, ctx); break;
+      case 'refill': out = await agentRefill(ctx); break;
+      case 'report': out = await agentReport(ctx); break;
       case 'sos': out = agentSos(ctx); break;
       case 'knowledge': out = agentKnowledge(resolved); break;
       default: out = agentKnowledge(resolved); intent = { intent: 'knowledge', score: 0, hits: [] };
@@ -4133,12 +5024,14 @@ EMC.Engine = (function () {
 
   return {
     chat: chat, screen: screen, screenAdd: screenAdd, summary: summary, detectIntent: detectIntent,
+    localChat: localChat, llmStatus: llmStatus,
     drugOf: drugOf, drugByName: drugByName, fmtDate: fmtDate, levelName: levelName, nextDose: nextDose,
     medUsage: medUsage, nextDoseFull: nextDoseFull, medKnowledge: medKnowledge,
     bpStatus: bpStatus, gluStatus: gluStatus, healthTrend: healthTrend,
     resolveEntity: resolveEntity, symptomSelfCheck: symptomSelfCheck,
     parseMedVoice: parseMedVoice, parseHealthVoice: parseHealthVoice,
-    weeklyReportSpoken: weeklyReportSpoken, bpMedAssoc: bpMedAssoc, riskSeries: riskSeries
+    weeklyReportSpoken: weeklyReportSpoken, bpMedAssoc: bpMedAssoc, riskSeries: riskSeries,
+    sanitizeLlmText: sanitizeLlmText, llmEnrich: llmEnrich
   };
 })();
 
@@ -4232,9 +5125,99 @@ EMC.Voice = (function () {
     return text.trim();
   }
 
+  /* ==========================================================
+   * v21 P2-3：humanizeForTts —— 把文本改写成「老人听得懂」的读法
+   * 动机：浏览器/云端 TTS 对医学符号与药学缩写极不友好，例如
+   *   "≥140 mmHg"  会被读成"大于等于一四零 m m H G"（英文字母逐个念）
+   *   "5% β受体阻滞剂" 会被读成"五百分号 贝塔…"或直接跳过符号
+   * 因此在 **所有播报入口（speak / speakCloud / speakLocal）** 之前
+   * 统一做一次可读化改写。设计上刻意保持：
+   *   · 幂等（同样输入多次调用结果一致，不会叠加替换）
+   *   · 纯函数、无副作用（不修改调用方数据）
+   *   · 只替换「读法有歧义」的符号与缩写，不动语义、不动数字本身
+   * 说明：normalize() 负责血压/时间/单位等既有口语化；本函数在其之前
+   *      作为「符号层」补充，两者叠加后送入 splitSegments。
+   * ========================================================== */
+
+  /* 符号/缩写 → 可朗读文本。键为正则源串，值为替换文本或替换函数。
+   * 顺序敏感：长的、歧义大的规则必须排在前面。 */
+  var TTS_SYMBOL_RULES = [
+    /* —— 比较符号：读成「大于等于 / 小于等于」，避免逐字符念出符号名 */
+    [/[≥≥]/g, '大于等于'],
+    [/[≤≤]/g, '小于等于'],
+    [/[≠≢]/g, '不等于'],
+    [/[≈~]/g, '大约'],
+    /* 单独出现的 < / > （前面已处理 ≥/≤）。
+     * 只在「前面不是数字」时替换，避免把 "135/85" 之类或已处理的数值二次改写。 */
+    [/(^|[^0-9])\s*<\s*/g, '$1 小于 '],
+    [/(^|[^0-9])\s*>\s*/g, '$1 大于 '],
+    /* —— 计量单位：TTS 会把 mmHg / mg 逐字母念，必须换成中文单位名。
+     * 注意：单位前可能是数字（"5mg"），数字与字母之间不存在 \b 边界，
+     *   因此不能依赖 \b，改用「数字+可选空格+单位」的显式模式。 */
+    [/mmHg/gi, '毫米汞柱'],
+    [/([0-9])\s*(μg|µg|ug)\b/gi, '$1微克'],
+    [/([0-9])\s*mg\b/gi, '$1毫克'],
+    [/([0-9])\s*ml\b/gi, '$1毫升'],
+    [/([0-9])\s*ml\/L/gi, '$1毫升每升'],
+    [/([0-9])\s*mmol\/L/gi, '$1毫摩尔每升'],
+    [/([0-9])\s*mmol\b/gi, '$1毫摩尔'],
+    [/([0-9])\s*kg\b/gi, '$1千克'],
+    [/\bmcg\b/gi, '微克'],
+    [/\bIU\b/g, '国际单位'],
+    [/\bHz\b/gi, '赫兹'],
+    /* —— 百分比：「5%」读成「百分之五」而不是「五百分号」 */
+    [/(\d+(?:\.\d+)?)\s*%/g, '百分之$1'],
+    /* —— 药学/生理学缩写与术语：字母与希腊字母改中文读法 */
+    [/β受体/g, '贝塔受体'],                 /* β受体阻滞剂 → 贝塔受体阻滞剂 */
+    [/β/g, '贝塔'],
+    [/α受体/g, '阿尔法受体'],
+    [/α/g, '阿尔法'],
+    [/γ/g, '伽马'],
+    [/\bACEI?\b|\bACE\s*抑制剂/g, '普利类降压药'],
+    [/\bARB\b/g, '沙坦类降压药'],
+    [/\bNSAIDs?\b/gi, '非甾体抗炎药'],
+    [/\bTZD\b/g, '双胍类之外的胰岛素增敏药'],
+    [/\bHbA1c\b/g, '糖化血红蛋白'],
+    [/\bBMI\b/g, '体重指数'],
+    [/\bCOPD\b/g, '慢阻肺'],
+    [/\bPDE-?5\b/gi, ' PDE 五类药'],
+    [/\bCOX-?2\b/gi, '环氧化酶二'],
+    [/\bMR\b|缓释/g, '缓释'],
+    [/\b肠溶\b/g, '肠溶'],
+    [/\bpo\b(?=\s)/gi, '口服'],
+    [/\bid\b(?=\s)/gi, '注射'],
+    /* —— 数值区间与连线：「135-140」读作「135 到 140」。
+     * 排除年份/日期：第二个数不允许前导 0（"2024-01" 中的 01 不匹配），
+     * 因此 2024-01-05 保持原样，不会被读成「2024到01到05」。 */
+    [/\b(\d{1,3})\s*[-~—]\s*([1-9]\d{0,2})\b/g, '$1到$2'],
+    /* —— 其它易误读符号 */
+    [/&/g, '和'],
+    [/\+/g, '加'],
+    [/~/g, '到']
+  ];
+
+  /**
+   * 把一段文本改写为更适合 TTS 朗读的形式。
+   * @param {string} text 原始文本
+   * @return {string} 可朗读文本（空输入返回空串）
+   */
+  function humanizeForTts(text) {
+    var out = String(text == null ? '' : text);
+    if (!out) return '';
+    for (var i = 0; i < TTS_SYMBOL_RULES.length; i++) {
+      var rule = TTS_SYMBOL_RULES[i];
+      /* 正则带 g 标志时 lastIndex 会残留，用 String.replace 每次都重置，无需担心 */
+      out = out.replace(rule[0], rule[1]);
+    }
+    /* 单位/符号替换后可能留下多余空格（如「5毫克 每日」），压缩一次 */
+    out = out.replace(/[ \t]{2,}/g, ' ');
+    return out.trim();
+  }
+
   /* 文本分段：按换行 / 句末标点切分，每段 ≤ 180 字 */
   function splitSegments(text) {
-    var clean = normalize(text);
+    /* v21 P2-3：先 humanize（符号可读化）再 normalize（既有口语化） */
+    var clean = normalize(humanizeForTts(text));
     var segs = [];
     clean.split(/\n+/).forEach(function (para) {
       var normalized = para.replace(/([。！？!?])/g, '$1\n');
@@ -4288,6 +5271,8 @@ EMC.Voice = (function () {
   function speak(text, opts) {
     opts = opts || {};
     if (!enabled) return false;
+    /* v21 P2-3：入口先 humanize，长回答按句分段朗读（splitSegments 已支持分句） */
+    text = humanizeForTts(text);
     var segs = splitSegments(text);
     if (!segs.length) return false;
 
@@ -4307,6 +5292,8 @@ EMC.Voice = (function () {
   /* 浏览器本地播报（原有队列实现） */
   function speakLocal(text, opts) {
     if (!enabled || !synth) return false;
+    /* v21 P2-3：入口 humanize（speak 已做一次，此处兜底覆盖直接调用场景） */
+    text = humanizeForTts(text);
     var segs = splitSegments(text);
     if (!segs.length) return false;
     var rate = (typeof opts.rate === 'number') ? clamp(opts.rate, 0.5, 1.3) : cfg.rate;
@@ -4347,11 +5334,12 @@ EMC.Voice = (function () {
   /* 云端语音合成播放（优先生成，失败自动回退浏览器播报） */
   function speakCloud(text, opts) {
     opts = opts || {};
+    /* v21 P2-3：云端合成同样先 humanize，避免服务端 TTS 逐字母念 mmHg / % */
     return fetch('/api/ai/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       cache: 'no-store',
-      body: JSON.stringify({ text: normalize(text) })
+      body: JSON.stringify({ text: humanizeForTts(text) })
     })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('tts http ' + r.status)); })
       .then(function (j) {
@@ -4616,15 +5604,30 @@ EMC.Voice = (function () {
   function localAsrSupported() {
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder && window.Blob && window.FileReader);
   }
-  /* 供 AI 增强问答使用（密钥不落地，仅转发到本服务代理） */
+  /* 供 AI 增强问答使用（密钥不落地，仅转发到本服务代理）
+   * v19 P0-4：内置 20s AbortController 软超时 —— 慢网下主动断开，
+   * 由调用方回退本地规则引擎，避免长时间白屏等待。 */
+  var AI_CHAT_TIMEOUT_MS = 20000;
   function aiChat(messages, maxTokens) {
-    return fetch('/api/ai/chat', {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = null;
+    if (ctrl) {
+      timer = setTimeout(function () {
+        var e = new Error('timeout'); e.name = 'TimeoutError'; ctrl.abort(e);
+      }, AI_CHAT_TIMEOUT_MS);
+    }
+    function done(v) { if (timer) { clearTimeout(timer); timer = null; } return v; }
+    function fail(e) { if (timer) { clearTimeout(timer); timer = null; } return Promise.reject(e); }
+    var opt = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       cache: 'no-store',
       body: JSON.stringify({ messages: messages, maxTokens: maxTokens || 300 })
-    }).then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('ai http ' + r.status)); })
-      .then(function (j) { return (j && j.text) ? j.text : ''; });
+    };
+    if (ctrl) opt.signal = ctrl.signal;
+    return fetch('/api/ai/chat', opt)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(Object.assign(new Error('ai http'), { name: 'HttpError', status: r.status })); })
+      .then(function (j) { return done((j && j.text) ? j.text : ''); }, fail);
   }
 
   /* ==========================================================
@@ -4711,7 +5714,11 @@ EMC.Voice = (function () {
     setEnabled: setEnabled, isEnabled: isEnabled,
     supported: supported, supportedTts: supportedTts, onState: onState,
     asrSupported: asrSupported, listen: listen,
-    normalize: normalize, configure: configure, getConfig: getConfig,
+    normalize: normalize,
+    /* v21 P2-3：对外暴露 humanizeForTts / splitSegments，
+     * 便于「朗读本条回答」按钮与 QA 脚本复用同一套可读化与分句逻辑。 */
+    humanizeForTts: humanizeForTts, splitSegments: splitSegments,
+    configure: configure, getConfig: getConfig,
     /* 云端语音（DashScope）：探测 / 状态 / AI 问答
      * 注：v14 起默认关闭，仅作可选增强；日常使用本地/浏览器语音，不产生 API 费用 */
     cloudAvailable: cloudAvailable, cloudInfo: cloudInfo, aiChat: aiChat,
@@ -4760,6 +5767,53 @@ window.EMCAuth = (function () {
     return !!getToken();
   }
 
+  /* ==========================================================
+   * v20 BugFix：401 重入保护
+   * 背景：register/login 会 setToken 后立刻触发 onLogin → afterAuth() → loadAll()，
+   *      而 loadAll 中任一接口若返回 401，旧逻辑会立即 setToken(null) + onLogout()
+   *      → afterAuth() 重入、store 退化为 LocalStore（游客态），
+   *      用户被「踢」回游客模式，表现为「一直处在游客模式 / 数据清零」。
+   * 对策：
+   *   1) authTransition：登录/登出/loadAll 期间置位，期间的 401 只静默记录，不触发登出回调；
+   *   2) graceUntil：setToken 后 3 秒内的 401 容忍窗口，避免「刚登录成功那一刻」的
+   *      在途旧请求（无 Authorization 头）误清新令牌；
+   *   3) 401 必须「确实没有本地令牌」才清，避免并发重入。
+   * ========================================================== */
+  var authTransition = false;   // 登录/登出/载入过程中的过渡态标志
+  var graceUntil = 0;           // 令牌宽限期截止时间戳（ms）
+  var lastUnauthorized = 0;     // 最近一次 401 时刻，用于 loadAll 结束后统一处理
+
+  /** 设置令牌（顺带开启宽限期，防止旧在途请求误清新令牌） */
+  function setTokenGrace(token) {
+    setToken(token);
+    graceUntil = token ? (Date.now() + 3000) : 0;
+  }
+
+  /** 是否处于 401 容忍窗口（刚 setToken 不久） */
+  function inGrace() { return Date.now() < graceUntil; }
+
+  /** 统一处理 401：仅在确实无令牌且非过渡态时才触发登出回调（防重入） */
+  function handle401() {
+    if (authTransition) return false;      // 过渡态：静默，交由 loadAll 收尾统一处理
+    if (inGrace()) return false;           // 宽限期内：视为旧请求，不清令牌
+    if (!getToken()) return false;         // 本来就没令牌，无需再触发
+    setToken(null);
+    if (typeof EMCAuth.onLogout === 'function') EMCAuth.onLogout();
+    return true;
+  }
+
+  /** 供 app.js 在 loadAll 结束后调用：解除过渡态，并按需补一次登出处理 */
+  function endAuthTransition() {
+    authTransition = false;
+    if (lastUnauthorized && !getToken() && typeof EMCAuth.onLogout === 'function') {
+      var cb = EMCAuth.onLogout;
+      lastUnauthorized = 0;
+      /* 延迟一拍，避免在 loadAll 的调用栈内同步重入 */
+      setTimeout(function () { cb(); }, 0);
+    }
+    lastUnauthorized = 0;
+  }
+
   /**
    * 通用 API 请求。
    * @param {string} path 例如 '/api/login'
@@ -4779,10 +5833,10 @@ window.EMCAuth = (function () {
       return res.text().then(function (text) {
         var data = null;
         try { data = text ? JSON.parse(text) : {}; } catch (e) { data = {}; }
-        // 401 统一处理：清令牌并触发登出
+        // 401 统一处理：清令牌并触发登出（带过渡态 / 宽限期 / 重入保护）
         if (res.status === 401) {
-          setToken(null);
-          if (typeof EMCAuth.onLogout === 'function') EMCAuth.onLogout();
+          lastUnauthorized = Date.now();
+          handle401();
         }
         data._status = res.status;
         return data;
@@ -4794,31 +5848,47 @@ window.EMCAuth = (function () {
 
   /** 登录 */
   function login(username, password) {
+    authTransition = true;   // 过渡态：期间的 401 不触发登出回调
     return api('/api/login', { method: 'POST', body: { username: username, password: password } })
       .then(function (r) {
         if (r.ok && r.token) {
-          setToken(r.token);
+          setTokenGrace(r.token);
+          /* 成功路径不在此解除过渡态，交由 afterAuth 的 finally 统一解除，避免过早放开 */
           if (typeof EMCAuth.onLogin === 'function') EMCAuth.onLogin(r.user);
+        } else {
+          authTransition = false;   // 失败路径立即解除
         }
         return r;
       });
   }
 
-  /** 注册 */
-  function register(username, password, name, age) {
-    return api('/api/register', { method: 'POST', body: { username: username, password: password, name: name, age: age } })
-      .then(function (r) {
-        if (r.ok && r.token) {
-          setToken(r.token);
-          if (typeof EMCAuth.onLogin === 'function') EMCAuth.onLogin(r.user);
-        }
-        return r;
-      });
+  /** 注册（接收对象 {username,password,name,age,phone,email}） */
+  function register(p) {
+    authTransition = true;   // 过渡态：期间的 401 不触发登出回调
+    return api('/api/register', {
+      method: 'POST',
+      body: {
+        username: p.username, password: p.password, name: p.name, age: p.age,
+        phone: p.phone, email: (p.email != null ? p.email : '')
+      }
+    }).then(function (r) {
+      if (r.ok && r.token) {
+        setTokenGrace(r.token);
+        /* 同 login：成功路径由 afterAuth 收尾解除过渡态 */
+        if (typeof EMCAuth.onLogin === 'function') EMCAuth.onLogin(r.user);
+      } else {
+        authTransition = false;   // 失败路径立即解除
+      }
+      return r;
+    });
   }
 
   /** 登出 */
   function logout() {
+    authTransition = true;   // 防止登出过程中的在途 401 造成重入
+    lastUnauthorized = 0;
     setToken(null);
+    authTransition = false;
     if (typeof EMCAuth.onLogout === 'function') EMCAuth.onLogout();
   }
 
@@ -4830,6 +5900,9 @@ window.EMCAuth = (function () {
     getToken: getToken,
     isLoggedIn: isLoggedIn,
     setToken: setToken,
+    /* v20：供 app.js 在 loadAll 前后标记过渡态，避免 401 连锁重入 */
+    beginAuthTransition: function () { authTransition = true; },
+    endAuthTransition: endAuthTransition,
     onLogin: null,   // app.js 注入：登录成功后回调
     onLogout: null  // app.js 注入：登出 / 令牌失效后回调
   };
@@ -5006,7 +6079,7 @@ window.EMCStore = (function () {
     function load() {
       if (cache) return cache;
       /* v14：cloudVoice 默认 false（不调用付费云端 API），asrEngine 默认本地 Qwen3-ASR-0.6B */
-      var settings = Object.assign({ fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b' }, lsLoad(KEY.settings, {}));
+      var settings = Object.assign({ fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', /* v21 P2-5：极简模式开关（默认关） */ simpleMode: false }, lsLoad(KEY.settings, {}));
       // v14 一次性迁移：老用户此前默认开的云端语音改为关闭，避免继续产生 API 调用费
       if (settings.cloudVoice !== false && !lsLoad('emc_v14_migrated', false)) {
         settings.cloudVoice = false;
@@ -5024,7 +6097,7 @@ window.EMCStore = (function () {
             var total = (typeof m.total === 'number' && m.total > 0) ? m.total : 30;
             return {
               id: 'm' + (i + 1), mid: m.mid,
-              name: dr ? dr.name : m.mid, dose: dr ? dr.dose : '',
+              name: m.name || (dr ? dr.name : m.mid), dose: dr ? dr.dose : '',
               slots: m.slots.slice(), note: m.note || '',
               remain: remain, initRemain: remain, refillAt: remain, total: total
             };
@@ -5116,6 +6189,8 @@ window.EMCStore = (function () {
         cloudVoice: (typeof s.cloudVoice === 'boolean' ? s.cloudVoice : (c.settings.cloudVoice === true)),
         /* v14：识别引擎（browser / qwen3-0.6b / glm-nano）游客态同样持久化 */
         asrEngine: (typeof s.asrEngine === 'string' ? s.asrEngine : (c.settings.asrEngine || 'qwen3-0.6b')),
+        /* v21 P2-5：极简模式（与 asrEngine 同流程进白名单，游客态亦持久化） */
+        simpleMode: (typeof s.simpleMode === 'boolean' ? s.simpleMode : (c.settings.simpleMode === true)),
         /* S-09：服药提醒时刻可自定义，游客态同样持久化 */
         remindTimes: normalizeRemindTimes(s.remindTimes != null ? s.remindTimes : c.settings.remindTimes)
       });
@@ -5330,7 +6405,8 @@ window.EMCStore = (function () {
     function mapMedFrom(b) {
       return {
         id: b.mid, mid: b.mid, name: b.name, dose: b.dose,
-        slots: b.slots || [], note: '', remain: b.remaining == null ? 30 : b.remaining,
+        /* v20：备注随云端持久化（旧数据无 note 时回落空串） */
+        slots: b.slots || [], note: b.note || '', remain: b.remaining == null ? 30 : b.remaining,
         initRemain: b.remaining == null ? 30 : b.remaining,
         refillAt: b.refillAt == null ? (b.remaining == null ? 30 : b.remaining) : b.refillAt,
         /* v13：家属代录标记 + 病种关联（后端缺字段时回落为未标记 / 未关联） */
@@ -5341,7 +6417,9 @@ window.EMCStore = (function () {
       return {
         mid: m.mid, name: m.name, dose: m.dose, slots: m.slots || [], remaining: m.remain == null ? 30 : m.remain,
         /* v13：把代录标记与病种关联透传给后端持久化 */
-        byFamily: m.byFamily === true, disease: String(m.disease || '')
+        byFamily: m.byFamily === true, disease: String(m.disease || ''),
+        /* v20：备注（note）一并透传，避免云端模式下老人备注丢失 */
+        note: String(m.note || '')
       };
     }
     function mapRecFrom(b) {
@@ -5352,7 +6430,7 @@ window.EMCStore = (function () {
     }
     function mapSettingsFrom(s) {
       /* v14：cloudVoice 默认 false（不调用付费云端 API），asrEngine 默认本地 Qwen3-ASR-0.6B */
-      if (!s) return { fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', remindTimes: defaultRemindTimes() };
+      if (!s) return { fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: defaultRemindTimes() };
       var fs = 1;
       if (s.fontSize === 'A+') fs = 2; else if (s.fontSize === 'A++') fs = 3;
       return {
@@ -5365,6 +6443,8 @@ window.EMCStore = (function () {
         cloudVoice: (s.cloudVoice === true),
         /* v14：识别引擎与云端开关对称透传，登录态刷新后不丢 */
         asrEngine: (typeof s.asrEngine === 'string' ? s.asrEngine : 'qwen3-0.6b'),
+        /* v21 P2-5：极简模式，登录态刷新后不丢 */
+        simpleMode: (s.simpleMode === true),
         /* S-09：旧账号无 remindTimes 时回落默认值，避免 undefined 进入提醒逻辑 */
         remindTimes: normalizeRemindTimes(s.remindTimes)
       };
@@ -5382,7 +6462,9 @@ window.EMCStore = (function () {
         asrContinue: (s.asrContinue !== false),
         cloudVoice: (s.cloudVoice === true),
         /* v14：识别引擎与云端开关对称透传，登录态刷新后不丢 */
-        asrEngine: (typeof s.asrEngine === 'string' ? s.asrEngine : 'qwen3-0.6b')
+        asrEngine: (typeof s.asrEngine === 'string' ? s.asrEngine : 'qwen3-0.6b'),
+        /* v21 P2-5：极简模式对称透传 */
+        simpleMode: (s.simpleMode === true)
       };
     }
 
@@ -5449,8 +6531,13 @@ window.EMCStore = (function () {
       addHealth: function (rec) {
         return EMCAuth.api('/api/health', { method: 'POST', body: rec }).then(function (r) { return r.health || []; });
       },
+      /* v20：家属列表走 GET /api/family（后端已补齐该路由）；
+         若该接口异常，回退到 /api/me 内的 family 字段，再兜底空数组。 */
       getFamily: function () {
-        return me().then(function (u) { return (u && u.family) ? u.family : []; });
+        return EMCAuth.api('/api/family').then(function (r) {
+          if (r && r.ok && Array.isArray(r.family)) return r.family;
+          return me().then(function (u) { return (u && Array.isArray(u.family)) ? u.family : []; });
+        }).catch(function () { return []; });
       },
       addFamily: function (c) {
         return EMCAuth.api('/api/family', { method: 'POST', body: c }).then(function (r) { return r.family || []; });
@@ -5725,11 +6812,63 @@ EMC.Care = (function () {
   }
 
   /* ---------- 数据加载（统一经 store） ---------- */
+  /* v20 默认兜底值：任一接口失败时按字段回退，保证 S 各字段结构完整，renderAll 不会因 undefined 崩 */
+  var FALLBACK_SETTINGS = {
+    fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std',
+    asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: ['08:00', '12:00', '18:00']
+  };
+  var FALLBACK_PROFILE = { name: '', age: '', username: '', notifyEnabled: true };
+
+  /**
+   * 并行 + 单点容错载入全部数据。
+   * v20：原实现为串行 7 次请求，任一接口非 2xx（如 GET /api/family 404）即导致
+   *     整次 loadAll 抛错 / 字段为空 → 新注册用户看到「数据被清零」。
+   *     现改为 Promise.allSettled，各字段独立兜底 + console 警告，整体不再失败。
+   * @return {Promise<void>}
+   */
   async function loadAll() {
-    S.settings = await store.getSettings();
+    /* 过渡态：本次载入期间收到的 401 只记录，不触发 onLogout 连锁重入 */
+    if (EMCAuth.beginAuthTransition) EMCAuth.beginAuthTransition();
+    try {
+      await loadAllInner();
+    } finally {
+      if (EMCAuth.endAuthTransition) EMCAuth.endAuthTransition();
+    }
+  }
+
+  /** loadAll 实际逻辑（由 loadAll 包在过渡态中调用） */
+  async function loadAllInner() {
+    var names = ['settings', 'profile', 'meds', 'records', 'health', 'family', 'notifyLog'];
+    var results = await Promise.allSettled([
+      store.getSettings(),
+      store.getProfile(),
+      store.getMeds(),
+      store.getRecords(14),
+      store.getHealth(),
+      store.getFamily(),
+      store.getNotifyLog()
+    ]);
+
+    /* 单点容错取值：失败或结构非法一律回退兜底值 */
+    function pick(i, fallback, validate) {
+      var r = results[i];
+      if (!r || r.status !== 'fulfilled' || r.value === undefined || r.value === null) {
+        console.warn('[EMC] loadAll 字段载入失败，已兜底：' + names[i], r && r.reason);
+        return fallback;
+      }
+      if (validate && !validate(r.value)) {
+        console.warn('[EMC] loadAll 字段结构非法，已兜底：' + names[i]);
+        return fallback;
+      }
+      return r.value;
+    }
+
+    var st = pick(0, FALLBACK_SETTINGS, function (v) { return typeof v === 'object'; });
+    S.settings = Object.assign({}, FALLBACK_SETTINGS, st);
     /* S-09：设置载入后立即刷新可配置提醒时刻副本，checkReminder 才能用上用户设定值 */
     EMC.applyRemindTimes(S.settings.remindTimes);
-    var p = await store.getProfile();
+
+    var p = pick(1, FALLBACK_PROFILE, function (v) { return typeof v === 'object'; });
     S.profile = {
       name: p.name || '', age: p.age || '',
       username: p.username || '', notifyEnabled: (typeof p.notifyEnabled === 'boolean' ? p.notifyEnabled : true)
@@ -5738,10 +6877,12 @@ EMC.Care = (function () {
     S.conditions = (Array.isArray(p.conditions) ? p.conditions : [])
       .map(function (c) { return EMC.chronicKeyOf(c); })
       .filter(function (k, i, a) { return !!k && a.indexOf(k) === i; });
-    S.meds = await store.getMeds();
-    S.records = await store.getRecords(14);
-    S.health = await store.getHealth();
-    S.guardian = { contacts: await store.getFamily(), notifications: await store.getNotifyLog() };
+
+    var arr = function (v) { return Array.isArray(v) ? v : []; };
+    S.meds = arr(pick(2, []));
+    S.records = arr(pick(3, []));
+    S.health = arr(pick(4, []));
+    S.guardian = { contacts: arr(pick(5, [])), notifications: arr(pick(6, [])) };
   }
 
   /* ---------- 初始化 ---------- */
@@ -5769,10 +6910,18 @@ EMC.Care = (function () {
       asrEngine: S.settings.asrEngine || 'qwen3-0.6b'
     });
     bind();
+    bindMorePanel();   // v22 P1-12：低频入口聚合面板 + 帮助弹窗
+    BackGuard.init();  // v22 P1-16：pushState 哨兵 + popstate 返回键兜底
     initThemeBtn();   // D-08 / S-08：游客态显示模式切换入口
+    initSimpleMode(); // v21 P2-5：极简模式开关 + 三件事入口 + 退出极简
+    MobileUX.init();  // v19：软键盘适配 / 滚动定位 / 回顶 / 离线横幅
     // 预热语音引擎并挂载播报状态回调（顶部"正在播报"状态条）
     try { V.prewarm(); } catch (e) {}
-    V.onState(function (playing) { toggleVoiceState(playing); });
+    V.onState(function (playing) {
+      toggleVoiceState(playing);
+      /* v22 P1-14：全局播报结束时复位逐段朗读按钮，避免卡在「朗读中」 */
+      if (!playing) resetParaSpeak();
+    });
     switchTab('home');          // 默认进入首页（仅渲染当前 tab，避免整页重绘）
     renderAccount();
     greeting();
@@ -5784,6 +6933,7 @@ EMC.Care = (function () {
     renderChatHistory();
     pushTodayBrief();           // v7 F4：进入对话主动推送"今日概览"卡
     renderStarters();           // v7 F3：对话空态快捷提问 chips
+    showChatSkeleton();         // v19 P1-15：弱网/离线时先铺骨架，避免白屏
     pushProactiveCare();        // v8 T04 主动关怀：今日待办 + 风险提醒（每日一次）
     setInterval(checkReminder, 30000);
     setTimeout(checkReminder, 4000);
@@ -5792,15 +6942,209 @@ EMC.Care = (function () {
 
   /* 登录 / 登出后刷新整页数据 */
   async function afterAuth() {
-    store = (EMCAuth.isLoggedIn()) ? EMCStore.ApiStore : EMCStore.LocalStore;
-    await loadAll();
-    closeModals();
-    renderAccount();
-    renderAll();
-    renderOverview();
-    if (EMCAuth.isLoggedIn()) toast('已登录：' + (S.profile.username || S.profile.name || '用户'));
-    else toast('已退出，切换到游客演示模式');
+    /* v20：过渡态 + try/catch，确保任何异常都不白屏、不把用户留在游客态 */
+    if (EMCAuth.beginAuthTransition) EMCAuth.beginAuthTransition();
+    try {
+      store = (EMCAuth.isLoggedIn()) ? EMCStore.ApiStore : EMCStore.LocalStore;
+      await loadAll();
+      closeModals();
+      renderAccount();
+      renderAll();
+      renderOverview();
+      applySimpleMode(S.settings.simpleMode === true);   // v21 P2-5：登录态切换账号后按各自设置生效
+      if (EMCAuth.isLoggedIn()) {
+        if (!S.profile.username) {
+          /* 令牌有效但 profile 为空：说明用户资料未正确载入，明确报错而非静默显示游客界面 */
+          console.warn('[EMC] 已登录但 profile 未载入（username 为空）');
+          toast('账号资料载入失败，请检查网络后重试或重新登录');
+        } else {
+          toast('已登录：' + (S.profile.username || S.profile.name || '用户'));
+        }
+      } else {
+        toast('已退出，切换到游客演示模式');
+      }
+    } catch (err) {
+      console.error('[EMC] afterAuth 异常：', err);
+      try { renderAccount(); renderAll(); } catch (e2) { console.error('[EMC] 渲染兜底失败：', e2); }
+      toast('数据载入出错，已尽量恢复，请稍后重试');
+    } finally {
+      /* 解除过渡态；若期间确实发生 401 且令牌已被清空，此处统一补一次登出处理 */
+      if (EMCAuth.endAuthTransition) EMCAuth.endAuthTransition();
+    }
   }
+
+  /* ==========================================================
+   * v19 移动端体验优化模块（P0-1 软键盘 / P0-4 等待反馈 / P1-10 滚动 / P1-11 回顶 / P1-15 弱网）
+   * 设计约束：
+   *   1) 仅新增能力，不改动既有模块的对外契约；
+   *   2) 所有 CSS 数值统一走 :root 令牌（--vvh/--kb/--sat…），CSS 与 JS 只通过变量通信；
+   *   3) 不支持 visualViewport 的安卓 WebView 自动回退 window.innerHeight + resize。
+   * ========================================================== */
+  var MobileUX = (function () {
+    var vv = window.visualViewport || null;
+    var baseH = window.innerHeight;   // 键盘判定基准：历史最大可视高度
+    var kbUp = false;
+    var lastApply = 0;
+    var userScrolledUp = false;       // 用户上滑后暂停自动滚动
+    var THROTTLE = 100;               // --vvh 写入节流（ms）
+
+    /* ---------- P0-1：可视视口高度 / 软键盘高度写入 CSS 变量 ---------- */
+    function currentHeight() {
+      return vv ? Math.round(vv.height) : window.innerHeight;
+    }
+    function applyViewport(force) {
+      var now = Date.now();
+      if (!force && now - lastApply < THROTTLE) return;
+      lastApply = now;
+      var h = currentHeight();
+      var root = document.documentElement;
+      root.style.setProperty('--vvh', h + 'px');
+      /* 基准取「历史最大可视高度」：地址栏收起时可视区变大也不该抬高基准，
+       * 否则后续真正的键盘收缩会被误判为「无键盘」。 */
+      if (!kbUp && h > baseH) baseH = h;
+      /* 键盘高度 = 基准 - 当前可视视口；差值 <80px 视为地址栏收放，不当作键盘 */
+      var kb = Math.max(0, Math.round(baseH - h));
+      if (kb < 80) kb = 0;
+      root.style.setProperty('--kb', kb + 'px');
+      setKeyboardState(kb > 80, kb);
+      measureTabbar();
+      scrollChatToBottom(false);
+    }
+    function setKeyboardState(up, kb) {
+      if (up === kbUp) return;
+      kbUp = up;
+      var c = $id('composer');
+      /* .kb-up 用 position:sticky;bottom:0 天然贴合「缩放后的可视视口」底部，
+       * 因此这里不再额外加 translateY，否则会与 sticky 叠加而偏移出视口。 */
+      if (c) c.classList.toggle('kb-up', up);
+      document.body.classList.toggle('kb-open', up);
+      if (up) {
+        var t = $id('toLatest'); if (t) t.classList.remove('show');
+        setTimeout(function () { scrollChatToBottom(false); }, 60);
+      }
+    }
+    /* 实测底部导航高度写入 --tabh，供吸底与悬浮层避让 */
+    function measureTabbar() {
+      var t = document.querySelector('.tabbar');
+      if (!t) return;
+      var h = Math.round(t.getBoundingClientRect().height);
+      if (h > 0) document.documentElement.style.setProperty('--tabh', h + 'px');
+    }
+
+    /* ---------- P1-10：聊天区滚动定位（发送后/窗口变化自动滚到底） ---------- */
+    function chatBox() { return $id('chatScroll'); }
+    function atBottom(box, tol) {
+      if (!box) return true;
+      return (box.scrollHeight - box.scrollTop - box.clientHeight) <= (tol || 48);
+    }
+    function scrollChatToBottom(smooth) {
+      var box = chatBox();
+      if (!box) return;
+      if (userScrolledUp) { showToLatest(true); return; }
+      try { box.scrollTo({ top: box.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }); }
+      catch (e) { box.scrollTop = box.scrollHeight; }
+      showToLatest(false);
+    }
+    function showToLatest(show) {
+      var b = $id('toLatest');
+      if (b) b.classList.toggle('show', !!show);
+    }
+
+    /* ---------- P1-11：长页面「回到顶部」 ---------- */
+    function syncBackTop() {
+      var b = $id('backTop');
+      if (!b) return;
+      var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+      var tall = document.documentElement.scrollHeight > window.innerHeight * 3;
+      b.classList.toggle('show', y > 320 && tall);
+    }
+
+    /* ---------- P1-6 / P1-13：动态内容 aria 播报 ---------- */
+    function announce(text) {
+      var el = $id('livePolite');
+      if (!el) return;
+      el.textContent = '';
+      /* 置空后延迟写入，确保同一文案二次触发也能被读屏复述 */
+      setTimeout(function () { el.textContent = String(text || ''); }, 60);
+    }
+
+    /* ---------- P1-15：离线横幅 ---------- */
+    function syncOffline() {
+      var b = $id('offlineBar');
+      if (!b) return;
+      var off = (navigator.onLine === false);
+      b.classList.toggle('show', off);
+      if (off) announce('当前没网，已为您显示上次内容');
+    }
+
+    /* ---------- 初始化 ---------- */
+    function init() {
+      baseH = window.innerHeight;
+      if (vv) {
+        vv.addEventListener('resize', function () { applyViewport(false); });
+        vv.addEventListener('scroll', function () { applyViewport(false); });
+      }
+      /* 回退路径：部分安卓 WebView 无 visualViewport，用 resize 兜底 */
+      window.addEventListener('resize', function () { applyViewport(true); });
+      window.addEventListener('orientationchange', function () {
+        /* 转屏后重新建立基准：取 max(旧基准, 新可视高度)，
+         * 避免把「键盘已弹起时的短视口」写成新基准，导致后续判定失效 */
+        setTimeout(function () { if (!kbUp) baseH = Math.max(baseH, window.innerHeight); applyViewport(true); }, 260);
+      });
+
+      /* 输入框聚焦 → 键盘态 + 300ms 后滚到底，保证输入框与发送键在视口内 */
+      var input = $id('chatInput');
+      if (input) {
+        input.addEventListener('focus', function () {
+          setTimeout(function () { applyViewport(true); scrollChatToBottom(true); }, 300);
+        });
+        input.addEventListener('blur', function () {
+          setKeyboardState(false, 0);
+        });
+        /* 回车发送由既有 keydown 绑定统一处理，此处不重复绑定 */
+      }
+
+      /* 聊天区：上滑 120px 后暂停自动滚动并显示「回到最新」 */
+      var box = chatBox();
+      if (box) {
+        box.addEventListener('scroll', function () {
+          userScrolledUp = !atBottom(box, 120);
+          showToLatest(userScrolledUp);
+        }, { passive: true });
+      }
+      var tl = $id('toLatest');
+      if (tl) tl.addEventListener('click', function () {
+        userScrolledUp = false; scrollChatToBottom(true);
+      });
+
+      /* 长页回顶 */
+      var bt = $id('backTop');
+      if (bt) bt.addEventListener('click', function () {
+        try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); }
+      });
+      window.addEventListener('scroll', syncBackTop, { passive: true });
+
+      /* 离线横幅 */
+      window.addEventListener('online', function () { syncOffline(); clearChatSkeleton(); toast('网络已恢复'); });
+      window.addEventListener('offline', function () { syncOffline(); });
+
+      applyViewport(true);
+      syncOffline();
+      syncBackTop();
+    }
+
+    return {
+      init: init,
+      scrollChatToBottom: scrollChatToBottom,
+      announce: announce,
+      syncOffline: syncOffline,
+      measureTabbar: measureTabbar,
+      isKeyboardUp: function () { return kbUp; }
+    };
+  })();
+
+  /* 轻量转发：toast / 各模块统一走 aria 播报（P1-6 / P1-13） */
+  function announce(text) { MobileUX.announce(text); }
 
   /* ---------- 交互绑定 ---------- */
   function bind() {
@@ -5810,7 +7154,12 @@ EMC.Care = (function () {
     });
     var fs = $id('btnFs');
     fs.addEventListener('click', function () {
-      S.settings.fs = S.settings.fs % 3 + 1; applyFs(S.settings.fs); store.setSettings(S.settings);
+      /* v19 P0-5：4 档循环（小/中/大/特大），并语音+Toast 播报当前档位 */
+      S.settings.fs = S.settings.fs % 4 + 1;
+      applyFs(S.settings.fs); store.setSettings(S.settings);
+      var lb = FS_LABEL[S.settings.fs];
+      toast('字体已切换为' + lb);
+      announce('字体已切换为' + lb);
     });
     var v = $id('btnVoice');
     v.addEventListener('click', function () {
@@ -5826,14 +7175,13 @@ EMC.Care = (function () {
     var stopSpeak = $id('btnStopSpeak');
     if (stopSpeak) stopSpeak.addEventListener('click', function () { V.stop(); });
     var input = $id('chatInput');
-    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') sendText(); });
-    $id('btnMic').addEventListener('click', startAsr);
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') sendText(); });    $id('btnMic').addEventListener('click', startAsr);
 
     $id('btnAddMed').addEventListener('click', function () {
       editingMedId = null;
       $id('btnSaveMed').textContent = '保存药品';
       $id('medPanel').style.display = 'block';
-      $id('medSearch').focus();
+      safeFocus($id('medSearch'));
       renderSuggest('');
     });
     $id('btnCancelMed').addEventListener('click', function () {
@@ -5914,7 +7262,7 @@ EMC.Care = (function () {
     if (qBp) qBp.addEventListener('click', function () {
       switchTab('health');
       setHealthType('bp');
-      setTimeout(function () { var el = $id('bpSys'); if (el) el.focus(); }, 80);
+      setTimeout(function () { safeFocus($id('bpSys')); }, 80);
     });
     var qMed = $id('homeQuickMed');
     if (qMed) qMed.addEventListener('click', function () {
@@ -5925,7 +7273,7 @@ EMC.Care = (function () {
     if (qGlu) qGlu.addEventListener('click', function () {
       switchTab('health');
       setHealthType('glu');
-      setTimeout(function () { var el = $id('gluVal'); if (el) el.focus(); }, 80);
+      setTimeout(function () { safeFocus($id('gluVal')); }, 80);
     });
     var qCheckin = $id('homeQuickCheckin');
     if (qCheckin) qCheckin.addEventListener('click', function () {
@@ -5940,10 +7288,19 @@ EMC.Care = (function () {
     if (sosFloat) sosFloat.addEventListener('click', openSos);
   }
 
+  /* v19 P0-5：字号 4 档（21/24/28/32），档位名「小 / 中 / 大 / 特大」 */
+  var FS_LABEL = { 1: '小字', 2: '中字', 3: '大字', 4: '特大字' };
+  var FS_SHORT = { 1: 'A', 2: 'A+', 3: 'A++', 4: 'A+++' };
   function applyFs(level) {
-    document.body.classList.remove('fs-1', 'fs-2', 'fs-3');
+    level = Math.min(4, Math.max(1, parseInt(level, 10) || 1));
+    document.body.classList.remove('fs-1', 'fs-2', 'fs-3', 'fs-4');
     document.body.classList.add('fs-' + level);
-    $id('btnFs').textContent = ['', 'A', 'A+', 'A++'][level];
+    var b = $id('btnFs');
+    if (b) {
+      b.textContent = FS_SHORT[level];
+      b.setAttribute('aria-label', '切换字号，当前' + FS_LABEL[level] + '，点一下换更大');
+      b.title = '字体：' + FS_LABEL[level] + '（点一下换更大）';
+    }
   }
   function syncVoiceBtn() {
     var b = $id('btnVoice');
@@ -5951,6 +7308,15 @@ EMC.Care = (function () {
     b.classList.toggle('active', !S.settings.voice);
   }
   /* D-08 / S-08：游客态也提供显示模式（明亮 / 夜间 / 高对比）切换，循环切换并持久化 */
+  /* v19 P0-6：字号 ≥B 档（中/大/特大）时禁止自动聚焦。
+   * 原因：大字号下软键盘弹出会遮住表单，老人看不清自己输在哪；
+   * 仅在用户明确点击输入框时才聚焦。 */
+  function safeFocus(el) {
+    if (!el) return;
+    try { if (parseInt(S.settings.fs, 10) >= 2) return; } catch (e) {}
+    try { el.focus(); } catch (e) {}
+  }
+
   function initThemeBtn() {
     var b = $id('btnTheme');
     if (!b) return;
@@ -5969,6 +7335,81 @@ EMC.Care = (function () {
     EMC.Theme.apply(t);
   }
 
+  /* ==========================================================
+   * v21 P2-5：极简模式
+   * 一键把首页/助手页收敛为三件核心事（吃药提醒 / 量血压 / 求助），
+   * 隐藏专业术语卡与复杂统计，字号偏大、行距更松。
+   * 【安全红线】顶栏常驻「退出极简」按钮，任何时候都能一键退回完整界面。
+   * 持久化走既有 settings 白名单（simpleMode），游客态与登录态都生效。
+   * ========================================================== */
+  function applySimpleMode(on) {
+    on = on === true;
+    document.body.classList.toggle('simple-mode', on);
+    /* 进入 / 退出两个顶栏入口互斥；用 aria-hidden + tabindex 保证键盘可达性与 CSS 显隐一致。
+     *（不用 hidden 属性：其 UA 样式会与 display:inline-flex 打架） */
+    [['btnSimpleExit', on]].forEach(function (pair) {
+      var el = $id(pair[0]);
+      if (!el) return;
+      el.setAttribute('aria-hidden', pair[1] ? 'false' : 'true');
+      el.setAttribute('tabindex', pair[1] ? '0' : '-1');
+    });
+    /* 极简下首页问候语同步一份（#simpleHello/#simpleDate 与原首页同源） */
+    var sh = $id('simpleHello'), sd = $id('simpleDate');
+    var hh = $id('homeHello'), hd = $id('homeDate');
+    if (sh && hh) sh.textContent = hh.textContent;
+    if (sd && hd) sd.textContent = hd.textContent;
+    try { localStorage.setItem('emc_simple_mode', on ? '1' : '0'); } catch (e) {}
+    return on;
+  }
+
+  function isSimpleMode() { return document.body.classList.contains('simple-mode'); }
+
+  /** 切换极简模式并持久化。on 省略时取反。 */
+  function setSimpleMode(on) {
+    var v = (typeof on === 'boolean') ? on : !isSimpleMode();
+    S.settings.simpleMode = v;
+    applySimpleMode(v);
+    try { store.setSettings(S.settings); } catch (e) {}
+    announce(v ? '已进入极简模式，只保留吃药、量血压和求助' : '已退出极简模式，恢复完整界面');
+    toast(v ? '已进入极简模式' : '已退出极简模式');
+    return v;
+  }
+
+  /** 极简三件事的统一动作（首页与助手页共用同一实现）。 */
+  function simpleAct(kind) {
+    if (kind === 'med') { switchTab('meds'); return; }
+    if (kind === 'bp') {
+      switchTab('health');
+      try { safeFocus($id('bpSys')); } catch (e) {}
+      return;
+    }
+    if (kind === 'sos') { openSos(); return; }
+  }
+
+  function initSimpleMode() {
+    /* 绑定首页三个按钮（带 id）与助手页三个按钮（带 data-simple-act） */
+    var map = { simpleMed: 'med', simpleBp: 'bp', simpleSos: 'sos' };
+    Object.keys(map).forEach(function (id) {
+      var b = $id(id);
+      if (b) b.addEventListener('click', function () { simpleAct(map[id]); });
+    });
+    document.querySelectorAll('[data-simple-act]').forEach(function (b) {
+      b.addEventListener('click', function () { simpleAct(b.getAttribute('data-simple-act')); });
+    });
+    /* 进入入口：首页与助手页各一张大卡片（游客态也无需登录即可点）
+       退出入口：顶栏常驻「退出极简」按钮，避免老人被困住 */
+    ['simpleToggleBtn', 'simpleToggleBtn2'].forEach(function (id) {
+      var b2 = $id(id);
+      if (b2) b2.addEventListener('click', function () { setSimpleMode(true); });
+    });
+    ['btnSimpleExit', 'simpleExitInline'].forEach(function (id) {
+      var bx = $id(id);
+      if (bx) bx.addEventListener('click', function () { setSimpleMode(false); });
+    });
+    /* 首屏应用持久化状态；登录态 settings 到达后会再调一次（见 afterAuth） */
+    applySimpleMode(S.settings.simpleMode === true);
+  }
+
   function switchTab(tab) {
     S.tab = tab;
     TABS.forEach(function (t) {
@@ -5984,8 +7425,12 @@ EMC.Care = (function () {
     if (ovc) ovc.style.display = (tab === 'home') ? 'none' : '';
     // 底部 tabbar 与桌面侧边栏共用 data-tab，统一高亮（两套导航同时生效）
     document.querySelectorAll('[data-tab]').forEach(function (b) {
-      b.classList.toggle('on', b.getAttribute('data-tab') === tab);
+      var on = (b.getAttribute('data-tab') === tab);
+      b.classList.toggle('on', on);
+      /* v19 P1-13：补 tab 语义，选中态同步给读屏 */
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
+    announce('已进入' + tabName(tab));
     if (tab === 'home') { renderOverview(); renderHome(); }
     if (tab === 'meds') { renderMeds(); renderHeatmap(); renderMedTimeline(); renderDiseaseGroups(); }
     if (tab === 'health') { renderHealth(); renderWeeklyReport(); renderBpAssoc(); renderRiskTrend(); }
@@ -6097,6 +7542,9 @@ EMC.Care = (function () {
       bub.appendChild(it);
     }
     var body = document.createElement('div'); body.textContent = text; bub.appendChild(body);
+    /* v22 P1-14：为这条回答的每个自然段追加独立「🔊 朗读」按钮。
+       只给机器人回答加；用户自己的话不需要「朗读回来」。*/
+    if (role !== 'user' && !(meta && meta.thinking)) appendParaSpeak(bub, text);
     if (meta && meta.card) renderCard(bub, meta.card);
     if (meta && meta.followups && meta.followups.length) renderFollowups(bub, meta.followups);
     if (meta && meta.steps && meta.steps.length) {
@@ -6113,7 +7561,8 @@ EMC.Care = (function () {
     }
     wrap.appendChild(av); wrap.appendChild(bub);
     box.appendChild(wrap);
-    box.scrollTop = box.scrollHeight;
+    /* v19 P1-10：新消息插入后统一走 scrollChatToBottom（尊重用户上滑暂停） */
+    try { MobileUX.scrollChatToBottom(true); } catch (e) { box.scrollTop = box.scrollHeight; }
     return wrap;
   }
 
@@ -6186,69 +7635,181 @@ EMC.Care = (function () {
     bub.appendChild(fc);
   }
 
-  /* 替换气泡里的正文（保留“智能体 · xx”标签等结构） */
-  function setBubbleText(wrap, txt) {
-    var bub = (wrap && wrap.querySelector) ? wrap.querySelector('.bubble') : null;
-    if (!bub) return;
-    var d = null;
-    for (var i = 0; i < bub.children.length; i++) {
-      if (bub.children[i].tagName === 'DIV') { d = bub.children[i]; break; }
+  /* v19 P1-15：骨架屏（弱网首屏占位）。用现有 CSS 手写 3 个类，零依赖。
+   * 仅在「离线或 2G/slow 网络」时于聊天区先铺骨架，避免白屏等待。 */
+  function showChatSkeleton() {
+    var box = $id('chatScroll');
+    if (!box) return;
+    var slow = false;
+    try {
+      var c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      slow = (navigator.onLine === false) || (c && (c.saveData || /(^|-)2g$/.test(String(c.effectiveType || ''))));
+    } catch (e) { slow = (navigator.onLine === false); }
+    if (!slow) return;
+    /* 仅在空态铺骨架，绝不覆盖已有对话，避免误清用户历史 */
+    if (box.children.length) return;
+    box.setAttribute('data-skeleton', '1');
+    box.innerHTML = '<div class="skeleton w90"></div><div class="skeleton w70"></div>'
+      + '<div class="skeleton w45"></div><div class="muted small">正在为您加载上一次的内容…</div>';
+  }
+  /* 网络恢复后撤掉骨架 */
+  function clearChatSkeleton() {
+    var box = $id('chatScroll');
+    if (box && box.getAttribute('data-skeleton') === '1') {
+      box.removeAttribute('data-skeleton');
+      box.innerHTML = '';
+      renderStarters();
     }
-    if (d) d.textContent = txt; else bub.textContent = txt;
   }
 
-  function sendText() {
+  /* ==========================================================
+   * v19 P0-4：等待 / 失败反馈
+   *   - 请求开始 300ms 内出现可见等待态（.msg.bot.thinking + 三点动画 + 人话文案）
+   *   - 1s 未返回则补充「这个问题比较复杂，还在想…」
+   *   - AbortController 20s 软超时，超时回退本地规则引擎，绝不白屏
+   *   - 失败一律走「再试一次」，保留用户输入，文案零英文 / 零 status code
+   * ========================================================== */
+  var CHAT_TIMEOUT_MS = 20000;      // 软超时：20s 必出结果或明确重试入口
+  var chatBusy = false;             // 并发闸门，避免重复发送
+
+  /* 错误 → 人话文案映射（零技术术语、零状态码） */
+  function chatErrText(err) {
+    var name = (err && (err.name || err.code || err.message)) || '';
+    if (name === 'TimeoutError' || name === 'timeout') return '网络有点慢，请再点一次发送。';
+    if (name === 'AbortError') return '这次等太久了，请再试一次。';
+    if (name === 'TypeError' || name === 'Failed to fetch' || name === 'NetworkError') return '网络断开了，请检查网络后重试。';
+    return '服务器开小差了，请稍后再试。';
+  }
+
+  /* 构造等待态气泡：三点动画 + 文案（aria-live 由 #chatScroll 提供） */
+  function pushThinking(intentLabel) {
+    var node = pushMsg('agent', '', { intentLabel: intentLabel || '用药答疑', plain: true });
+    if (!node) return null;
+    node.classList.add('bot', 'thinking');
+    var bub = node.querySelector('.bubble');
+    var dots = document.createElement('span');
+    dots.className = 'thinking-dots';
+    dots.setAttribute('aria-hidden', 'true');
+    dots.innerHTML = '<i></i><i></i><i></i>';
+    var txt = document.createElement('span');
+    txt.className = 'thinking-text';
+    txt.textContent = '正在为您查，请稍等…';
+    if (bub) { bub.appendChild(dots); bub.appendChild(txt); }
+    /* ≤1s 未返回 → 追加「比较复杂」提示，降低老人「是不是坏了」的焦虑 */
+    var timer = setTimeout(function () {
+      if (!node.parentNode) return;
+      txt.textContent = '正在为您查，请稍等… 这个问题比较复杂，还在想…';
+    }, 1000);
+    node.__thinkingTimer = timer;
+    return node;
+  }
+
+  /* 移除等待 / 失败气泡（幂等） */
+  function dropNode(node) {
+    if (!node) return;
+    if (node.__thinkingTimer) { clearTimeout(node.__thinkingTimer); node.__thinkingTimer = null; }
+    if (node.parentNode) node.parentNode.removeChild(node);
+  }
+
+  /* 失败卡：人话文案 + 「再试一次」（保留用户输入，点一下即重发） */
+  function pushChatFail(err, retryText) {
+    var node = pushMsg('agent', chatErrText(err), { intentLabel: '智能助手', plain: true });
+    if (!node) return null;
+    node.classList.add('bot', 'failed');
+    var bub = node.querySelector('.bubble');
+    if (bub && retryText) {
+      var b = document.createElement('button');
+      b.className = 'retry-btn'; b.type = 'button'; b.textContent = '再试一次';
+      b.addEventListener('click', function () {
+        dropNode(node);
+        $id('chatInput').value = retryText;
+        sendText();
+      });
+      bub.appendChild(b);
+    }
+    announce('出了点问题，' + chatErrText(err));
+    return node;
+  }
+
+  async function sendText() {
     var input = $id('chatInput');
     var text = (input.value || '').trim();
     if (!text) return;
+    if (chatBusy) { toast('正在为您查，请稍等'); return; }   // 防重复点击
+    chatBusy = true;
+    var composer = $id('composer');
+    if (composer) composer.classList.add('is-busy');          // 禁用发送键
     V.interrupt();              // 用户发言前打断当前播报
     input.value = '';
     hideStarters();             // 首次发言后收起空态快捷提问
     pushMsg('user', text, null);
     pushChatTurn('user', text);   // v8 T01 多轮记忆：写入历史
-    var ctx = { meds: medsForEngine(), records: S.records, todayPending: todayPending(), health: S.health, guardian: S.guardian, history: CHAT_HISTORY };
-    var res = E.chat(text, ctx);
+    MobileUX.scrollChatToBottom(true);
+    announce('已收到，正在为您查');
+    var ctx = { meds: medsForEngine(), records: S.records, todayPending: todayPending(), health: S.health, guardian: S.guardian, history: CHAT_HISTORY, profile: S.profile };
+    var t0 = Date.now();
+    var thinking = pushThinking('用药答疑');
+    var res = null, failed = false, err = null;
 
-    /* 渲染内置引擎结果（同时也是云端失败时的回退路径） */
-    function showLocal() {
-      var node = pushMsg('agent', res.text, { intentLabel: res.intentLabel, steps: res.steps, card: res.card, followups: res.followups });
-      pushChatTurn('agent', res.text);   // v8 T01 多轮记忆：写入历史
-      V.speak(res.text);
-      if (res.action) {
-        if (res.action.type === 'recordHealth') {
-          addHealth(res.action.record);
-          renderHealth(); renderOverview();
-          addGoto(node, 'health', '查看健康档案');
-        } else if (res.action.type === 'goto') {
-          addGoto(node, res.action.tab, '前往「' + tabName(res.action.tab) + '」查看');
-        }
-      }
-      return node;
+    /* 20s 软超时：Promise.race 而非直接 abort，异常路径必定落到本地规则引擎 */
+    var timer = null;
+    var timeoutP = new Promise(function (resolve) {
+      timer = setTimeout(function () { resolve({ __timeout: true }); }, CHAT_TIMEOUT_MS);
+    });
+    try {
+      /* 20s 软超时用 Promise.race 实现：不改 E.chat 签名（其内部 llmAnswer 已自带 try/catch 回退），
+       * 因此超时后原 Promise 仍会在后台完成并被丢弃，不会产生未处理异常。 */
+      var chatP = E.chat(text, ctx);
+      var winner = await Promise.race([chatP, timeoutP]);
+      clearTimeout(timer);
+      if (winner && winner.__timeout) { failed = true; err = { name: 'TimeoutError' }; }
+      else res = winner;
+    } catch (e) {
+      clearTimeout(timer);
+      failed = true; err = e;
     }
 
-    /* —— 主通道：优先调用云端大模型；失败再回退内置智能体 ——
-     * 例外：带副作用的指令类输入（打卡/记血压等，res.action）仍由内置引擎执行 */
-    var isCommand = !!(res && res.action);
-    if (!isCommand && V && typeof V.aiChat === 'function') {
-      var pending = pushMsg('agent', '正在思考…', { intentLabel: '智能助手 · 通义千问' });
-      var sysMsg = '你是「康伴」，面向老年人的慢性病用药辅助助手。请用简洁、口语化的中文回答，条理清晰，尽量 250 字以内；涉及剂量调整、诊断或急症时，务必建议咨询医生、药师或拨打 120。';
-      var msgs = [{ role: 'system', content: sysMsg }].concat((CHAT_HISTORY || []).slice(-6).map(function (m) {
-        return { role: m.role === 'user' ? 'user' : 'assistant', content: m.text };
-      }));
-      V.aiChat(msgs, 500).then(function (ans) {
-        ans = (ans || '').trim();
-        if (!ans) { if (pending.parentNode) pending.parentNode.removeChild(pending); showLocal(); return; }
-        setBubbleText(pending, ans);
-        pushChatTurn('agent', ans);
-        V.speak(ans);
-      }).catch(function () {
-        if (pending.parentNode) pending.parentNode.removeChild(pending);
-        showLocal();   // 云端失败 → 回退内置智能体
-      });
+    /* v19 P0-4：等待态至少可见 600ms —— 太快闪过的等待态老人反而会以为没生效 */
+    var shownMs = Date.now() - t0;
+    if (shownMs < 600) await new Promise(function (r) { setTimeout(r, 600 - shownMs); });
+    dropNode(thinking);
+    if (failed || !res) {
+      /* 失败/超时：优先回退本地规则引擎，保证老人始终拿到人话答复 */
+      var fb = null;
+      try { fb = E.localChat ? await E.localChat(text, ctx) : null; } catch (e2) { fb = null; }
+      if (fb) {
+        pushMsg('agent', fb.text, { intentLabel: fb.intentLabel, steps: fb.steps, card: fb.card, followups: fb.followups });
+        pushChatTurn('agent', fb.text);
+        MobileUX.scrollChatToBottom(true);
+        pushChatFail(err, text);          // 仍保留「再试一次」入口（可重新走大模型）
+      } else {
+        pushChatFail(err, text);          // 连本地也无答案 → 失败卡 + 再试一次（输入已保留）
+      }
+      chatBusy = false;
+      if (composer) composer.classList.remove('is-busy');
       return;
     }
 
-    showLocal();
+    var node = pushMsg('agent', res.text, { intentLabel: res.intentLabel, steps: res.steps, card: res.card, followups: res.followups });
+    pushChatTurn('agent', res.text);   // v8 T01 多轮记忆：写入历史
+    MobileUX.scrollChatToBottom(true);
+    /* v19 P0-4：本地兜底成功（网络/模型不通）→ 补一个「再试一次」入口，
+     * 保证任何一次提问 20s 内必出结果或明确重试入口，且用户输入不丢失。 */
+    var llmErr = (E.llmStatus && !res.llm) ? E.llmStatus() : null;
+    if (llmErr) pushChatFail(llmErr, text);
+    announce('已经查到了，' + firstSentence(res.text));
+    V.speak(res.text);
+    chatBusy = false;
+    if (composer) composer.classList.remove('is-busy');
+    if (res.action) {
+      if (res.action.type === 'recordHealth') {
+        addHealth(res.action.record);
+        renderHealth(); renderOverview();
+        addGoto(node, 'health', '查看健康档案');
+      } else if (res.action.type === 'goto') {
+        addGoto(node, res.action.tab, '前往「' + tabName(res.action.tab) + '」查看');
+      }
+    }
   }
   function addGoto(node, tab, label) {
     var btn = document.createElement('button');
@@ -6257,10 +7818,10 @@ EMC.Care = (function () {
     btn.addEventListener('click', function () { switchTab(tab); });
     node.querySelector('.bubble').appendChild(btn);
   }
-  function tabName(t) { return { meds: '用药管理', risk: '风险筛查', data: '我的数据', health: '健康档案', guardian: '家属守护', chat: '智能助手' }[t] || '相关页面'; }
+  function tabName(t) { return { home: '首页', meds: '用药管理', risk: '风险筛查', data: '我的数据', health: '健康档案', guardian: '家属守护', chat: '智能助手' }[t] || '相关页面'; }
 
   function medsForEngine() {
-    return S.meds.map(function (m) { return { mid: m.mid, slots: m.slots, note: m.note, remain: (typeof m.remain === 'number' ? m.remain : null) }; });
+    return S.meds.map(function (m) { return { mid: m.mid, name: m.name, dose: m.dose, slots: m.slots, note: m.note, remain: (typeof m.remain === 'number' ? m.remain : null) }; });
   }
   function todayPending() {
     var key = E.fmtDate(new Date());
@@ -7936,6 +9497,14 @@ EMC.Care = (function () {
       if (EMCAuth.isLoggedIn()) EMCAuth.logout(); else afterAuth();
       closeModals();
     });
+    var forgot = $id('authForgot');
+    if (forgot) forgot.addEventListener('click', openReset);
+    var resetModal = $id('resetModal');
+    if (resetModal) {
+      $id('resetSubmit').addEventListener('click', submitReset);
+      $id('resetCancel').addEventListener('click', function () { closeModals(); openLogin(); });
+      resetModal.addEventListener('click', function (e) { if (e.target === resetModal) closeModals(); });
+    }
     modal.addEventListener('click', function (e) { if (e.target === modal) closeModals(); });
   }
   function setAuthMode(mode) {
@@ -7943,16 +9512,31 @@ EMC.Care = (function () {
     $id('authTabLogin').classList.toggle('on', mode === 'login');
     $id('authTabReg').classList.toggle('on', mode === 'reg');
     $id('authNameRow').style.display = (mode === 'reg') ? 'block' : 'none';
+    $id('authPhoneRow').style.display = (mode === 'reg') ? 'block' : 'none';
+    $id('authEmailRow').style.display = (mode === 'reg') ? 'block' : 'none';
     $id('authAgeRow').style.display = (mode === 'reg') ? 'block' : 'none';
     $id('authPwd2Row').style.display = (mode === 'reg') ? 'block' : 'none';
+    $id('authForgotRow').style.display = (mode === 'login') ? 'block' : 'none';
     $id('authSubmit').textContent = (mode === 'reg') ? '注册并进入' : '登录';
     $id('authTitle').textContent = (mode === 'reg') ? '注册云端账号' : '登录云端账号';
     authMsg('');
   }
-  function openLogin() { setAuthMode('login'); clearAuthForm(); $id('authModal').style.display = 'flex'; }
+  /* v22 P1-16：打开任一既有弹窗时登记一层，返回键即可先关弹窗而不是离开应用。
+     closeModals() 内已含这3 个 id 的清理，故 closeTopLayer() 直接复用它。*/
+  function markModalLayer() { BackGuard.pushLayer('modal'); }
+
+  function openLogin() { setAuthMode('login'); clearAuthForm(); $id('authModal').style.display = 'flex'; markModalLayer(); }
   function clearAuthForm() {
-    ['authUser', 'authPwd', 'authName', 'authAge', 'authPwd2'].forEach(function (id) { if ($id(id)) $id(id).value = ''; });
+    ['authUser', 'authPwd', 'authName', 'authAge', 'authPwd2', 'authPhone', 'authEmail'].forEach(function (id) { if ($id(id)) $id(id).value = ''; });
     authMsg('');
+  }
+  function openReset() {
+    $id('authModal').style.display = 'none';
+    ['resetUser', 'resetPhone', 'resetPwd', 'resetPwd2'].forEach(function (id) { if ($id(id)) $id(id).value = ''; });
+    var m = $id('resetMsg'); if (m) m.textContent = '';
+    $id('resetModal').style.display = 'flex';
+    /* 找回密码是从登录弹窗切过来的，仍属同一层「弹窗」，不重复登记 */
+    if (!BackGuard.hasLayer('modal')) markModalLayer();
   }
   function authMsg(t) { var e = $id('authMsg'); if (e) e.textContent = t || ''; }
   async function submitAuth() {
@@ -7962,9 +9546,12 @@ EMC.Care = (function () {
     var r;
     if (authMode === 'reg') {
       var name = val('authName'), age = val('authAge');
+      var phone = val('authPhone'), email = val('authEmail');
       if (!name) { authMsg('请填写昵称'); return; }
+      if (!/^1[3-9]\d{9}$/.test(phone)) { authMsg('请填写有效的手机号'); return; }
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { authMsg('邮箱格式不正确'); return; }
       if (pwd !== val('authPwd2')) { authMsg('两次输入的密码不一致'); return; }
-      r = await EMCAuth.register(user, pwd, name, age);
+      r = await EMCAuth.register({ username: user, password: pwd, name: name, age: age, phone: phone, email: email });
     } else {
       r = await EMCAuth.login(user, pwd);
     }
@@ -7974,10 +9561,26 @@ EMC.Care = (function () {
       authMsg(r.error || '操作失败，请重试');
     }
   }
+  function resetMsg(t) { var e = $id('resetMsg'); if (e) e.textContent = t || ''; }
+  async function submitReset() {
+    var u = val('resetUser'), p = val('resetPhone'), pwd = val('resetPwd'), pwd2 = val('resetPwd2');
+    if (!u || !p) { resetMsg('请填写账号和手机号'); return; }
+    if (!/^1[3-9]\d{9}$/.test(p)) { resetMsg('请填写有效的手机号'); return; }
+    if (!pwd || pwd.length < 6) { resetMsg('新密码至少 6 位'); return; }
+    if (pwd !== pwd2) { resetMsg('两次输入的新密码不一致'); return; }
+    var r = await EMCAuth.api('/api/reset-password', { method: 'POST', body: { username: u, phone: p, newPassword: pwd } });
+    if (r.ok) {
+      resetMsg('密码已重置，请用新密码登录');
+      setTimeout(function () { closeModals(); openLogin(); }, 1200);
+    } else {
+      resetMsg(r.error || '重置失败，请重试');
+    }
+  }
 
   function openUserCenter() {
     renderUserCenter();
     $id('ucModal').style.display = 'flex';
+    markModalLayer();       // v22 P1-16：返回键先关用户中心
   }
   function renderUserCenter() {
     var body = $id('ucBody');
@@ -8000,6 +9603,9 @@ EMC.Care = (function () {
         '<div class="theme-row" id="ucTheme">' +
         themeOpt('light', '☀️ 明亮') + themeOpt('dark', '🌙 夜间') + themeOpt('contrast', '🔆 高对比') +
         '</div></div>' +
+      '<div class="form-row"><label class="switch-row">极简模式（只保留吃药、量血压、求助，字更大）' +
+        '<input type="checkbox" id="ucSimple" ' + (S.settings.simpleMode === true ? 'checked' : '') + '></label></div>' +
+      '<div class="notice-family" id="ucSimpleTip">开启后首页与助手页只显示三件要紧事，专业术语卡自动隐藏；随时可用顶栏的「退出极简」按钮退回完整界面。</div>' +
       '<div class="form-row"><label>修改密码（留空则不修改）</label>' +
         '<input id="ucPwd1" type="password" placeholder="新密码（至少 6 位）"></div>' +
       '<div class="form-row"><input id="ucPwd2" type="password" placeholder="再次输入新密码"></div>' +
@@ -8154,10 +9760,21 @@ EMC.Care = (function () {
         });
       });
 
+      /* v21 P2-5：极简模式开关（走 store.setSettings 白名单，游客态与登录态都持久化） */
+      var simpleBox = $id('ucSimple');
+      if (simpleBox) {
+        simpleBox.addEventListener('change', function () {
+          setSimpleMode(simpleBox.checked);
+        });
+      }
+
       $id('ucLogout').addEventListener('click', function () { EMCAuth.logout(); });
     }
   function closeModals() {
-    ['authModal', 'ucModal'].forEach(function (id) { var e = $id(id); if (e) e.style.display = 'none'; });
+    ['authModal', 'ucModal', 'resetModal'].forEach(function (id) { var e = $id(id); if (e) e.style.display = 'none'; });
+    /* v22 P1-16：既有弹窗全部关闭后，回收返回键哨兵，
+       否则用户下一次按返回会被哨兵拦住，误以为「返回键坏了」。*/
+    BackGuard.popLayer('modal');
   }
 
   /* ---------- 轻提示 ---------- */
@@ -8166,8 +9783,11 @@ EMC.Care = (function () {
     t.className = 'toast'; t.textContent = msg;
     document.body.appendChild(t);
     setTimeout(function () { t.classList.add('show'); }, 10);
-    setTimeout(function () { t.classList.remove('show'); }, 2600);
-    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 3000);
+    setTimeout(function () { t.classList.remove('show'); }, 3600);   // v19 P1-14：停留 ≥3.5s
+    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 4200);
+    /* v19 P1-6 / P1-13：Toast 同时走 aria-live 与语音播报，形成双通道 */
+    announce(msg);
+    try { if (S.settings.voice) V.speak(msg); } catch (e) {}
   }
 
   /* ==========================================================
@@ -8201,13 +9821,19 @@ EMC.Care = (function () {
     box.innerHTML = CHAT_HISTORY.slice(-30).map(function (m) {
       var t = new Date(m.ts || Date.now());
       var hh = ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2);
-      var txt = String(m.text || '').replace(/\n/g, ' ');
+      var full = String(m.text || '');
+      var txt = full.replace(/\n/g, ' ');
       if (txt.length > 40) txt = txt.slice(0, 40) + '…';
-      return '<div class="ch-row ' + (m.role === 'user' ? 'u' : 'a') + '">' +
+      /* v22 P1-14：data-full-text 存完整原文（列表里只显示 40 字摘要），
+         朗读时读全文；esc 同时转义引号，避免属性值被截断。 */
+      return '<div class="ch-row ' + (m.role === 'user' ? 'u' : 'a') + '"' +
+        (m.role === 'user' ? '' : ' data-full-text="' + esc(full).replace(/"/g, '&quot;') + '"') + '>' +
         '<span class="ch-time">' + hh + '</span>' +
         '<span class="ch-role">' + (m.role === 'user' ? '我' : '助手') + '</span>' +
         '<span class="ch-text">' + esc(txt) + '</span></div>';
     }).join('');
+    /* v22 P1-14：为助手回答行挂上朗读按钮 */
+    bindHistorySpeak();
   }
 
   /* ---------- v8 T02 症状自查入口卡 ---------- */
@@ -8928,7 +10554,7 @@ EMC.Care = (function () {
     if (!p) return;
     var next = (show === undefined) ? (p.style.display === 'none') : !!show;
     p.style.display = next ? 'block' : 'none';
-    if (next) { var t = $id('importText'); if (t) t.focus(); }
+    if (next) { safeFocus($id('importText')); }
   }
 
   /**
@@ -9161,6 +10787,471 @@ EMC.Care = (function () {
   }
 
   /* ==========================================================
+   * v22 P1-12 / P1-14 / P1-16
+   * 三块新增能力集中在这里，彼此独立、互不覆盖既有实现：
+   *   ① MorePanel  —— 低频入口聚合面板（点「更多」展开）
+   *   ② ParaSpeak  —— 回答逐段「🔊 朗读」按钮
+   *   ③ BackGuard  —— popstate 返回键兜底（先关层，而非离开应用）
+   * ========================================================== */
+
+  /* ---------- ① 低频入口聚合面板 ---------- */
+
+  /**
+   * 低频入口清单。kind决定点击行为：
+   *   'tab'   → 走既有 switchTab（板块类，id 仍是原 tab id）
+   *   'uc'    → 打开用户中心（未登录时先走既有 openLogin）
+   *   'fs'    → 切换字号（复用顶栏 #btnFs 的同一条路径）
+   *   'theme' → 切换显示模式（复用顶栏 #btnTheme 的同一条路径）
+   *   'help'  → 打开帮助与说明弹窗
+   *   'board' → 社区治理看板（外链dashboard.html）
+   */
+  /* 说明：图标沿用项目已在用的 emoji 字形（🛡️📊🌗❓📈👴…），
+     避开部分安卓机emoji 字体缺失时会显示为方框的生僻字形（如 👤🔤）。*/
+  var MORE_ITEMS = [
+    { id: 'mi-risk',  kind: 'tab',   tab: 'risk',  ic: '🛡️', nm: '风险筛查', ds: '相互作用与多重用药检查' },
+    { id: 'mi-data',  kind: 'tab',   tab: 'data',  ic: '📊', nm: '我的数据', ds: '依从率、图表与数据导出' },
+    { id: 'mi-uc',    kind: 'uc',    ic: '👴', nm: '用户中心', ds: '账号、字号与朗读设置' },
+    { id: 'mi-fs',    kind: 'fs',    ic: '📝', nm: '切换字号', ds: '小 / 中 / 大 / 特大 四档' },
+    { id: 'mi-theme', kind: 'theme', ic: '🌗', nm: '切换显示模式', ds: '明亮 / 夜间 / 高对比' },
+    { id: 'mi-help',  kind: 'help',  ic: '❓', nm: '帮助与说明', ds: '怎么用、遇到问题怎么办' },
+    { id: 'mi-board', kind: 'board', ic: '📈', nm: '社区治理看板', ds: '社区工作人员查看的数据页' }
+  ];
+
+  /** 渲染「更多」面板的入口列表（每次打开时重建，保证与当前登录态一致） */
+  function renderMoreList() {
+    var box = $id('moreList');
+    if (!box) return;
+    box.innerHTML = MORE_ITEMS.map(function (it) {
+      /* 治理看板仅对桌面 / 有外链环境有意义，用 <a> 承载原生语义 */
+      var tag = (it.kind === 'board') ? 'a' : 'button';
+      var href = (it.kind === 'board') ? ' href="dashboard.html"' : '';
+      return '<' + tag + ' class="more-item" id="' + it.id + '" data-kind="' + it.kind + '"' +
+        (it.tab ? ' data-tab2="' + it.tab + '"' : '') + href + '>' +
+        '<span class="mi-ic" aria-hidden="true">' + it.ic + '</span>' +
+        '<span class="mi-tx">' + esc(it.nm) +
+        '<span class="mi-sub">' + esc(it.ds) + '</span></span></' + tag + '>';
+    }).join('');
+    box.querySelectorAll('[data-kind]').forEach(function (el) {
+      el.addEventListener('click', function (e) { onMoreItemClick(el.getAttribute('data-kind'), el.getAttribute('data-tab2'), e); });
+    });
+  }
+
+  /** 「更多」面板单个入口的点击分发：全部复用既有函数，不另写路由 */
+  function onMoreItemClick(kind, tab, ev) {
+    /* 看板是外链，交给浏览器原生跳转（也要先关面板） */
+    if (kind === 'board') { closeMore(); return; }
+    if (ev) ev.preventDefault();
+    switch (kind) {
+      case 'tab':
+        /*关键：仍调用同一个 switchTab，页面渲染与高亮逻辑完全不变 */
+        closeMore();
+        switchTab(tab);
+        break;
+      case 'uc':
+        closeMore();
+        if (EMCAuth.isLoggedIn()) openUserCenter(); else openLogin();
+        break;
+      case 'fs':
+        /* 复用顶栏字号按钮：直接触发它，避免复制 4 档循环逻辑 */
+        closeMore();
+        safeClick($id('btnFs'));
+        break;
+      case 'theme':
+        closeMore();
+        safeClick($id('btnTheme'));
+        break;
+      case 'help':
+        closeMore();
+        openHelp();
+        break;
+      default:
+        closeMore();
+    }
+  }
+
+  /** 安全点击：元素不存在时静默跳过（面板入口在旧页面结构下也不应抛错） */
+  function safeClick(el) { if (el && typeof el.click === 'function') { try { el.click(); } catch (e) {} } }
+
+  /** 打开「更多」面板 */
+  function openMore() {
+    var p = $id('morePanel');
+    if (!p) return;
+    renderMoreList();
+    p.style.display = 'flex';
+    var b = $id('btnMore');
+    if (b) b.setAttribute('aria-expanded', 'true');
+    announce('已打开更多功能');
+    BackGuard.pushLayer('more');   // 让安卓返回键先关面板，而不是离开应用
+  }
+
+  /** 关闭「更多」面板 */
+  function closeMore() {
+    var p = $id('morePanel');
+    if (!p || p.style.display === 'none') return;
+    p.style.display = 'none';
+    var b = $id('btnMore');
+    if (b) b.setAttribute('aria-expanded', 'false');
+    BackGuard.popLayer('more');
+  }
+
+  /** 「更多」面板是否处于打开态 */
+  function isMoreOpen() {
+    var p = $id('morePanel');
+    return !!(p && p.style.display !== 'none');
+  }
+
+  /** 帮助与说明正文（老人向：一段一句、短行、大字） */
+  var HELP_HTML = '' +
+    '<h4>这个软件能做什么</h4>' +
+    '<ul>' +
+    '<li>提醒您按时吃药，打完卡记一笔。</li>' +
+    '<li>记血压、血糖，自动画出变化曲线。</li>' +
+    '<li>用药有疑问，直接问它，会念给您听。</li>' +
+    '<li>需要时一键通知家人。</li>' +
+    '</ul>' +
+    '<h4>遇到问题怎么办</h4>' +
+    '<ul>' +
+    '<li>字太小：点顶栏的「A」换大一号。</li>' +
+    '<li>看不清：点顶栏的「🌗」换成夜间或高对比。</li>' +
+    '<li>听不清：点顶栏的「🔊」重新打开语音播报。</li>' +
+    '<li>页面找不到功能：点屏幕左下方的「⋯ 更多」，低频功能都在里面。</li>' +
+    '<li>电脑版：在左侧导航最下面点「⋯ 更多」。</li>' +
+    '<li>手机上的返回键：会先关掉当前打开的窗口，不会直接退出。</li>' +
+    '</ul>' +
+    '<h4>数据存在哪里</h4>' +
+    '<div>登录后数据保存在云端，换台设备用同一个账号登录就能看到；' +
+    '不登录则只存在这台手机上。</div>';
+
+  /** 打开帮助与说明弹窗 */
+  function openHelp() {
+    var body = $id('helpBody');
+    if (body && !body.innerHTML) body.innerHTML = HELP_HTML;
+    var m = $id('helpModal');
+    if (!m) return;
+    m.style.display = 'flex';
+    announce('已打开帮助与说明');
+    BackGuard.pushLayer('help');
+  }
+
+  /** 关闭帮助与说明弹窗 */
+  function closeHelp() {
+    var m = $id('helpModal');
+    if (!m || m.style.display === 'none') return;
+    m.style.display = 'none';
+    BackGuard.popLayer('help');
+  }
+
+  /** 绑定「更多」面板与帮助弹窗的全部交互（含遮罩点击 / ESC 关闭） */
+  function bindMorePanel() {
+    var more = $id('btnMore');
+    if (more) more.addEventListener('click', function () { isMoreOpen() ? closeMore() : openMore(); });
+    var moreSide = $id('btnMoreSide');
+    if (moreSide) moreSide.addEventListener('click', function () { isMoreOpen() ? closeMore() : openMore(); });
+
+    var cancel = $id('moreCancel');
+    if (cancel) cancel.addEventListener('click', closeMore);
+
+    var mp = $id('morePanel');
+    if (mp) mp.addEventListener('click', function (e) { if (e.target === mp) closeMore(); });
+
+    var helpClose = $id('helpClose');
+    if (helpClose) helpClose.addEventListener('click', closeHelp);
+    var hm = $id('helpModal');
+    if (hm) hm.addEventListener('click', function (e) { if (e.target === hm) closeHelp(); });
+
+    /* ESC 关闭：与既有弹窗的键盘可达性保持一致。
+       【为什么用捕获阶段】强提醒浮层的 ESC 处理器是
+       addEventListener('keydown', …, true) + stopPropagation()，
+       若本处理器挂在冒泡阶段，ESC 会被它吞掉、导致本面板关不掉。
+       本处理器在 init() 阶段注册（早于任何一次提醒浮层），
+       因此同一阶段内先执行，能优先关掉「更多 / 帮助」。*/
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' && e.key !== 'Esc' && e.keyCode !== 27) return;
+      if (isMoreOpen()) { closeMore(); e.stopPropagation(); return; }
+      var hm = $id('helpModal');
+      if (hm && hm.style.display !== 'none') { closeHelp(); e.stopPropagation(); }
+    }, true);
+  }
+
+  /* ---------- ② 回答逐段「🔊 朗读」 ---------- */
+
+  /** 当前正在朗读的段落按钮（用于「再点一次停止」的切换语义） */
+  var activeParaBtn = null;
+
+  /**
+   * 为一条 AI 回答的每个自然段追加独立朗读按钮。
+   * @param {HTMLElement} bub 气泡容器
+   * @param {string} text 回答正文
+   */
+  function appendParaSpeak(bub, text) {
+    if (!bub || !text) return;
+    /*复用既有净化链路：humanizeForTts（符号可读化）+ splitSegments（分句分段）。
+       二者都在 EMC.Voice 内部实现，这里不另写一套文本处理。*/
+    var segs = V.splitSegments(V.humanizeForTts(text));
+    /* splitSegments 会把长句再切 180 字；逐段朗读粒度过细反而难用，
+       这里按原文换行合并回「自然段」，超过 6段时只给前 6 段加按钮（其余仍可整条重读）。*/
+    var paras = String(text).split(/\n+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    if (paras.length > 6) paras = paras.slice(0, 6);
+    if (!paras.length) return;
+
+    var box = document.createElement('div');
+    box.className = 'speak-paras';
+    paras.forEach(function (p, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'speak-para' + (paras.length === 1 ? ' single' : '');
+      b.setAttribute('data-speak-idx', String(i));
+      b.setAttribute('aria-label', '朗读第' + (i + 1) + '段');
+      b.innerHTML = '<span class="sp-idx">' + (paras.length === 1 ? '' : (i + 1) + '·') + '</span>🔊 朗读这一段';
+      b.addEventListener('click', function () { toggleParaSpeak(b, p, segs); });
+      box.appendChild(b);
+    });
+    bub.appendChild(box);
+  }
+
+  /**
+   * 单段朗读的开关（切换语义）：正在读这一段 → 停止；否则 → 只读这一段。
+   * @param {HTMLElement} btn 被点击的按钮
+   * @param {string} text 该段原文
+   * @param {Array<string>} segs 该段对应的清洗后分段（用于校验确有内容）
+   */
+  function toggleParaSpeak(btn, text, segs) {
+    if (!btn || !text) return;
+    /* 再点同一个按钮 = 停止 */
+    if (activeParaBtn === btn) {
+      activeParaBtn = null;
+      btn.classList.remove('on');
+      V.stop();
+      announce('已停止朗读');
+      return;
+    }
+    /* 切换到另一段：先把上一段的按钮复位，并打断全局播报 */
+    if (activeParaBtn) { activeParaBtn.classList.remove('on'); activeParaBtn = null; }
+    if (!segs || !segs.length) return;
+    V.interrupt();          // 停掉全局自动朗读，避免两路声音叠在一起
+    activeParaBtn = btn;
+    btn.classList.add('on');
+    /* 只播这一段：文本已在上游走过 humanizeForTts，这里再过一次入口净化，
+       复用 V.speak 内部的 normalize / 分段与云端回退逻辑。*/
+    V.speak(text);
+    announce('正在朗读这一段，再点一次可停止');
+  }
+
+  /** 停止逐段朗读并复位所有朗读按钮（供全局播报结束时调用，避免按钮卡在「朗读中」） */
+  function resetParaSpeak() {
+    if (activeParaBtn) { activeParaBtn.classList.remove('on'); activeParaBtn = null; }
+    /* 历史列表里的小按钮同样复位（它们不经过 activeParaBtn） */
+    document.querySelectorAll('#chatHistory .ch-speak.on').forEach(function (x) { x.classList.remove('on'); });
+  }
+
+  /** 在对话历史列表里为每条助手回答加一个朗读按钮 */
+  function bindHistorySpeak() {
+    var box = $id('chatHistory');
+    if (!box) return;
+    box.querySelectorAll('.ch-row.a').forEach(function (row) {
+      if (row.querySelector('.ch-speak')) return;   // 幂等：已渲染过就跳过
+      var txt = row.getAttribute('data-full-text') || '';
+      if (!txt) return;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ch-speak';
+      b.setAttribute('aria-label', '朗读这条回答');
+      b.textContent = '🔊';
+      b.addEventListener('click', function () {
+        if (b.classList.contains('on')) { b.classList.remove('on'); V.stop(); return; }
+        box.querySelectorAll('.ch-speak.on').forEach(function (x) { x.classList.remove('on'); });
+        b.classList.add('on');
+        V.interrupt();
+        V.speak(txt);
+      });
+      row.appendChild(b);
+    });
+  }
+
+  /* ---------- ③ popstate 返回键兜底 ---------- */
+
+  /**
+   * 返回键兜底。
+   * 【为什么需要 pushState 哨兵】直接监听 popstate 时，安卓返回键会
+   * 「先离开应用、再也没机会拦截」。标准做法是在进入应用时压入一条
+   * 哨兵历史项，使第一次返回变成应用内事件而不是导航。
+   * 【如何不污染历史】openLayer 时压入一条 {emcLayer} 记录；
+   * popstate 消费掉它后，若还有上层未关则再压一条新的；
+   * 一旦所有层都关掉，**不再压入**，用户的下一次返回就能真正退出应用。
+   */
+  var BackGuard = (function () {
+    var MARK = 'emcLayer';       // history.state 上的标记字段
+    var sentinel = false;        // 当前是否有一条哨兵记录留在历史栈里
+    var layers = [];             // 当前打开的浮层栈（'more' / 'help'）
+    var navigating = false;      // 正在处理 popstate，防止重入
+    var pendingBack = false;     // 哨兵正在被 history.back() 退掉，此刻的 push 必须延后
+    var deferred = null;         // 延后的 pushLayer 参数，等popstate 落地后再补
+
+    /**
+     * 打开一层浮层：确保历史栈里有哨兵，并让本层名字写进 history.state。
+     * 【只留一条哨兵】每开一层压一条的话，来回开关几次历史就被塞满，
+     *   老人要按十几次返回才能退出。改为「有层就压、层清空就退掉」。
+     */
+    /**
+     * 只负责「历史哨兵」这一件事：确保历史栈里有一条属于 name 的记录。
+     * 【为什么要和层栈分开】哨兵是**历史**概念，层栈是**UI** 概念。
+     * 之前把两者写在 pushLayer 里，导致哨兵延后补压时把层名又压了一遍层栈，
+     * 凭空多出一层「幽灵层」，返回键要多按一次才关得掉。
+     * @param {string} name 当前栈顶层名
+     */
+    function armSentinel(name) {
+      if (pendingBack) {
+        /*哨兵正在被退掉，此刻 pushState 会让 back() 落到错误的一格。
+          先记下来，等 popstate 落地后再补。*/
+        deferred = deferred || [];
+        deferred.push(name);
+        return;
+      }
+      if (sentinel) {
+        /* 已有哨兵：只把当前项的标记换成最新层名，历史长度不变 */
+        try { history.replaceState({ [MARK]: name }, '', location.href); } catch (e) {}
+        return;
+      }
+      try {
+        history.pushState({ [MARK]: name }, '', location.href);
+        sentinel = true;
+      } catch (e) { sentinel = false; }
+    }
+
+    /**
+     * 打开一层浮层：登记层名，并确保历史栈里有哨兵。
+     * 【层栈去重】同一层名重复 push 说明是「面板内切页」（先关面板再开新页）
+     * 这类重入，而不是新开了一层。此时只刷新哨兵标记，不重复入栈，
+     * 保证「层栈深度」永远等于「实际打开的浮层数」。
+     * @param {string} name 层名
+     */
+    function pushLayer(name) {
+      if (!name) return;
+      if (layers.indexOf(name) < 0) layers.push(name);
+      armSentinel(name);
+    }
+
+    /**
+     * 关闭一层浮层。层清空后把哨兵退掉（history.back），
+     * 这样下一次返回就是真正的「离开应用」，不会被哨兵卡住。
+     * @param {string} name 要关闭的层名
+     */
+    function popLayer(name) {
+      var i = layers.lastIndexOf(name);
+      if (i >= 0) layers.splice(i, 1);
+      if (navigating) return;          // 正在处理 popstate：哨兵已由本次返回消费
+      if (!sentinel || layers.length) return;
+      try {
+        sentinel = false;
+        pendingBack = true;      // 下面这次 back() 产生的 popstate 不做拦截
+        history.back();
+      } catch (e) { sentinel = false; pendingBack = false; }
+    }
+
+    /** 是否有任何浮层处于打开态（含既有 authModal / ucModal / resetModal） */
+    function anyLayerOpen() {
+      if (isMoreOpen()) return true;
+      if (layers.length) return true;
+      var ids = ['authModal', 'ucModal', 'resetModal', 'helpModal'];
+      for (var i = 0; i < ids.length; i++) {
+        var el = $id(ids[i]);
+        if (el && el.style.display !== 'none') return true;
+      }
+      /*强提醒浮层（全屏遮罩）也算一层，否则返回键会被它「吃掉」*/
+      return !!(document.querySelector('.reminder-full'));
+    }
+
+    /** 关闭最上面的一层；返回 true 表示确实关掉了东西 */
+    function closeTopLayer() {
+      if (isMoreOpen()) { closeMore(); return true; }
+      var hm = $id('helpModal');
+      if (hm && hm.style.display !== 'none') { closeHelp(); return true; }
+      /* 既有弹窗：复用 closeModals()，它本身已含resetModal 清理 */
+      var ids = ['authModal', 'ucModal', 'resetModal'];
+      for (var i = 0; i < ids.length; i++) {
+        var el = $id(ids[i]);
+        if (el && el.style.display !== 'none') { closeModals(); return true; }
+      }
+      /* 强提醒浮层：走既有 activeReminderDismiss（与「稍后提醒」同一出口） */
+      if (typeof activeReminderDismiss === 'function' && document.querySelector('.reminder-full')) {
+        activeReminderDismiss();
+        return true;
+      }
+      return false;
+    }
+
+    /** popstate 主处理：先关层，关不掉才允许离开应用 */
+    function onPopState(e) {
+      if (navigating) return;
+      var st = (e && e.state) || null;
+      /* 一、哨兵正在被我们自己退掉：这次返回不算数（不是用户在按返回），
+            并把期间积压的 pushLayer 补上——此时栈顶已回到干净的一格。*/
+      if (pendingBack) {
+        pendingBack = false;
+        sentinel = false;
+        var queued = deferred || [];
+        deferred = null;
+        /* 只补哨兵，不碰层栈：层名在 pushLayer() 时就已登记过了。
+           若此处再调 pushLayer()，同一层名会被压入两次 → 幽灵层。*/
+        queued.forEach(function (n) { armSentinel(n); });
+        return;
+      }
+      navigating = true;
+      try {
+        /* 当前项是我们压入的哨兵：它已被本次返回「消费」掉 */
+        if (!st || !st[MARK]) {
+          /* 不是我们的哨兵（例如用户从站内其它页按返回回来），不做拦截 */
+          sentinel = false;
+          return;
+        }
+        sentinel = false;
+        /* 同步浮层栈 */
+        var top = st[MARK];
+        var i = layers.lastIndexOf(top);
+        if (i >= 0) layers.splice(i, 1);
+
+        if (closeTopLayer()) {
+          /* 还有上层没关完 → 补一条哨兵，继续把返回键留在应用内；
+             层全部关完则不再补，让下一次返回真正离开应用（不污染历史）。*/
+          if (anyLayerOpen()) {
+            try { history.pushState({ [MARK]: 'guard' }, '', location.href); sentinel = true; } catch (err) {}
+          }
+          return;
+        }
+        /* 所有层都关完了：不再压哨兵，让这一次返回真正离开应用 */
+        sentinel = false;
+      } finally {
+        navigating = false;
+      }
+    }
+
+    /** 应用启动时压入第一条哨兵（让首次返回成为应用内事件） */
+    function init() {
+      try {
+        history.replaceState({ [MARK]: 'root' }, '', location.href);
+        history.pushState({ [MARK]: 'root' }, '', location.href);
+        sentinel = true;
+      } catch (e) { sentinel = false; }
+      window.addEventListener('popstate', onPopState);
+      /* bfcache 恢复（安卓/iOS 从后台回前台）时补压一条，防止哨兵被浏览器吃掉 */
+      window.addEventListener('pageshow', function (e) {
+        if (!e.persisted) return;
+        var st = history.state;
+        if (!st || !st[MARK]) {
+          try { history.pushState({ [MARK]: 'root' }, '', location.href); sentinel = true; } catch (err) {}
+        }
+      });
+    }
+
+    return {
+      init: init, pushLayer: pushLayer, popLayer: popLayer,
+      hasLayer: function (n) { return layers.indexOf(n) >= 0; },
+      isGuarded: function () { return sentinel; },
+      depth: function () { return layers.length; }
+    };
+  })();
+
+  /* ==========================================================
    * v13 自动化测试钩子
    * 说明：这些入口走的都是**与用户点击完全相同**的代码路径，
    * 不含任何绕过校验/绕过确认的后门，仅用于把「摄像头 / 麦克风」
@@ -9222,6 +11313,39 @@ EMC.Care = (function () {
   EMC.hasReminder = function () {
     return !!(document.querySelector('.reminder-full'));
   };
+  /* v21 P2-5：对外暴露「打开用户中心」，供老人端快捷入口与 QA 脚本复用，
+   * 避免各处直接操作 #ucModal 的 style.display（脆弱）。 */
+  EMC.openUserCenter = function () { openUserCenter(); };
+  /* v21 P2-5：对外暴露极简模式读写，供 QA 与自动化断言使用。 */
+  EMC.simpleMode = {
+    is: isSimpleMode,
+    on: function () { return setSimpleMode(true); },
+    off: function () { return setSimpleMode(false); },
+    toggle: function () { return setSimpleMode(); }
+  };
+
+  /* ---------- v22 P1-12 / P1-14 / P1-16：对外暴露新增能力 ----------
+   * 全部走与用户点击完全相同的代码路径，便于 QA 端到端断言，
+   * 也方便治理端 / 家属端将来复用这些入口。 */
+  EMC.more = {
+    /** 低频入口清单（面板顺序即此顺序） */
+    items: function () { return MORE_ITEMS.map(function (x) { return { id: x.id, kind: x.kind, tab: x.tab || '', nm: x.nm }; }); },
+    open: function () { openMore(); },
+    close: function () { closeMore(); },
+    toggle: function () { return isMoreOpen() ? (closeMore(), false) : (openMore(), true); },
+    isOpen: isMoreOpen
+  };
+  EMC.help = { open: openHelp, close: closeHelp };
+  /* v22 P1-14：逐段朗读。speakPara 读指定段（1 起），stopPara 停止 */
+  EMC.paraSpeak = {
+    count: function (bub) { return ((bub || $id('chatScroll')) || document).querySelectorAll('.speak-para').length; },
+    stop: function () { resetParaSpeak(); V.stop(); }
+  };
+  /* v22 P1-16：返回键兜底状态（isGuarded 表示当前有哨兵在栈顶） */
+  EMC.backGuard = {
+    isGuarded: function () { return BackGuard.isGuarded(); },
+    depth: function () { return BackGuard.depth(); }
+  };
 
   document.addEventListener('DOMContentLoaded', function () { init().catch(function (err) { console.error('初始化失败：', err); }); });
 })();
@@ -9236,6 +11360,23 @@ EMC.Care = (function () {
     b.addEventListener('change', function () { b.parentNode.classList.toggle('on', b.checked); });
   });
   document.getElementById('ruleCount').textContent = '规则库 ' + EMC.RULES.length + ' 条';
+</script>
+<script>
+  /* ==========================================================
+   * v21 P2-1：首屏「资源就绪」轻量标记
+   * 【为什么做】本项目是单文件内联架构（无构建、无外部资源），
+   *   PRD 原计划的动态 import() 分包在此架构下风险大于收益（file:// 与旧浏览器易失败），
+   *   故按"安全收益项"落地：为首屏渲染测量提供一个稳定的完成信号，
+   *   后续做 LCP/首屏耗时测量时直接读 html.ready 即可，无需改动任何加载行为。
+   * 【零风险】纯被动标记：不改变任何现有脚本顺序、不新增请求、不阻塞渲染。
+   * ========================================================== */
+  (function () {
+    var d = document.documentElement;
+    d.classList.add('ready');
+    /* 同时给出精确时刻，供 performance.mark 之外的场景兜底取用 */
+    d.setAttribute('data-ready-at', String(Date.now()));
+    try { window.EMC && (EMC.readyAt = Date.now()); } catch (e) {}
+  })();
 </script>
 </body>
 </html>
