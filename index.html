@@ -10,28 +10,43 @@
   var _fetch = window.fetch ? window.fetch.bind(window) : null;
   if (!_fetch) return;
 
+  // 超时保护：后端无响应时尽快失败，让页面自身的兵底逻辑接管（否则手机端会“卡死”）
+  function withTimeout(p, ms) {
+    return Promise.race([p, new Promise(function (_, rej) {
+      setTimeout(function () { rej(Object.assign(new Error('timeout'), { name: 'TimeoutError' })); }, ms);
+    })]);
+  }
+  function timeoutFor(rel) {
+    if (rel.indexOf('/api/asr/') === 0) return 0;          // 语音识别另有时长控制
+    if (rel.indexOf('/api/ai/chat') === 0) return 25000;   // 大模型生成可能较慢
+    if (rel.indexOf('/api/') === 0) return 6000;           // 其它业务接口
+    return 0;
+  }
+
+  // 语音识别：先试本机本地服务（短超时），失败改用云端（所有人可用）
   function fetchAsr(path, init) {
     var local = _fetch(ASR_LOCAL + path, init);
-    var timer = new Promise(function (_, rej) { setTimeout(function () { rej(new Error('local-timeout')); }, 1500); });
+    var timer = new Promise(function (_, rej) { setTimeout(function () { rej(new Error('local-timeout')); }, 1200); });
     return Promise.race([local, timer]).catch(function () { return _fetch(ASR_CLOUD + path, init); });
   }
 
   window.fetch = function (input, init) {
-    var url = '';
+    var url = '', rel = '';
     try {
       if (typeof input === 'string') url = input;
       else if (input && input.url) url = String(input.url);
-      if (url.indexOf('/api/asr/') === 0) return fetchAsr(url, init);
-      if (url.indexOf('/api/') === 0) {
-        var abs = API_BASE + url;
+      rel = url;
+      if (rel.indexOf('/api/asr/') === 0) return fetchAsr(rel, init);
+      if (rel.indexOf('/api/') === 0) {
+        var abs = API_BASE + rel;
         input = (typeof input === 'string') ? abs : new Request(abs, input);
         url = abs;
       }
     } catch (e) {}
     var p = _fetch(input, init);
     // 兼容旧后端：OpenAI 风格 {choices:[...]} -> {text:"..."}
-    if (url.indexOf('/api/ai/chat') >= 0) {
-      return p.then(function (res) {
+    if (rel.indexOf('/api/ai/chat') === 0) {
+      p = p.then(function (res) {
         if (!res || !res.ok) return res;
         return res.clone().json().then(function (j) {
           if (j && !j.text && j.choices && j.choices[0] && j.choices[0].message) {
@@ -41,7 +56,8 @@
         }).catch(function () { return res; });
       });
     }
-    return p;
+    var ms = timeoutFor(rel);
+    return ms > 0 ? withTimeout(p, ms) : p;
   };
 })();
 </script>
