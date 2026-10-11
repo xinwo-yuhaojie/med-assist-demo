@@ -111,13 +111,14 @@
       var ex = u.records.filter(function (r) { return r.date === body.date && r.mid === body.mid && r.slot === body.slot; })[0];
       var rec = { id: body.date + '_' + body.mid + '_' + body.slot, date: body.date, mid: body.mid, slot: body.slot, status: body.status || 'taken', time: new Date().toTimeString().slice(0, 5), byFamily: body.byFamily === true };
       if (ex) Object.assign(ex, rec); else u.records.push(rec);
+      if (u.records.length > 400) u.records = u.records.slice(-400);   // 防止写满浏览器存储
       var med = u.meds.filter(function (x) { return x.mid === body.mid; })[0] || null;
       if (med && body.status === 'taken' && typeof med.remaining === 'number' && med.remaining > 0) med.remaining -= 1;
       save(); return R({ ok: true, records: u.records, med: med });
     }
     if (path === '/api/health') {
       if (method === 'GET') return R({ ok: true, health: u.health });
-      if (method === 'POST') { body.id = body.id || ('h' + rid(6)); u.health.push(body); save(); return R({ ok: true, health: u.health }); }
+      if (method === 'POST') { body.id = body.id || ('h' + rid(6)); u.health.push(body); if (u.health.length > 500) u.health = u.health.slice(-500); save(); return R({ ok: true, health: u.health }); }
     }
     if (path.indexOf('/api/family') === 0) {
       var fid = decodeURIComponent(path.slice('/api/family/'.length));
@@ -157,6 +158,9 @@
     return 0;
   }
   function fetchAsr(path, init) {
+    // 只有在本机打开时才尝试本地识别；其他设备直接用云端（不再白等 1.2 秒 / 不再报混合内容）
+    var h = location.hostname;
+    if (h !== '127.0.0.1' && h !== 'localhost') return _fetch(ASR_CLOUD + path, init);
     var local = _fetch(ASR_LOCAL + path, init);
     var timer = new Promise(function (_, rej) { setTimeout(function () { rej(new Error('local-timeout')); }, 1200); });
     return Promise.race([local, timer]).catch(function () { return _fetch(ASR_CLOUD + path, init); });
@@ -196,6 +200,97 @@
     var ms = timeoutFor(rel);
     return ms > 0 ? withTimeout(p, ms) : p;
   };
+
+  /* ============ DOM 就绪后的增强：语音解锁 / 数据备份 / 离线缓存 ============ */
+  function download(name, text) {
+    try {
+      var blob = new Blob([text], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    } catch (e) { alert('导出失败：' + e.message); }
+  }
+  function doExport() {
+    download('kangban-backup-' + new Date().toISOString().slice(0, 10) + '.json',
+      JSON.stringify({ v: 1, at: new Date().toISOString(), users: lsGet(UK, {}), sess: lsGet(SK, {}) }, null, 2));
+  }
+  function doImport() {
+    var inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.json,application/json';
+    inp.onchange = function () {
+      var f = inp.files && inp.files[0]; if (!f) return;
+      var fr = new FileReader();
+      fr.onload = function () {
+        try {
+          var j = JSON.parse(fr.result);
+          if (!j || typeof j !== 'object' || !j.users) throw new Error('不是有效的备份文件');
+          if (!confirm('确定导入吗？会覆盖本机现有的账号数据。')) return;
+          lsSet(UK, j.users);
+          if (j.sess) lsSet(SK, j.sess);
+          alert('导入成功，页面将刷新');
+          location.reload();
+        } catch (e) { alert('导入失败：' + e.message); }
+      };
+      fr.readAsText(f);
+    };
+    inp.click();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    /* 1) 语音播报解锁：iOS/部分安卓要求先有用户手势，否则自动播报会被静默忽略 */
+    var unlocked = false;
+    function unlock() {
+      if (unlocked) return; unlocked = true;
+      try {
+        if (window.speechSynthesis) {
+          var u = new SpeechSynthesisUtterance(' ');
+          u.volume = 0; u.lang = 'zh-CN';
+          speechSynthesis.speak(u);
+          if (speechSynthesis.resume) speechSynthesis.resume();
+        }
+      } catch (e) {}
+      document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('touchend', unlock);
+      document.removeEventListener('click', unlock);
+    }
+    document.addEventListener('touchstart', unlock, { passive: true });
+    document.addEventListener('touchend', unlock, { passive: true });
+    document.addEventListener('click', unlock);
+
+    /* 2) 数据备份入口（放进登录/注册弹窗底部） */
+    try {
+      var m = document.getElementById('authModal');
+      if (m && !document.getElementById('kbBackupRow')) {
+        var row = document.createElement('div');
+        row.id = 'kbBackupRow';
+        row.setAttribute('style', 'margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px dashed rgba(148,163,184,.35);padding-top:10px');
+        row.innerHTML = '<button type="button" class="btn gray sm" id="kbExport">导出备份</button>' +
+          '<button type="button" class="btn gray sm" id="kbImport">导入备份</button>' +
+          '<span class="muted small">数据只存在本机，建议定期导出</span>';
+        m.appendChild(row);
+        document.getElementById('kbExport').addEventListener('click', doExport);
+        document.getElementById('kbImport').addEventListener('click', doImport);
+      }
+    } catch (e) {}
+
+    /* 3) 离线可用（PWA）：缓存页面，弱网/断网也能打开 */
+    try {
+      var lk = document.createElement('link');
+      lk.rel = 'manifest'; lk.href = './manifest.webmanifest';
+      document.head.appendChild(lk);
+      if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === '127.0.0.1' || location.hostname === 'localhost')) {
+        navigator.serviceWorker.register('./sw.js').catch(function () {});
+      }
+    } catch (e) {}
+
+    /* 4) 把“云端账号”字样改准确（数据其实在本机） */
+    try {
+      var ab = document.getElementById('accountBtn');
+      if (ab) { ab.title = '登录或注册账号'; ab.setAttribute('aria-label', '登录或注册账号'); }
+    } catch (e) {}
+  });
 })();
 </script>
 <meta charset="utf-8">
