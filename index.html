@@ -15,6 +15,19 @@
    * 数据按账号存在本机浏览器；退出再登回仍在（换设备/清缓存会丢） */
   var UK = 'kb_users_v1', SK = 'kb_sess_v1';
   var LOCAL_API = /^\/api\/(login|register|reset-password|me|meds|records|checkin|health|family|notify|summary)/;
+
+  // 云端账号开关：向函数探测 /api/store，返回 mode=oss（已开通 OSS）时账号改走云端
+  var _cloudP = null, _cloudOn = false;
+  function cloudReady() {
+    if (!_cloudP) {
+      var f = _fetch || window.fetch;
+      _cloudP = f(API_BASE + '/api/store', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : {}; })
+        .then(function (j) { _cloudOn = !!(j && j.mode === 'oss'); return _cloudOn; })
+        .catch(function () { _cloudOn = false; return false; });
+    }
+    return _cloudP;
+  }
   function lsGet(k, d) { try { return JSON.parse(localStorage.getItem(k) || 'null') || d; } catch (e) { return d; } }
   function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   function users() { return lsGet(UK, {}); }
@@ -177,8 +190,11 @@
       if (rel.indexOf('/api/') === 0 && LOCAL_API.test(rel)) {
         var method = (init && init.method) ? String(init.method).toUpperCase() : 'GET';
         var bodyText = (init && typeof init.body === 'string') ? init.body : '';
-        var local = localApi(rel, method, bodyText);
-        if (local) return local;
+        return cloudReady().then(function (on) {
+          if (on) return _fetch(API_BASE + rel, init);        // 已开通云端账号：走函数
+          var local = localApi(rel, method, bodyText);       // 否则：本机账号
+          return local || _fetch(API_BASE + rel, init);
+        });
       }
       if (rel.indexOf('/api/') === 0) {
         var abs = API_BASE + rel;
