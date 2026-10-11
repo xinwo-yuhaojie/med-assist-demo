@@ -34,8 +34,8 @@
   }
   function R(obj, st) { return new Response(JSON.stringify(obj), { status: st || 200, headers: { 'content-type': 'application/json; charset=utf-8' } }); }
   function lastDays(n) { var o = [], d; for (var i = 0; i < n; i++) { d = new Date(Date.now() - i * 86400000); o.push(d.toISOString().slice(0, 10)); } return o; }
-  function emptyUser(p) { return { pass: { salt: '', hash: '' }, profile: { name: (p && p.name) || '', age: (p && p.age) || '', phone: (p && p.phone) || '', email: (p && p.email) || '', notifyEnabled: true, conditions: [] }, settings: { fontSize: 'A', tts: true, theme: null, remindTimes: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false }, meds: [], records: [], health: [], family: [], notify: [] }; }
-  function pub(name, u) { return { id: name, username: name, name: u.profile.name || '', age: u.profile.age || '', phone: u.profile.phone || '', email: u.profile.email || '', notifyEnabled: u.profile.notifyEnabled !== false, conditions: u.profile.conditions || [], settings: u.settings || {}, family: u.family || [] }; }
+  function emptyUser(p) { return { pass: { salt: '', hash: '' }, profile: { name: (p && p.name) || '', age: (p && p.age) || '', phone: (p && p.phone) || '', email: (p && p.email) || '', notifyEnabled: true, conditions: [] }, settings: { fontSize: 'A', tts: true, theme: null, remindTimes: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false }, notifySet: { channels: { email: false, wechat: false, sms: false }, email: '', wechatWebhook: '', smsPhone: '', familyEmail: '', overdueMinutes: 60 }, meds: [], records: [], health: [], family: [], notify: [] }; }
+  function pub(name, u) { return { id: name, username: name, name: u.profile.name || '', age: u.profile.age || '', phone: u.profile.phone || '', email: u.profile.email || '', notifyEnabled: u.profile.notifyEnabled !== false, conditions: u.profile.conditions || [], settings: u.settings || {}, family: u.family || [], notifySet: u.notifySet || {} }; }
   function cur() { var tk = localStorage.getItem('emc_token'); if (!tk) return null; var m = sess()[tk]; if (!m) return null; var us = users(); return us[m] ? { name: m, u: us[m] } : null; }
 
   function localApi(rel, method, bodyText) {
@@ -83,6 +83,7 @@
       if (method === 'GET') return R({ ok: true, user: pub(na, u) });
       if (method === 'PUT') {
         if (body.settings && typeof body.settings === 'object') u.settings = Object.assign({}, u.settings, body.settings);
+        if (body.notifySet && typeof body.notifySet === 'object') u.notifySet = Object.assign({}, u.notifySet || {}, body.notifySet);
         if (Array.isArray(body.conditions)) u.profile.conditions = body.conditions;
         ['name', 'age', 'phone', 'email'].forEach(function (k) { if (body[k] !== undefined) u.profile[k] = body[k]; });
         if (body.notifyEnabled !== undefined) u.profile.notifyEnabled = !!body.notifyEnabled;
@@ -285,7 +286,81 @@
       }
     } catch (e) {}
 
-    /* 4) 把“云端账号”字样改准确（数据其实在本机） */
+    /* 4) 「提醒设置」卡片：选渠道 + 填邮箱/微信/手机号 + 超时分钟 */
+    try {
+      function kbLoadNotify() {
+        try {
+          var tip = document.getElementById('kbNotifyTip');
+          if (!(window.EMCAuth && EMCAuth.isLoggedIn && EMCAuth.isLoggedIn())) {
+            if (tip) tip.textContent = '提示：登录账号后才能保存提醒设置';
+            return;
+          }
+          fetch('/api/me').then(function (r) { return r.json(); }).then(function (j) {
+            var ns = (j && j.user && j.user.notifySet) || {};
+            var ch = ns.channels || {};
+            var set = function (id, v) { var e = document.getElementById(id); if (e) e.checked = !!v; };
+            var val = function (id, v) { var e = document.getElementById(id); if (e) e.value = (v == null ? '' : v); };
+            set('kbChEmail', ch.email); set('kbChWechat', ch.wechat); set('kbChSms', ch.sms);
+            val('kbEmail', ns.email); val('kbWechat', ns.wechatWebhook); val('kbPhone', ns.smsPhone);
+            val('kbFamilyEmail', ns.familyEmail); val('kbOverdue', ns.overdueMinutes || 60);
+            if (tip) tip.textContent = '';
+          }).catch(function () {});
+        } catch (e) {}
+      }
+      window.__kbLoadNotify = kbLoadNotify;
+
+      if (!document.getElementById('kbNotifyCard')) {
+        var anchor = document.getElementById('notifyChannel');
+        var card = anchor ? anchor.closest('.card') : null;
+        if (card && card.parentNode) {
+          var c = document.createElement('div');
+          c.className = 'card';
+          c.id = 'kbNotifyCard';
+          c.innerHTML = '<div class="card-title">🔔 提醒设置 <span class="tag">漏服自动通知</span></div>' +
+            '<div class="muted small" style="margin-bottom:8px">填好后，老人到点没吃药就会自动通知你/家属（每 15 分钟自动检查一次）。</div>' +
+            '<div class="form-row"><label>启用的渠道</label><div style="display:flex;gap:14px;flex-wrap:wrap">' +
+            '<label class="switch-row"><input type="checkbox" id="kbChEmail"> 邮箱</label>' +
+            '<label class="switch-row"><input type="checkbox" id="kbChWechat"> 微信</label>' +
+            '<label class="switch-row"><input type="checkbox" id="kbChSms"> 短信</label>' +
+            '</div></div>' +
+            '<div class="form-row"><label for="kbEmail">接收提醒的邮箱</label><input id="kbEmail" type="email" inputmode="email" placeholder="如 me@qq.com"></div>' +
+            '<div class="form-row"><label for="kbWechat">企业微信群机器人 Webhook</label><input id="kbWechat" type="text" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."></div>' +
+            '<div class="form-row"><label for="kbPhone">接收短信的手机号</label><input id="kbPhone" type="tel" inputmode="numeric" placeholder="如 13800000000"></div>' +
+            '<div class="form-row"><label for="kbFamilyEmail">家属邮箱（可选）</label><input id="kbFamilyEmail" type="email" inputmode="email" placeholder="如 son@qq.com"></div>' +
+            '<div class="form-row"><label for="kbOverdue">漏服超过（分钟）</label><input id="kbOverdue" type="text" inputmode="numeric" placeholder="60"></div>' +
+            '<button class="btn sm" id="kbSaveNotify">保存提醒设置</button>' +
+            '<div class="muted small" id="kbNotifyTip" style="margin-top:6px"></div>';
+          card.parentNode.insertBefore(c, card.nextSibling);
+          document.getElementById('kbSaveNotify').addEventListener('click', function () {
+            var g = function (id) { var e = document.getElementById(id); return e ? String(e.value || '').trim() : ''; };
+            var ns = {
+              channels: {
+                email: !!(document.getElementById('kbChEmail') || {}).checked,
+                wechat: !!(document.getElementById('kbChWechat') || {}).checked,
+                sms: !!(document.getElementById('kbChSms') || {}).checked,
+              },
+              email: g('kbEmail'), wechatWebhook: g('kbWechat'), smsPhone: g('kbPhone'),
+              familyEmail: g('kbFamilyEmail'), overdueMinutes: Number(g('kbOverdue') || 60),
+            };
+            var tip = document.getElementById('kbNotifyTip');
+            if (tip) tip.textContent = '保存中…';
+            fetch('/api/me', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notifySet: ns }) })
+              .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
+              .then(function (o) {
+                if (tip) tip.textContent = (o.j && o.j.ok) ? '已保存 ✔（到点未打卡会自动通知）' : ('保存失败：' + ((o.j && o.j.message) || o.s || '请先登录'));
+              })
+              .catch(function () { if (tip) tip.textContent = '保存失败：网络异常'; });
+          });
+          /* 进入“家属守护”页时刷新一次 */
+          Array.prototype.forEach.call(document.querySelectorAll('button'), function (b) {
+            if ((b.textContent || '').indexOf('家属守护') >= 0) b.addEventListener('click', function () { setTimeout(kbLoadNotify, 300); });
+          });
+          kbLoadNotify();
+        }
+      }
+    } catch (e) {}
+
+    /* 5) 把“云端账号”字样改准确（数据其实在本机） */
     try {
       var ab = document.getElementById('accountBtn');
       if (ab) { ab.title = '登录或注册账号'; ab.setAttribute('aria-label', '登录或注册账号'); }
