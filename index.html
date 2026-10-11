@@ -21,7 +21,7 @@
   function sess() { return lsGet(SK, {}); }
   function rid(n) { var h = 'abcdefghijklmnopqrstuvwxyz0123456789', s = ''; for (var i = 0; i < n; i++) s += h[Math.floor(Math.random() * h.length)]; return s; }
   function hex(n) { var a = new Uint8Array(n); if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a); else for (var i = 0; i < n; i++) a[i] = Math.floor(Math.random() * 256); return Array.prototype.map.call(a, function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }
-  function norm(u) { return String(u || '').trim().toLowerCase().replace(/[^a-z0-9_.\-@]/g, ''); }
+  function norm(u) { return String(u || '').trim().toLowerCase().replace(/[\s\u0000-\u001f"'\\<>]/g, '').slice(0, 40); }
   function hashPw(pw, salt) {
     var s = salt + '|' + pw;
     function fb(x) { var h = 5381; for (var i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) >>> 0; return 'f' + h.toString(16); }
