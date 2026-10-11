@@ -1,0 +1,21 @@
+name: Kangban missed-dose scan
+
+# 每 15 分钟调用一次函数里的漏服扫描；由 GitHub 免费跑，不依赖任何本机
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/cron/scan
+        run: |
+          code=$(curl -s -o /tmp/out -w '%{http_code}' -X POST \
+            -H "x-cron-token: ${{ secrets.CRON_TOKEN }}" \
+            --max-time 60 \
+            https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run/api/cron/scan)
+          echo "http=$code"
+          cat /tmp/out
+          if [ "$code" != "200" ]; then echo "扫描调用失败"; exit 1; fi
