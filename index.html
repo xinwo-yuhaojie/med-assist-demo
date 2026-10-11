@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<!-- 接口基址重写：静态站点没有后端，把 /api/* 指向函数计算服务；语音识别优先本机、失败走云端 -->
+<!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
   var API_BASE = 'https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run';
@@ -10,20 +10,152 @@
   var _fetch = window.fetch ? window.fetch.bind(window) : null;
   if (!_fetch) return;
 
-  // 超时保护：后端无响应时尽快失败，让页面自身的兵底逻辑接管（否则手机端会“卡死”）
+  /* ============ 本机账号后端（localStorage，完全免费、不联网） ============
+   * 拦截 /api/login|register|me|meds|records|checkin|health|family|notify|summary
+   * 数据按账号存在本机浏览器；退出再登回仍在（换设备/清缓存会丢） */
+  var UK = 'kb_users_v1', SK = 'kb_sess_v1';
+  var LOCAL_API = /^\/api\/(login|register|reset-password|me|meds|records|checkin|health|family|notify|summary)/;
+  function lsGet(k, d) { try { return JSON.parse(localStorage.getItem(k) || 'null') || d; } catch (e) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  function users() { return lsGet(UK, {}); }
+  function sess() { return lsGet(SK, {}); }
+  function rid(n) { var h = 'abcdefghijklmnopqrstuvwxyz0123456789', s = ''; for (var i = 0; i < n; i++) s += h[Math.floor(Math.random() * h.length)]; return s; }
+  function hex(n) { var a = new Uint8Array(n); if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a); else for (var i = 0; i < n; i++) a[i] = Math.floor(Math.random() * 256); return Array.prototype.map.call(a, function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }
+  function norm(u) { return String(u || '').trim().toLowerCase().replace(/[^a-z0-9_.\-@]/g, ''); }
+  function hashPw(pw, salt) {
+    var s = salt + '|' + pw;
+    function fb(x) { var h = 5381; for (var i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) >>> 0; return 'f' + h.toString(16); }
+    if (window.crypto && crypto.subtle && crypto.subtle.digest && window.TextEncoder) {
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function (b) {
+        return Array.prototype.map.call(new Uint8Array(b), function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+      }).catch(function () { return fb(s); });
+    }
+    return Promise.resolve(fb(s));
+  }
+  function R(obj, st) { return new Response(JSON.stringify(obj), { status: st || 200, headers: { 'content-type': 'application/json; charset=utf-8' } }); }
+  function lastDays(n) { var o = [], d; for (var i = 0; i < n; i++) { d = new Date(Date.now() - i * 86400000); o.push(d.toISOString().slice(0, 10)); } return o; }
+  function emptyUser(p) { return { pass: { salt: '', hash: '' }, profile: { name: (p && p.name) || '', age: (p && p.age) || '', phone: (p && p.phone) || '', email: (p && p.email) || '', notifyEnabled: true, conditions: [] }, settings: { fontSize: 'A', tts: true, theme: null, remindTimes: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false }, meds: [], records: [], health: [], family: [], notify: [] }; }
+  function pub(name, u) { return { id: name, username: name, name: u.profile.name || '', age: u.profile.age || '', phone: u.profile.phone || '', email: u.profile.email || '', notifyEnabled: u.profile.notifyEnabled !== false, conditions: u.profile.conditions || [], settings: u.settings || {}, family: u.family || [] }; }
+  function cur() { var tk = localStorage.getItem('emc_token'); if (!tk) return null; var m = sess()[tk]; if (!m) return null; var us = users(); return us[m] ? { name: m, u: us[m] } : null; }
+
+  function localApi(rel, method, bodyText) {
+    var path = rel.split('?')[0], qs = rel.split('?')[1] || '';
+    var body = {}; try { body = JSON.parse(bodyText || '{}'); } catch (e) {}
+    var nDays = Number((qs.match(/days=(\d+)/) || [])[1] || 7);
+
+    if (path === '/api/register' && method === 'POST') {
+      var n = norm(body.username);
+      if (!n) return R({ ok: false, message: '用户名不合法' }, 400);
+      if (!body.password || String(body.password).length < 6) return R({ ok: false, message: '密码至少 6 位' }, 400);
+      var us = users();
+      if (us[n]) return R({ ok: false, message: '用户名已存在，请换一个' }, 409);
+      var salt = hex(8);
+      return hashPw(String(body.password), salt).then(function (h) {
+        var uu = emptyUser(body); uu.pass = { salt: salt, hash: h };
+        us[n] = uu; lsSet(UK, us);
+        var tk = hex(16), ss = sess(); ss[tk] = n; lsSet(SK, ss);
+        return R({ ok: true, token: tk, user: pub(n, uu) });
+      });
+    }
+    if (path === '/api/login' && method === 'POST') {
+      var n2 = norm(body.username), u2 = users()[n2];
+      if (!u2) return R({ ok: false, message: '用户名或密码不正确' }, 401);
+      return hashPw(String(body.password), u2.pass.salt).then(function (h) {
+        if (h !== u2.pass.hash) return R({ ok: false, message: '用户名或密码不正确' }, 401);
+        var tk = hex(16), ss = sess(); ss[tk] = n2; lsSet(SK, ss);
+        return R({ ok: true, token: tk, user: pub(n2, u2) });
+      });
+    }
+    if (path === '/api/reset-password' && method === 'POST') {
+      var us3 = users(), n3 = norm(body.username), u3 = us3[n3];
+      if (!u3 || !body.phone || String(body.phone) !== String(u3.profile.phone || '')) return R({ ok: false, message: '用户名与手机号不匹配' }, 400);
+      if (!body.newPassword || String(body.newPassword).length < 6) return R({ ok: false, message: '新密码至少 6 位' }, 400);
+      var salt3 = hex(8);
+      return hashPw(String(body.newPassword), salt3).then(function (h) { u3.pass = { salt: salt3, hash: h }; lsSet(UK, us3); return R({ ok: true }); });
+    }
+
+    var c = cur();
+    if (!c) return R({ ok: false, message: '未登录或登录已过期' }, 401);
+    var u = c.u, na = c.name;
+    function save() { var a = users(); a[na] = u; lsSet(UK, a); }
+
+    if (path === '/api/me') {
+      if (method === 'GET') return R({ ok: true, user: pub(na, u) });
+      if (method === 'PUT') {
+        if (body.settings && typeof body.settings === 'object') u.settings = Object.assign({}, u.settings, body.settings);
+        if (Array.isArray(body.conditions)) u.profile.conditions = body.conditions;
+        ['name', 'age', 'phone', 'email'].forEach(function (k) { if (body[k] !== undefined) u.profile[k] = body[k]; });
+        if (body.notifyEnabled !== undefined) u.profile.notifyEnabled = !!body.notifyEnabled;
+        save(); return R({ ok: true, user: pub(na, u) });
+      }
+    }
+    if (path.indexOf('/api/meds') === 0) {
+      var mid = decodeURIComponent(path.slice('/api/meds/'.length));
+      if (method === 'GET') return R({ ok: true, meds: u.meds });
+      if (method === 'POST') {
+        var id = body.mid || ('m' + rid(6));
+        u.meds.push({ mid: id, name: body.name || '', dose: body.dose || '', slots: body.slots || [], remaining: typeof body.remaining === 'number' ? body.remaining : 30, refillAt: typeof body.remaining === 'number' ? body.remaining : 30, note: body.note || '', byFamily: body.byFamily === true, disease: body.disease || '' });
+        save(); return R({ ok: true, meds: u.meds });
+      }
+      if (method === 'PUT') {
+        var m = u.meds.filter(function (x) { return x.mid === mid; })[0];
+        if (!m) return R({ ok: false, message: '药品不存在' }, 404);
+        if (body.refill) m.remaining = m.refillAt == null ? 30 : m.refillAt;
+        else { ['name', 'dose', 'slots', 'note', 'disease'].forEach(function (k) { if (body[k] !== undefined) m[k] = body[k]; }); if (typeof body.remaining === 'number') m.remaining = body.remaining; if (body.byFamily !== undefined) m.byFamily = body.byFamily === true; }
+        save(); return R({ ok: true, meds: u.meds });
+      }
+      if (method === 'DELETE') { u.meds = u.meds.filter(function (x) { return x.mid !== mid; }); save(); return R({ ok: true, meds: u.meds }); }
+    }
+    if (path === '/api/records' && method === 'GET') { var k = lastDays(nDays); return R({ ok: true, records: u.records.filter(function (r) { return k.indexOf(r.date) >= 0; }) }); }
+    if (path === '/api/checkin' && method === 'POST') {
+      var ex = u.records.filter(function (r) { return r.date === body.date && r.mid === body.mid && r.slot === body.slot; })[0];
+      var rec = { id: body.date + '_' + body.mid + '_' + body.slot, date: body.date, mid: body.mid, slot: body.slot, status: body.status || 'taken', time: new Date().toTimeString().slice(0, 5), byFamily: body.byFamily === true };
+      if (ex) Object.assign(ex, rec); else u.records.push(rec);
+      var med = u.meds.filter(function (x) { return x.mid === body.mid; })[0] || null;
+      if (med && body.status === 'taken' && typeof med.remaining === 'number' && med.remaining > 0) med.remaining -= 1;
+      save(); return R({ ok: true, records: u.records, med: med });
+    }
+    if (path === '/api/health') {
+      if (method === 'GET') return R({ ok: true, health: u.health });
+      if (method === 'POST') { body.id = body.id || ('h' + rid(6)); u.health.push(body); save(); return R({ ok: true, health: u.health }); }
+    }
+    if (path.indexOf('/api/family') === 0) {
+      var fid = decodeURIComponent(path.slice('/api/family/'.length));
+      if (method === 'GET') return R({ ok: true, family: u.family });
+      if (method === 'POST') {
+        var id2 = body.id || fid;
+        if (id2) { var f = u.family.filter(function (x) { return x.id === id2; })[0]; if (f) { Object.assign(f, body); save(); return R({ ok: true, family: u.family }); } }
+        body.id = body.id || ('f' + rid(6)); u.family.push(body); save(); return R({ ok: true, family: u.family });
+      }
+      if (method === 'DELETE') { u.family = u.family.filter(function (x) { return x.id !== fid; }); save(); return R({ ok: true, family: u.family }); }
+    }
+    if (path === '/api/notify') {
+      if (method === 'GET') return R({ ok: true, log: u.notify });
+      if (method === 'POST') { body.id = 'n' + rid(6); body.time = new Date().toISOString(); u.notify.push(body); if (u.notify.length > 500) u.notify = u.notify.slice(-500); save(); return R({ ok: true, sent: 1, log: u.notify }); }
+    }
+    if (path === '/api/summary' && method === 'GET') {
+      var kk = lastDays(nDays), rs = u.records.filter(function (r) { return kk.indexOf(r.date) >= 0; });
+      var taken = rs.filter(function (r) { return r.status === 'taken'; }).length;
+      var missed = rs.filter(function (r) { return r.status === 'missed'; }).length;
+      var pending = rs.filter(function (r) { return r.status === 'pending'; }).length;
+      var done = taken + missed;
+      return R({ ok: true, summary: { adherence: done ? Math.round(taken / done * 100) : 0, taken: taken, missed: missed, pending: pending, riskLevel: missed >= 3 ? '偏高' : (missed ? '一般' : '良好') } });
+    }
+    return null;
+  }
+
+  /* ============ 通用请求包装 ============ */
   function withTimeout(p, ms) {
     return Promise.race([p, new Promise(function (_, rej) {
       setTimeout(function () { rej(Object.assign(new Error('timeout'), { name: 'TimeoutError' })); }, ms);
     })]);
   }
   function timeoutFor(rel) {
-    if (rel.indexOf('/api/asr/') === 0) return 0;          // 语音识别另有时长控制
-    if (rel.indexOf('/api/ai/chat') === 0) return 25000;   // 大模型生成可能较慢
-    if (rel.indexOf('/api/') === 0) return 6000;           // 其它业务接口
+    if (rel.indexOf('/api/asr/') === 0) return 0;
+    if (rel.indexOf('/api/ai/chat') === 0) return 25000;
+    if (rel.indexOf('/api/') === 0) return 6000;
     return 0;
   }
-
-  // 语音识别：先试本机本地服务（短超时），失败改用云端（所有人可用）
   function fetchAsr(path, init) {
     var local = _fetch(ASR_LOCAL + path, init);
     var timer = new Promise(function (_, rej) { setTimeout(function () { rej(new Error('local-timeout')); }, 1200); });
@@ -37,6 +169,12 @@
       else if (input && input.url) url = String(input.url);
       rel = url;
       if (rel.indexOf('/api/asr/') === 0) return fetchAsr(rel, init);
+      if (rel.indexOf('/api/') === 0 && LOCAL_API.test(rel)) {
+        var method = (init && init.method) ? String(init.method).toUpperCase() : 'GET';
+        var bodyText = (init && typeof init.body === 'string') ? init.body : '';
+        var local = localApi(rel, method, bodyText);
+        if (local) return local;
+      }
       if (rel.indexOf('/api/') === 0) {
         var abs = API_BASE + rel;
         input = (typeof input === 'string') ? abs : new Request(abs, input);
@@ -44,7 +182,6 @@
       }
     } catch (e) {}
     var p = _fetch(input, init);
-    // 兼容旧后端：OpenAI 风格 {choices:[...]} -> {text:"..."}
     if (rel.indexOf('/api/ai/chat') === 0) {
       p = p.then(function (res) {
         if (!res || !res.ok) return res;
