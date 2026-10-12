@@ -405,6 +405,22 @@
 
     /* 7) 手机端易用性：每个弹窗加固定 ✕ 关闭键 + 点遮罩空白关闭 + 大点击区 + 底部安全区 */
     try {
+      /* 关闭浮层：优先点应用自己的“关闭/取消”按钮，保持应用的返回键记账平衡（否则会多退一次历史 → 浏览器退出） */
+      function kbCloseMask(m) {
+        try {
+          /* 用户中心没有独立关闭键：点右上角账号键（应用自己的开关会做完整的记账） */
+          if (m.id === 'ucModal') {
+            var ab = document.getElementById('accountBtn');
+            if (ab) { ab.click(); return; }
+          }
+          var cand = ['ucClose', 'authCancel', 'moreCancel', 'helpClose', 'resetCancel'];
+          for (var i = 0; i < cand.length; i++) {
+            var e2 = m.querySelector('#' + cand[i]);
+            if (e2 && e2.offsetParent !== null) { e2.click(); return; }
+          }
+          m.style.display = 'none';
+        } catch (e) { try { m.style.display = 'none'; } catch (e2) {} }
+      }
       Array.prototype.forEach.call(document.querySelectorAll('.mask'), function (m) {
         if (m.querySelector('.kb-close')) return;
         var b = document.createElement('button');
@@ -413,9 +429,9 @@
         b.setAttribute('aria-label', '关闭');
         b.setAttribute('title', '关闭');
         b.textContent = '✕';
-        b.addEventListener('click', function (ev) { ev.stopPropagation(); m.style.display = 'none'; });
+        b.addEventListener('click', function (ev) { ev.stopPropagation(); kbCloseMask(m); });
         m.appendChild(b);
-        m.addEventListener('click', function (ev) { if (ev.target === m) m.style.display = 'none'; });
+        m.addEventListener('click', function (ev) { if (ev.target === m) kbCloseMask(m); });
       });
       if (!document.getElementById('kbMobileStyle')) {
         var st2 = document.createElement('style');
