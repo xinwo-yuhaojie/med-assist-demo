@@ -448,7 +448,16 @@
           /* 小按钮也保证 40px 以上的点击高度（老人手指粗） */
           '@media (max-width:820px){.btn.sm,.icon-btn{min-height:40px}}',
           /* 手机端聊天区：略加高 + 底部留白，避免最后一行被悬浮按钮（更多/回到最新/SOS）压住 */
-          '@media (max-width:1023px){.chat-scroll{height:calc(var(--vvh,100dvh) * 0.46 - 40px)!important;padding-bottom:22px!important}}'
+          '@media (max-width:1023px){.chat-scroll{height:calc(var(--vvh,100dvh) * 0.46 - 40px)!important;padding-bottom:22px!important}}',
+          /* 服药提醒弹层（.reminder-full）：整层可滚动 + 安全区，并把“已服用/稍后提醒”拉到可见区 */
+          '@media (max-width:1023px){',
+          '.reminder-full{align-items:flex-start!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;',
+          'padding:calc(10px + env(safe-area-inset-top,0px)) 10px calc(10px + env(safe-area-inset-bottom,0px))!important}',
+          '.reminder-full .rem-body{margin:auto!important;max-height:none!important;padding:16px 14px!important}',
+          '.reminder-full .rem-list{max-height:24vh;overflow-y:auto}',
+          '.reminder-full .rem-actions .btn-lg{min-height:52px!important;font-size:1.05em!important}',
+          '.reminder-full .rem-actions{gap:8px!important}',
+          '}'
         ].join('');
         document.head.appendChild(st2);
       }
