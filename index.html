@@ -524,6 +524,31 @@
       window.__kbAlignReply = kbAlignReply;
     } catch (e) {}
 
+    /* 11) 兜底：脚本异常时不再白屏/像“闪退”，给出可点的“重新加载” */
+    try {
+      function kbShowRecovery(msg) {
+        try {
+          if (document.getElementById('kbRecover')) return;
+          var d = document.createElement('div');
+          d.id = 'kbRecover';
+          d.setAttribute('style', 'position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:95;background:#fff4f4;border:2px solid #e57373;color:#7a1f1f;border-radius:10px;padding:12px 14px;font-size:15px;line-height:1.6;box-shadow:0 6px 20px rgba(0,0,0,.25)');
+          d.innerHTML = '<b>' + msg + '</b>。点下面按钮可以恢复使用。<br>' +
+            '<button id="kbReload" style="margin-top:8px;padding:10px 16px;border:none;border-radius:8px;background:#e57373;color:#fff;font-size:16px">重新加载</button>';
+          document.body.appendChild(d);
+          var b = document.getElementById('kbReload');
+          if (b) b.addEventListener('click', function () { location.reload(); });
+        } catch (e) {}
+      }
+      window.__kbShowRecovery = kbShowRecovery;
+      window.addEventListener('error', function (ev) {
+        try {
+          if (!ev || !ev.message) return;                 /* 资源加载失败（如 favicon）不算 */
+          if (/Script error/i.test(ev.message)) { kbShowRecovery('页面加载出了点小问题'); return; }
+          kbShowRecovery('页面出了点小问题');
+        } catch (e) {}
+      });
+    } catch (e) {}
+
     /* 5) 把“云端账号”字样改准确（数据其实在本机） */
     try {
       var ab = document.getElementById('accountBtn');
