@@ -53,7 +53,7 @@
   }
   function R(obj, st) { return new Response(JSON.stringify(obj), { status: st || 200, headers: { 'content-type': 'application/json; charset=utf-8' } }); }
   function lastDays(n) { var o = [], d; for (var i = 0; i < n; i++) { d = new Date(Date.now() - i * 86400000); o.push(d.toISOString().slice(0, 10)); } return o; }
-  function emptyUser(p) { return { pass: { salt: '', hash: '' }, profile: { name: (p && p.name) || '', age: (p && p.age) || '', phone: (p && p.phone) || '', email: (p && p.email) || '', notifyEnabled: true, conditions: [] }, settings: { fontSize: 'A', tts: true, theme: null, remindTimes: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false }, notifySet: { channels: { email: false, wechat: false, sms: false }, email: '', wechatWebhook: '', smsPhone: '', familyEmail: '', overdueMinutes: 60 }, meds: [], records: [], health: [], family: [], notify: [] }; }
+  function emptyUser(p) { return { pass: { salt: '', hash: '' }, profile: { name: (p && p.name) || '', age: (p && p.age) || '', gender: (p && p.gender) || '', phone: (p && p.phone) || '', email: (p && p.email) || '', notifyEnabled: true, conditions: [] }, settings: { fontSize: 'A', tts: true, theme: null, remindTimes: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false }, notifySet: { channels: { email: false, wechat: false, sms: false }, email: '', wechatWebhook: '', smsPhone: '', familyEmail: '', overdueMinutes: 60 }, meds: [], records: [], health: [], family: [], notify: [] }; }
   function pub(name, u) { return { id: name, username: name, name: u.profile.name || '', age: u.profile.age || '', phone: u.profile.phone || '', email: u.profile.email || '', notifyEnabled: u.profile.notifyEnabled !== false, conditions: u.profile.conditions || [], settings: u.settings || {}, family: u.family || [], notifySet: u.notifySet || {} }; }
   function cur() { var tk = localStorage.getItem('emc_token'); if (!tk) return null; var m = sess()[tk]; if (!m) return null; var us = users(); return us[m] ? { name: m, u: us[m] } : null; }
 
@@ -104,7 +104,7 @@
         if (body.settings && typeof body.settings === 'object') u.settings = Object.assign({}, u.settings, body.settings);
         if (body.notifySet && typeof body.notifySet === 'object') u.notifySet = Object.assign({}, u.notifySet || {}, body.notifySet);
         if (Array.isArray(body.conditions)) u.profile.conditions = body.conditions;
-        ['name', 'age', 'phone', 'email'].forEach(function (k) { if (body[k] !== undefined) u.profile[k] = body[k]; });
+        ['name', 'age', 'gender', 'phone', 'email'].forEach(function (k) { if (body[k] !== undefined) u.profile[k] = body[k]; });
         if (body.notifyEnabled !== undefined) u.profile.notifyEnabled = !!body.notifyEnabled;
         save(); return R({ ok: true, user: pub(na, u) });
       }
@@ -3022,6 +3022,7 @@ body.simple-mode .more-item { font-size: .95em; }
           <div class="form-row" style="margin-bottom:8px"><label for="profileName">姓名</label><input id="profileName" type="text" autocomplete="name" aria-label="老人姓名" placeholder="如 张桂芳"></div>
           <div class="form-row" style="margin-bottom:8px"><label for="profileAge">年龄</label><input id="profileAge" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="年龄" placeholder="如 78"></div>
         </div>
+        <div class="form-row" style="margin-bottom:8px"><label>性别（必选）</label><div style="display:flex;gap:10px" role="radiogroup" aria-label="老人性别"><button type="button" id="profileGenderM" style="flex:1;min-height:52px;font-size:17px" aria-pressed="false">男</button><button type="button" id="profileGenderF" style="flex:1;min-height:52px;font-size:17px" aria-pressed="false">女</button></div></div>
         <button class="btn sm" id="btnSaveProfile">保存老人信息</button>
       </div>
 
@@ -3200,6 +3201,13 @@ body.simple-mode .more-item { font-size: .95em; }
       <div class="form-row" id="authAgeRow" style="display:none">
         <label for="authAge">年龄</label>
         <input id="authAge" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="年龄" placeholder="如 78">
+      </div>
+      <div class="form-row" id="authGenderRow" style="display:none">
+        <label>性别（必选）</label>
+        <div style="display:flex;gap:10px" role="radiogroup" aria-label="性别">
+          <button type="button" id="authGenderM" style="flex:1;min-height:52px;font-size:17px" aria-pressed="false">男</button>
+          <button type="button" id="authGenderF" style="flex:1;min-height:52px;font-size:17px" aria-pressed="false">女</button>
+        </div>
       </div>
       <div class="form-row">
         <label for="authPwd">密码（至少 6 位）</label>
@@ -5435,7 +5443,7 @@ EMC.Engine = (function () {
     L.push('您可以慢慢说，别着急，我陪着您；用药或身体上有任何小问题，都可以随时问我。');
     L.push('你可以讲解用药知识、药物注意事项、慢病管理、健康生活方式，并提醒按时服药。');
     L.push('涉及具体诊断、调整药量、换药等医疗决策时，必须明确提醒：以医生或药师意见为准，不能替代医生诊断。');
-    if (name) L.push('用户称呼：' + name + (age ? '（' + age + '岁）' : '') + '。');
+    if (name) L.push('用户称呼：' + name + '（' + [S.profile.gender || '', age ? age + '岁' : ''].filter(Boolean).join('，') + '）。');
     if (cond.length) L.push('慢病档案：' + cond.join('、') + '。');
     if (meds.length) L.push('当前用药：' + meds.join('；') + '。');
     return L.join('\n');
@@ -6505,7 +6513,7 @@ window.EMCAuth = (function () {
       method: 'POST',
       body: {
         username: p.username, password: p.password, name: p.name, age: p.age,
-        phone: p.phone, email: (p.email != null ? p.email : '')
+        gender: (p.gender != null ? p.gender : ''), phone: p.phone, email: (p.email != null ? p.email : '')
       }
     }).then(function (r) {
       if (r.ok && r.token) {
@@ -7381,7 +7389,7 @@ EMC.Care = (function () {
   var S = {
     meds: [], records: [], settings: { fs: 1, voice: true },
     health: [], guardian: { contacts: [], notifications: [] },
-    profile: { name: '', age: '', username: '', notifyEnabled: true },
+    profile: { name: '', age: '', gender: '', username: '', notifyEnabled: true },
     tab: 'home', picked: null,
     /* v13 P2：慢病档案（勾选的慢病 key 列表） */
     conditions: [],
@@ -7453,7 +7461,7 @@ EMC.Care = (function () {
     fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std',
     asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: ['08:00', '12:00', '18:00']
   };
-  var FALLBACK_PROFILE = { name: '', age: '', username: '', notifyEnabled: true };
+  var FALLBACK_PROFILE = { name: '', age: '', gender: '', username: '', notifyEnabled: true };
 
   /**
    * 并行 + 单点容错载入全部数据。
@@ -7506,7 +7514,7 @@ EMC.Care = (function () {
 
     var p = pick(1, FALLBACK_PROFILE, function (v) { return typeof v === 'object'; });
     S.profile = {
-      name: p.name || '', age: p.age || '',
+      name: p.name || '', age: p.age || '', gender: (typeof p.gender === 'string' ? p.gender : ''),
       username: p.username || '', notifyEnabled: (typeof p.notifyEnabled === 'boolean' ? p.notifyEnabled : true)
     };
     /* v13 P2：慢病档案。后端种子可能存中文名，统一归一化为 key */
@@ -7531,6 +7539,8 @@ EMC.Care = (function () {
 
     var pn = $id('profileName'); if (pn) pn.value = S.profile.name || '';
     var pa = $id('profileAge'); if (pa) pa.value = S.profile.age || '';
+    profileGenderDraft = S.profile.gender || '';
+    paintGender('profileGenderM', 'profileGenderF', profileGenderDraft);
 
     applyFs(S.settings.fs);
     applyTheme();
@@ -9326,10 +9336,13 @@ EMC.Care = (function () {
   }
 
   /* ---------- 家属守护 ---------- */
+  var profileGenderDraft = '';
   async function saveProfile() {
     S.profile.name = $id('profileName').value.trim();
     S.profile.age = $id('profileAge').value.trim();
-    await store.setProfile({ name: S.profile.name, age: S.profile.age });
+    if (!profileGenderDraft) { alert('请选择性别'); return; }
+    S.profile.gender = profileGenderDraft;
+    await store.setProfile({ name: S.profile.name, age: S.profile.age, gender: S.profile.gender });
     toast('已保存老人信息');
     renderGuardian();
   }
@@ -10121,10 +10134,29 @@ EMC.Care = (function () {
     }
   }
 
+  /* 性别选择共享状态：regGender（注册页）、profileGenderDraft（老人信息表单，声明在家属守护段）
+     都放在本脚本顶层，供 init / bindAuthModal / clearAuthForm / submitAuth / saveProfile 共用；
+     paintGender 负责两处「男 / 女」大按钮的选中高亮 */
+  var regGender = '';
+  function paintGender(mId, fId, v) {
+    var m = $id(mId), f = $id(fId);
+    var on = 'background:#1565c0;color:#fff;border-color:#1565c0;';
+    if (m) { m.setAttribute('style', 'flex:1;min-height:52px;font-size:17px;' + (v === '男' ? on : '')); m.setAttribute('aria-pressed', v === '男' ? 'true' : 'false'); }
+    if (f) { f.setAttribute('style', 'flex:1;min-height:52px;font-size:17px;' + (v === '女' ? on : '')); f.setAttribute('aria-pressed', v === '女' ? 'true' : 'false'); }
+  }
+
   function bindAuthModal() {
     var modal = $id('authModal');
     if (!modal) return;
-    $id('authTabLogin').addEventListener('click', function () { setAuthMode('login'); });
+    (function bindGenderBtns() {
+    var am = $id('authGenderM'), af = $id('authGenderF');
+    if (am) am.addEventListener('click', function () { regGender = '男'; paintGender('authGenderM', 'authGenderF', regGender); });
+    if (af) af.addEventListener('click', function () { regGender = '女'; paintGender('authGenderM', 'authGenderF', regGender); });
+    var pm = $id('profileGenderM'), pf = $id('profileGenderF');
+    if (pm) pm.addEventListener('click', function () { profileGenderDraft = '男'; paintGender('profileGenderM', 'profileGenderF', profileGenderDraft); });
+    if (pf) pf.addEventListener('click', function () { profileGenderDraft = '女'; paintGender('profileGenderM', 'profileGenderF', profileGenderDraft); });
+  })();
+  $id('authTabLogin').addEventListener('click', function () { setAuthMode('login'); });
     $id('authTabReg').addEventListener('click', function () { setAuthMode('reg'); });
     $id('authSubmit').addEventListener('click', submitAuth);
     $id('authCancel').addEventListener('click', closeModals);
@@ -10151,6 +10183,7 @@ EMC.Care = (function () {
     $id('authPhoneRow').style.display = (mode === 'reg') ? 'block' : 'none';
     $id('authEmailRow').style.display = (mode === 'reg') ? 'block' : 'none';
     $id('authAgeRow').style.display = (mode === 'reg') ? 'block' : 'none';
+    $id('authGenderRow').style.display = (mode === 'reg') ? 'block' : 'none';
     $id('authPwd2Row').style.display = (mode === 'reg') ? 'block' : 'none';
     $id('authForgotRow').style.display = (mode === 'login') ? 'block' : 'none';
     $id('authSubmit').textContent = (mode === 'reg') ? '注册并进入' : '登录';
@@ -10164,6 +10197,7 @@ EMC.Care = (function () {
   function openLogin() { setAuthMode('login'); clearAuthForm(); $id('authModal').style.display = 'flex'; markModalLayer(); }
   function clearAuthForm() {
     ['authUser', 'authPwd', 'authName', 'authAge', 'authPwd2', 'authPhone', 'authEmail'].forEach(function (id) { if ($id(id)) $id(id).value = ''; });
+    regGender = ''; paintGender('authGenderM', 'authGenderF', '');
     authMsg('');
   }
   function openReset() {
@@ -10184,10 +10218,11 @@ EMC.Care = (function () {
       var name = val('authName'), age = val('authAge');
       var phone = val('authPhone'), email = val('authEmail');
       if (!name) { authMsg('请填写昵称'); return; }
+      if (!regGender) { authMsg('请选择性别'); return; }
       if (!/^1[3-9]\d{9}$/.test(phone)) { authMsg('请填写有效的手机号'); return; }
       if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { authMsg('邮箱格式不正确'); return; }
       if (pwd !== val('authPwd2')) { authMsg('两次输入的密码不一致'); return; }
-      r = await EMCAuth.register({ username: user, password: pwd, name: name, age: age, phone: phone, email: email });
+      r = await EMCAuth.register({ username: user, password: pwd, name: name, age: age, gender: regGender, phone: phone, email: email });
     } else {
       r = await EMCAuth.login(user, pwd);
     }
@@ -10233,7 +10268,7 @@ EMC.Care = (function () {
     body.innerHTML =
       '<div class="uc-info">' +
         '<div><b>账号：</b>' + esc(S.profile.username || '—') + '</div>' +
-        '<div><b>昵称：</b>' + esc(S.profile.name || '—') + '　<b>年龄：</b>' + esc(S.profile.age || '—') + '</div>' +
+        '<div><b>昵称：</b>' + esc(S.profile.name || '—') + '　<b>性别：</b>' + esc(S.profile.gender || '—') + '　<b>年龄：</b>' + esc(S.profile.age || '—') + '</div>' +
       '</div>' +
       '<div class="form-row"><label>显示模式（明亮 / 夜间 / 高对比）</label>' +
         '<div class="theme-row" id="ucTheme">' +
