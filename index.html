@@ -53,7 +53,7 @@
   }
   function R(obj, st) { return new Response(JSON.stringify(obj), { status: st || 200, headers: { 'content-type': 'application/json; charset=utf-8' } }); }
   function lastDays(n) { var o = [], d; for (var i = 0; i < n; i++) { d = new Date(Date.now() - i * 86400000); o.push(d.toISOString().slice(0, 10)); } return o; }
-  function emptyUser(p) { return { pass: { salt: '', hash: '' }, profile: { name: (p && p.name) || '', age: (p && p.age) || '', gender: (p && p.gender) || '', phone: (p && p.phone) || '', email: (p && p.email) || '', notifyEnabled: true, conditions: [] }, settings: { fontSize: 'A', tts: true, theme: null, remindTimes: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false }, notifySet: { channels: { email: false, wechat: false, sms: false }, email: '', wechatWebhook: '', smsPhone: '', familyEmail: '', overdueMinutes: 60 }, meds: [], records: [], health: [], family: [], notify: [] }; }
+  function emptyUser(p) { return { pass: { salt: '', hash: '' }, profile: { name: (p && p.name) || '', age: (p && p.age) || '', gender: (p && p.gender) || '', phone: (p && p.phone) || '', email: (p && p.email) || '', notifyEnabled: true, conditions: [] }, settings: { fontSize: 'A', tts: true, theme: null, remindTimes: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false }, notifySet: { channels: { email: false, wechat: false, sms: false }, email: '', wechatWebhook: '', smsPhone: '', familyEmail: '', overdueMinutes: 60 }, meds: [], records: [], health: [], family: [], notify: [] }; }
   function pub(name, u) { return { id: name, username: name, name: u.profile.name || '', age: u.profile.age || '', phone: u.profile.phone || '', email: u.profile.email || '', notifyEnabled: u.profile.notifyEnabled !== false, conditions: u.profile.conditions || [], settings: u.settings || {}, family: u.family || [], notifySet: u.notifySet || {} }; }
   function cur() { var tk = localStorage.getItem('emc_token'); if (!tk) return null; var m = sess()[tk]; if (!m) return null; var us = users(); return us[m] ? { name: m, u: us[m] } : null; }
 
@@ -262,8 +262,28 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
-    /* 1) 语音播报解锁：iOS/部分安卓要求先有用户手势，否则自动播报会被静默忽略 */
+    /* 1) 语音播报解锁：iOS/部分安卓要求先有用户手势，否则自动播报会被静默忽略。
+       未解锁期间智能体的话先排队，屏幕出现「点一下开启语音」提示条，点任意处即解锁补播 */
     var unlocked = false;
+    var unlockCbs = [];
+    window.__kbVoiceUnlocked = false;
+    var pill = null;
+    function ensurePill() {
+      if (pill) return;
+      pill = document.createElement('button');
+      pill.id = 'kbVoicePill';
+      pill.type = 'button';
+      pill.textContent = '🔊 点一下开启语音';
+      pill.setAttribute('aria-label', '开启语音播报');
+      pill.setAttribute('style', 'display:none;width:calc(100% - 24px);margin:8px 12px 0;font-size:17px;min-height:50px;border:0;border-radius:12px;background:#1565c0;color:#fff;box-sizing:border-box');
+      pill.addEventListener('click', function () { unlock(); });
+      var tb = document.querySelector('.topbar');
+      if (tb && tb.parentNode) tb.parentNode.insertBefore(pill, tb.nextSibling);
+      else document.body.insertBefore(pill, document.body.firstChild);
+    }
+    function showPill() { ensurePill(); if (pill) pill.style.display = 'block'; }
+    function hidePill() { if (pill) pill.style.display = 'none'; }
+    window.__kbVoiceBlocked = function (show) { if (show) showPill(); else hidePill(); };
     function unlock() {
       if (unlocked) return; unlocked = true;
       try {
@@ -274,10 +294,19 @@
           if (speechSynthesis.resume) speechSynthesis.resume();
         }
       } catch (e) {}
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) { window.__kbAudioCtx = new AC(); if (window.__kbAudioCtx.resume) window.__kbAudioCtx.resume(); }
+      } catch (e) {}
+      window.__kbVoiceUnlocked = true;
+      var cbs = unlockCbs; unlockCbs = [];
+      cbs.forEach(function (f) { try { f(); } catch (e2) {} });
+      hidePill();
       document.removeEventListener('touchstart', unlock);
       document.removeEventListener('touchend', unlock);
       document.removeEventListener('click', unlock);
     }
+    window.__kbOnVoiceUnlock = function (f) { if (unlocked) { try { f(); } catch (e) {} } else unlockCbs.push(f); };
     document.addEventListener('touchstart', unlock, { passive: true });
     document.addEventListener('touchend', unlock, { passive: true });
     document.addEventListener('click', unlock);
@@ -5443,9 +5472,22 @@ EMC.Engine = (function () {
     L.push('您可以慢慢说，别着急，我陪着您；用药或身体上有任何小问题，都可以随时问我。');
     L.push('你可以讲解用药知识、药物注意事项、慢病管理、健康生活方式，并提醒按时服药。');
     L.push('涉及具体诊断、调整药量、换药等医疗决策时，必须明确提醒：以医生或药师意见为准，不能替代医生诊断。');
-    if (name) L.push('用户称呼：' + name + '（' + [S.profile.gender || '', age ? age + '岁' : ''].filter(Boolean).join('，') + '）。');
+    if (name) L.push('用户称呼：' + name + '（' + [(ctx.profile && ctx.profile.gender) || '', age ? age + '岁' : ''].filter(Boolean).join('，') + '）。');
     if (cond.length) L.push('慢病档案：' + cond.join('、') + '。');
     if (meds.length) L.push('当前用药：' + meds.join('；') + '。');
+    /* v23：把用户填写的所有资料都纳入上下文 —— 血压/血糖记录、打卡依从、紧急联系人，
+       让大模型回答时能“查到”用户的真实情况，给出更贴合的建议 */
+    var hp = Array.isArray(ctx.health) ? ctx.health : [];
+    var bps = hp.filter(function (h) { return h.type === 'bp' && h.sys; });
+    var gls = hp.filter(function (h) { return h.type === 'glu' && h.val; });
+    if (bps.length) { var b0 = bps[bps.length - 1]; L.push('最近血压：' + b0.sys + '/' + b0.dia + ' mmHg，近段时间共记录 ' + bps.length + ' 次。'); }
+    if (gls.length) { var g0 = gls[gls.length - 1]; L.push('最近血糖：' + g0.val + ' mmol/L，共记录 ' + gls.length + ' 次。'); }
+    var recs = Array.isArray(ctx.records) ? ctx.records : [];
+    var tk = recs.filter(function (r) { return r.status === 'taken'; }).length;
+    var ms = recs.filter(function (r) { return r.status === 'missed'; }).length;
+    if (tk || ms) L.push('近期打卡：按时 ' + tk + ' 次，漏服 ' + ms + ' 次。');
+    var fam = (ctx.guardian && Array.isArray(ctx.guardian.contacts)) ? ctx.guardian.contacts.length : 0;
+    if (fam) L.push('已绑定紧急联系人 ' + fam + ' 位。');
     return L.join('\n');
   }
 
@@ -5911,7 +5953,8 @@ EMC.Voice = (function () {
     }
   }
 
-  /* 播报：优先云端千问语音（更自然、支持长文本），失败自动回退浏览器语音 */
+  /* 播报：千问真实语音优先（更自然），合成失败自动回退浏览器语音。
+     手机端在首次手势前自动播放会被静默拦截：未解锁时先排队，并提示「点一下开启语音」 */
   function speak(text, opts) {
     opts = opts || {};
     if (!enabled) return false;
@@ -5920,7 +5963,17 @@ EMC.Voice = (function () {
     var segs = splitSegments(text);
     if (!segs.length) return false;
 
-    // 云端可用时走云端（整段合成，语速由服务端模型控制）
+    if (window.__kbVoiceUnlocked === false) {
+      registerFlush();
+      voicePending.push({ text: text, opts: opts });
+      if (window.__kbVoiceBlocked) window.__kbVoiceBlocked(true);
+      return true;
+    }
+    return speakNow(text, opts);
+  }
+
+  /* 解锁后的真实派发：云端千问优先，失败回退本地浏览器朗读 */
+  function speakNow(text, opts) {
     if (cfg.cloud !== false) {
       probeCloud().then(function (ok) {
         if (!ok) { speakLocal(text, opts); return; }
@@ -5961,6 +6014,25 @@ EMC.Voice = (function () {
    * ========================================================== */
   var cloud = { available: false, checked: false, audio: null, cfg: null };
 
+  /* 手机端未解锁（未发生首次手势）时暂存的播报队列；解锁后自动补播。
+     注册时机：本模块在解析期执行，早于头部解锁脚本；故延迟到 DOMContentLoaded 再注册一次 */
+  var voicePending = [];
+  function flushPending() {
+    var list = voicePending.slice();
+    voicePending.length = 0;
+    list.forEach(function (it) { try { speakNow(it.text, it.opts); } catch (e) {} });
+    if (window.__kbVoiceBlocked) window.__kbVoiceBlocked(false);
+  }
+  function registerFlush() {
+    if (window.__kbFlushRegistered) return;
+    if (typeof window.__kbOnVoiceUnlock === 'function') {
+      window.__kbOnVoiceUnlock(flushPending);
+      window.__kbFlushRegistered = true;
+    }
+  }
+  registerFlush();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', registerFlush);
+
   /* 探测云端语音是否可用（只调一次，结果缓存） */
   function probeCloud(force) {
     if (cloud.checked && !force) return Promise.resolve(cloud.available);
@@ -5975,23 +6047,45 @@ EMC.Voice = (function () {
       .catch(function () { cloud.available = false; return false; });
   }
 
-  /* 云端语音合成播放（优先生成，失败自动回退浏览器播报） */
+  /* 云端合成：千问 TTS（温柔女声 Cherry）。长文本按句分块合成、逐块连播，
+     每块之间停 260ms，节奏更像家人面对面慢慢讲（老年友好） */
   function speakCloud(text, opts) {
     opts = opts || {};
-    /* v21 P2-3：云端合成同样先 humanize，避免服务端 TTS 逐字母念 mmHg / % */
-    return fetch('/api/ai/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store',
-      body: JSON.stringify({ text: humanizeForTts(text) })
-    })
-      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('tts http ' + r.status)); })
-      .then(function (j) {
-        if (!j || !j.url) throw new Error('no audio url');
-        return playAudioUrl(j.url, opts);
+    var parts = cloudChunks(humanizeForTts(text));
+    var i = 0;
+    function next() {
+      if (i >= parts.length) return Promise.resolve(true);
+      var part = parts[i]; i++;
+      return fetch('/api/ai/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ text: part, voice: 'Cherry' })
       })
-      .then(function () { return true; })
-      .catch(function () { return false; });   // 由调用方回退浏览器 TTS
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('tts http ' + r.status)); })
+        .then(function (j) {
+          if (!j || !j.url) throw new Error('no audio url');
+          return playAudioUrl(j.url, opts);
+        })
+        .then(function () {
+          if (i < parts.length) {
+            return new Promise(function (res) { setTimeout(res, 260); }).then(next);
+          }
+          return true;
+        });
+    }
+    return next().catch(function () { return false; });   // 由调用方回退浏览器 TTS
+  }
+
+  /* 把整段文本按句合并成 ≤110 字的合成块（避免长文本合成超时，也利于分句停顿） */
+  function cloudChunks(text) {
+    var out = [], cur = '';
+    (splitSegments(text) || [text]).forEach(function (s) {
+      if (cur && (cur + s).length > 110) { out.push(cur); cur = s; }
+      else { cur += s; }
+    });
+    if (cur) out.push(cur);
+    return out.length ? out : [text];
   }
 
   /* 播放云端返回的音频（音量沿用设置；结束后回到空闲态） */
@@ -6002,6 +6096,7 @@ EMC.Voice = (function () {
         var a = new Audio(url);
         cloud.audio = a;
         a.volume = clamp((typeof opts.volume === 'number' ? opts.volume : cfg.volume), 0, 1);
+        a.playbackRate = 0.96;   /* 略放慢，老人更容易听清 */
         a.onended = function () { if (stateCb) stateCb(false); resolve(); };
         a.onerror = function () { if (stateCb) stateCb(false); reject(new Error('音频播放失败')); };
         var pr = a.play();
@@ -6722,12 +6817,14 @@ window.EMCStore = (function () {
 
     function load() {
       if (cache) return cache;
-      /* v14：cloudVoice 默认 false（不调用付费云端 API），asrEngine 默认本地 Qwen3-ASR-0.6B */
-      var settings = Object.assign({ fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', /* v21 P2-5：极简模式开关（默认关） */ simpleMode: false }, lsLoad(KEY.settings, {}));
-      // v14 一次性迁移：老用户此前默认开的云端语音改为关闭，避免继续产生 API 调用费
-      if (settings.cloudVoice !== false && !lsLoad('emc_v14_migrated', false)) {
-        settings.cloudVoice = false;
-        try { lsSave('emc_v14_migrated', true); } catch (e) {}
+      /* v15：cloudVoice 默认 true —— 千问真实语音优先，合成失败自动回退浏览器朗读；asrEngine 默认本地 Qwen3-ASR-0.6B */
+      var settings = Object.assign({ fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', /* v21 P2-5：极简模式开关（默认关） */ simpleMode: false }, lsLoad(KEY.settings, {}));
+      // v15 一次性迁移：语音升级为「千问真实语音优先」；云端语音默认开启，未自定义语速时放慢到 0.85 更适合老人
+      if (!lsLoad('emc_v15_migrated', false)) {
+        settings.cloudVoice = true;
+        if (settings.ttsRate == null || settings.ttsRate === 0.9) settings.ttsRate = 0.85;
+        try { lsSave(KEY.settings, settings); } catch (e) {}
+        try { lsSave('emc_v15_migrated', true); } catch (e) {}
       }
       // 首次安装（无播种标记）才注入演示药品；已清空则保持空白
       // （D-03：清空演示数据后不被自动灌回，刷新后仍是空白）
@@ -7073,8 +7170,8 @@ window.EMCStore = (function () {
       };
     }
     function mapSettingsFrom(s) {
-      /* v14：cloudVoice 默认 false（不调用付费云端 API），asrEngine 默认本地 Qwen3-ASR-0.6B */
-      if (!s) return { fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: defaultRemindTimes() };
+      /* v15：cloudVoice 默认 true（千问真实语音优先，失败自动回退浏览器），用户可在开关里关闭 */
+      if (!s) return { fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: defaultRemindTimes() };
       var fs = 1;
       if (s.fontSize === 'A+') fs = 2; else if (s.fontSize === 'A++') fs = 3;
       return {
@@ -7084,7 +7181,7 @@ window.EMCStore = (function () {
         ttsVolume: (typeof s.ttsVolume === 'number' ? s.ttsVolume : 1),
         ttsVoice: (s.ttsVoice === 'female' ? 'female' : 'std'),
         asrContinue: (s.asrContinue !== false),
-        cloudVoice: (s.cloudVoice === true),
+        cloudVoice: (localStorage.getItem('emc_v15_optout') === '1' ? (s.cloudVoice === true) : true),   /* v15：千问语音默认开，除非用户明确关闭过 */
         /* v14：识别引擎与云端开关对称透传，登录态刷新后不丢 */
         asrEngine: (typeof s.asrEngine === 'string' ? s.asrEngine : 'qwen3-0.6b'),
         /* v21 P2-5：极简模式，登录态刷新后不丢 */
@@ -7459,7 +7556,7 @@ EMC.Care = (function () {
   /* v20 默认兜底值：任一接口失败时按字段回退，保证 S 各字段结构完整，renderAll 不会因 undefined 崩 */
   var FALLBACK_SETTINGS = {
     fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std',
-    asrContinue: true, cloudVoice: false, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: ['08:00', '12:00', '18:00']
+    asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: ['08:00', '12:00', '18:00']
   };
   var FALLBACK_PROFILE = { name: '', age: '', gender: '', username: '', notifyEnabled: true };
 
@@ -10406,11 +10503,12 @@ EMC.Care = (function () {
             if (tip) tip.textContent = '云端语音当前不可用（服务器未配置或网络不通）。不影响使用：识别默认走本地开源模型，播报用手机自带语音。';
           } else {
             var info = V.cloudInfo();
-            if (tip && info) tip.textContent = '云端可用但默认关闭（开启会产生接口费用）。密钥仅保存在服务器，不会下发到本机。模型：' + (info.model || '千问') + '。';
+            if (tip && info) tip.textContent = '云端语音已默认开启（千问真实语音，更自然）。密钥仅保存在服务器，不会下发到本机。模型：' + (info.model || '千问') + '。可随时在上方关闭。';
           }
         });
         cloud.addEventListener('change', function (e) {
           S.settings.cloudVoice = e.target.checked;
+          try { localStorage.setItem('emc_v15_optout', e.target.checked ? '0' : '1'); } catch (e2) {}
           V.configure({ cloud: e.target.checked }); store.setSettings(S.settings);
           toast(e.target.checked ? '已开启云端语音（会产生接口费用）' : '已关闭云端语音，改回本地/自带语音，不产生费用');
         });
