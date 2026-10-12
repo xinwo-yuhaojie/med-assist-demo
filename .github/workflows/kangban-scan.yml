@@ -1,6 +1,7 @@
 name: Kangban missed-dose scan
 
-# 每 15 分钟调用一次函数里的漏服扫描；由 GitHub 免费跑，不依赖任何本机
+# 每 15 分钟调用一次函数里的漏服扫描
+# 结果会写入本次运行的 Summary（方便远程排查）
 on:
   schedule:
     - cron: '*/15 * * * *'
@@ -16,6 +17,14 @@ jobs:
             -H "x-cron-token: ${{ secrets.CRON_TOKEN }}" \
             --max-time 60 \
             https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run/api/cron/scan)
+          body=$(cat /tmp/out)
+          {
+            echo "http=$code"
+            echo ""
+            echo '```json'
+            echo "$body"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           echo "http=$code"
-          cat /tmp/out
+          echo "$body"
           if [ "$code" != "200" ]; then echo "扫描调用失败"; exit 1; fi

@@ -492,14 +492,16 @@
           if (full.length < 12) return;                              /* 太短不弄，避免闪一下 */
           if (/^(正在思考|正在为您|正在查|正在)/.test(full)) return;   /* 等待态不做动画 */
           body.textContent = '';
-          var total = Math.min(2400, Math.max(800, full.length * 8));  /* 总时长 0.8–2.4 秒 */
+          var total = Math.min(2600, Math.max(1200, full.length * 12));  /* 总时长 1.2–2.6 秒（老人看得清） */
           var t0 = Date.now();
           var lastAlign = 0;
           var timer = setInterval(function () {
             if (!node.isConnected) { clearInterval(timer); return; }
             var k = Math.min(1, (Date.now() - t0) / total);
             var n = Math.max(1, Math.floor(full.length * k));
-            if (n !== body.textContent.length) body.textContent = full.slice(0, n);
+            var shown = full.slice(0, n);
+            if (k >= 1) shown = full; else shown = shown + '▍';   /* 打字光标，增强“生成中”的感觉 */
+            if (shown !== body.textContent) body.textContent = shown;
             var now = Date.now();
             if (now - lastAlign > 150) { lastAlign = now; if (window.__kbAlignReply) window.__kbAlignReply(node); }
             if (k >= 1) {
