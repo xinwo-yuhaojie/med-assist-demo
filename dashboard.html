@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>康伴 · 社区治理看板（内部）</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; background:#f5f6f8; color:#222; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 18px 16px 40px; }
+  h1 { font-size: 22px; margin: 8px 0 4px; }
+  .sub { color:#666; font-size:14px; margin-bottom:18px; }
+  .card { background:#fff; border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(0,0,0,.06); margin-bottom:14px; }
+  .card h2 { font-size:17px; margin:0 0 10px; }
+  .row { display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px dashed #eee; font-size:15px; }
+  .row:last-child { border-bottom:0; }
+  .ok { color:#188038; font-weight:600; }
+  .bad { color:#c62828; font-weight:600; }
+  .note { font-size:14px; color:#555; line-height:1.8; }
+  a.back { display:inline-block; margin-top:16px; font-size:15px; color:#1565c0; text-decoration:none; }
+  #gate { position:fixed; inset:0; background:#20242b; display:flex; align-items:center; justify-content:center; padding:18px; z-index:99; }
+  #gate .box { background:#fff; border-radius:16px; padding:24px 20px; width:100%; max-width:360px; }
+  #gate h2 { margin:0 0 6px; font-size:19px; }
+  #gate p { margin:0 0 14px; color:#666; font-size:14px; }
+  #gate input { width:100%; font-size:18px; padding:12px; border:2px solid #bbb; border-radius:10px; letter-spacing:2px; }
+  #gate .err { color:#d33; font-size:14px; min-height:20px; margin:6px 0; }
+  #gate .btns { display:flex; gap:10px; margin-top:4px; }
+  #gate button { flex:1; font-size:17px; padding:13px; border-radius:10px; border:0; cursor:pointer; }
+  #gate .c { background:#f2f2f2; border:1px solid #bbb; color:#333; }
+  #gate .o { background:#c62828; color:#fff; }
+  #main { display:none; }
+</style>
+</head>
+<body>
+<div id="gate">
+  <div class="box">
+    <h2>🔒 管理者验证</h2>
+    <p>社区治理看板仅限工作人员进入，请输入管理者密码。</p>
+    <input id="pwd" type="password" inputmode="numeric" autocomplete="off" placeholder="请输入密码">
+    <div class="err" id="err"></div>
+    <div class="btns">
+      <button class="c" id="cancel">取消</button>
+      <button class="o" id="ok">进入看板</button>
+    </div>
+  </div>
+</div>
+<div id="main">
+  <div class="wrap">
+    <h1>康伴 · 社区治理看板</h1>
+    <div class="sub">内部页面 · 仅限社区工作人员 · 关闭页面后需重新验证</div>
+    <div class="card">
+      <h2>服务状态</h2>
+      <div class="row"><span>云端账号服务（阿里云函数）</span><span id="svc">检测中…</span></div>
+      <div class="row"><span>账号数据存储</span><span id="oss">—</span></div>
+    </div>
+    <div class="card">
+      <h2>说明</h2>
+      <div class="note">
+        1. 本看板当前展示服务连通状态；居民级用药统计需居民授权后从云端读取，后续版本开放。<br>
+        2. 居民端入口：https://xinwo-yuhaojie.github.io/my-first-site/<br>
+        3. 退出：直接关闭本页即可；下次进入需重新输入密码。
+      </div>
+    </div>
+    <a class="back" href="index.html">← 返回康伴首页</a>
+  </div>
+</div>
+<script>
+(function () {
+  var HASH = '15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225';
+  var gate = document.getElementById('gate');
+  var main = document.getElementById('main');
+  var passed = false;
+  try { passed = sessionStorage.getItem('kbAdminOk') === '1'; } catch (e) {}
+  if (passed) { gate.style.display = 'none'; main.style.display = 'block'; boot(); }
+  function sha(s) {
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function (buf) {
+      return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    });
+  }
+  function tryIn() {
+    var v = document.getElementById('pwd').value;
+    var err = document.getElementById('err');
+    if (!(window.crypto && crypto.subtle && crypto.subtle.digest)) { err.textContent = '当前环境不支持安全校验，请用浏览器打开。'; return; }
+    sha(v).then(function (hex) {
+      if (hex === HASH) {
+        try { sessionStorage.setItem('kbAdminOk', '1'); } catch (e) {}
+        gate.style.display = 'none'; main.style.display = 'block'; boot();
+      } else { err.textContent = '密码不对，请再试一次。'; document.getElementById('pwd').select(); }
+    }).catch(function () { err.textContent = '校验失败，请重试。'; });
+  }
+  document.getElementById('ok').addEventListener('click', tryIn);
+  document.getElementById('cancel').addEventListener('click', function () { location.href = 'index.html'; });
+  document.getElementById('pwd').addEventListener('keydown', function (e) { if (e.key === 'Enter') tryIn(); });
+  function boot() {
+    var FC = 'https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run';
+    var svc = document.getElementById('svc'), oss = document.getElementById('oss');
+    fetch(FC + '/api/store', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+      svc.textContent = '在线'; svc.className = 'ok';
+      oss.textContent = '模式：' + (j && j.mode ? j.mode : '未知');
+    }).catch(function () {
+      svc.textContent = '不可达'; svc.className = 'bad';
+      oss.textContent = '无法确认';
+    });
+  }
+})();
+</script>
+</body>
+</html>

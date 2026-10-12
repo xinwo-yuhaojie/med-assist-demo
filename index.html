@@ -605,6 +605,76 @@
       }
     } catch (e) {}
 
+    /* 14) 看板密码门：进入社区治理看板需输入管理者密码（只存哈希，不存明文） */
+    try {
+      var KB_ADMIN_HASH = '15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225';
+      function kbGateEnsure() {
+        var g = document.getElementById('kbGateMask');
+        if (g) return g;
+        g = document.createElement('div');
+        g.id = 'kbGateMask';
+        g.setAttribute('style', 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:18px');
+        g.innerHTML = '<div style="background:var(--c-bg-elev,#fff);color:var(--c-fg,#222);border-radius:16px;padding:22px 20px;width:100%;max-width:360px;box-shadow:0 8px 30px rgba(0,0,0,.25)">'
+          + '<div style="font-size:19px;font-weight:700;margin-bottom:6px">🔒 管理者验证</div>'
+          + '<div style="font-size:14px;opacity:.75;margin-bottom:12px">社区治理看板仅限工作人员进入，请输入管理者密码。</div>'
+          + '<input id="kbGatePwd" type="password" inputmode="numeric" autocomplete="off" placeholder="请输入密码" style="width:100%;box-sizing:border-box;font-size:18px;padding:12px;border:2px solid #bbb;border-radius:10px;letter-spacing:2px">'
+          + '<div id="kbGateErr" style="color:#d33;font-size:14px;min-height:20px;margin-top:6px"></div>'
+          + '<div style="display:flex;gap:10px;margin-top:4px">'
+          + '<button id="kbGateCancel" style="flex:1;font-size:17px;padding:13px;border-radius:10px;border:1px solid #bbb;background:#f2f2f2;color:#333">取消</button>'
+          + '<button id="kbGateOk" style="flex:1;font-size:17px;padding:13px;border-radius:10px;border:0;background:#c62828;color:#fff">进入看板</button>'
+          + '</div></div>';
+        document.body.appendChild(g);
+        g.addEventListener('click', function (e) { if (e.target === g) kbGateClose(); });
+        var c = document.getElementById('kbGateCancel');
+        if (c) c.addEventListener('click', kbGateClose);
+        var okb = document.getElementById('kbGateOk');
+        if (okb) okb.addEventListener('click', kbGateTry);
+        var ip = document.getElementById('kbGatePwd');
+        if (ip) ip.addEventListener('keydown', function (e) { if (e.key === 'Enter') kbGateTry(); });
+        return g;
+      }
+      function kbGateOpen() {
+        var g = kbGateEnsure();
+        g.style.display = 'flex';
+        var err = document.getElementById('kbGateErr'); if (err) err.textContent = '';
+        var ip = document.getElementById('kbGatePwd');
+        if (ip) { ip.value = ''; setTimeout(function () { try { ip.focus(); } catch (e2) {} }, 60); }
+      }
+      function kbGateClose() { var g = document.getElementById('kbGateMask'); if (g) g.style.display = 'none'; }
+      function kbGateTry() {
+        var ip = document.getElementById('kbGatePwd');
+        var err = document.getElementById('kbGateErr');
+        var val = ip ? ip.value : '';
+        if (!(window.crypto && crypto.subtle && crypto.subtle.digest)) {
+          if (err) err.textContent = '当前环境不支持安全校验，请用手机/电脑浏览器打开。';
+          return;
+        }
+        crypto.subtle.digest('SHA-256', new TextEncoder().encode(val)).then(function (buf) {
+          var hex = Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+          if (hex === KB_ADMIN_HASH) {
+            try { sessionStorage.setItem('kbAdminOk', '1'); } catch (e2) {}
+            kbGateClose();
+            var to = window.__kbPendingBoard || 'dashboard.html';
+            window.__kbPendingBoard = null;
+            location.href = to;
+          } else {
+            if (err) err.textContent = '密码不对，请再试一次。';
+            if (ip) ip.select();
+          }
+        }).catch(function () { if (err) err.textContent = '校验失败，请重试。'; });
+      }
+      /* 拦截所有指向看板的链接（顶栏「看板」、侧边栏更多里的看板），先过密码门 */
+      document.addEventListener('click', function (e) {
+        var t = e.target;
+        var a = t && t.closest ? t.closest('a[href="dashboard.html"]') : null;
+        if (!a) return;
+        e.preventDefault();
+        e.stopPropagation();
+        window.__kbPendingBoard = a.getAttribute('href') || 'dashboard.html';
+        kbGateOpen();
+      }, true);
+    } catch (e) {}
+
     /* 5) 把“云端账号”字样改准确（数据其实在本机） */
     try {
       var ab = document.getElementById('accountBtn');
@@ -2184,13 +2254,12 @@ html { overflow-x: hidden; }
   .grid2 { grid-template-columns: 1fr 1fr; }
   .grid3 { grid-template-columns: 1fr 1fr; }
   .chip { padding: 10px 14px; }
-  /* 底部导航：首页 / 助手 / 用药 / 健康 / 守护 5 项，低频项只在首页入口出现 */
+  /* 底部导航：「更多」悬浮入口已删除，风险筛查 / 我的数据直接放回底栏 */
   .app .tabbar button {
     font-size: .72em; padding: 6px 1px; min-height: 54px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0;
   }
   .app .tabbar button .ic { font-size: 1.5em; min-height: 26px; }
-  .tabbar .tab-secondary { display: none !important; }
   /* 窄屏细节：依从日历 30 格压缩间距与字号，避免撑宽页面 */
   .heatmap { gap: 4px; }
   .hm-cell { font-size: 11px; border-radius: 6px; }
@@ -3088,9 +3157,8 @@ body.simple-mode .more-item { font-size: .95em; }
             （移动端由既有 .tab-secondary 规则隐藏，switchTab 仍按 [data-tab] 命中），
             由本面板统一承载。
        桌面端（≥1024px）底栏整体隐藏，改用左侧栏的「#btnMoreSide」。 -->
-  <button type="button" id="btnMore" class="more-fab" aria-haspopup="dialog" aria-expanded="false" aria-controls="morePanel">
-    <span class="ic" aria-hidden="true">⋯</span><span class="mf-tx">更多</span>
-  </button>
+  <!-- 「更多」悬浮按钮已按需求删除：手机端不再有悬浮入口；
+       风险筛查 / 我的数据已放回底栏（见 .tabbar 媒体查询） -->
 
   <!-- v19 P1-11 / P1-10：长页回顶、聊天「回到最新」 -->
   <button id="backTop" type="button" aria-label="回到页面顶部" title="回到顶部">↑</button>
