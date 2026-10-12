@@ -17,17 +17,23 @@
   var LOCAL_API = /^\/api\/(login|register|reset-password|me|meds|records|checkin|health|family|notify|summary)/;
 
   // 云端账号开关：向函数探测 /api/store，返回 mode=oss（已开通 OSS）时账号改走云端
-  var _cloudP = null, _cloudOn = false;
+  // 关键：拿不到明确答复（超时/网络失败）时**仍按云端**，避免“一会儿本机一会儿云端”导致登录被顶掉
+  var _cloudP = null, _cloudOn = true;
   function cloudReady() {
     if (!_cloudP) {
       var f = _fetch || window.fetch;
       _cloudP = f(API_BASE + '/api/store', { cache: 'no-store' })
-        .then(function (r) { return r.ok ? r.json() : {}; })
-        .then(function (j) { _cloudOn = !!(j && j.mode === 'oss'); return _cloudOn; })
-        .catch(function () { _cloudOn = false; return false; });
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j || typeof j.mode !== 'string') return true;   // 答复不明确 → 云端
+          _cloudOn = (j.mode === 'oss');
+          return _cloudOn;
+        })
+        .catch(function () { _cloudOn = true; return true; }); // 网络失败 → 云端
     }
     return _cloudP;
   }
+  try { cloudReady(); } catch (e) {}   // 页面一加载就提前探测，登录时不再等
   function lsGet(k, d) { try { return JSON.parse(localStorage.getItem(k) || 'null') || d; } catch (e) { return d; } }
   function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   function users() { return lsGet(UK, {}); }
