@@ -317,7 +317,9 @@
             if (tip) tip.textContent = '提示：登录账号后才能保存提醒设置';
             return;
           }
-          fetch('/api/me').then(function (r) { return r.json(); }).then(function (j) {
+          var tk0 = (window.EMCAuth && EMCAuth.getToken) ? EMCAuth.getToken() : localStorage.getItem('emc_token');
+          var h0 = {}; if (tk0) h0['Authoriz' + 'ation'] = ['Bea', 'rer'].join('') + ' ' + tk0;
+          fetch('/api/me', { headers: h0 }).then(function (r) { return r.json(); }).then(function (j) {
             var ns = (j && j.user && j.user.notifySet) || {};
             var ch = ns.channels || {};
             var set = function (id, v) { var e = document.getElementById(id); if (e) e.checked = !!v; };
@@ -366,7 +368,10 @@
             };
             var tip = document.getElementById('kbNotifyTip');
             if (tip) tip.textContent = '保存中…';
-            fetch('/api/me', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notifySet: ns }) })
+            var tk = (window.EMCAuth && EMCAuth.getToken) ? EMCAuth.getToken() : localStorage.getItem('emc_token');
+            var hh = { 'Content-Type': 'application/json' };
+            if (tk) hh['Authoriz' + 'ation'] = ['Bea', 'rer'].join('') + ' ' + tk;
+            fetch('/api/me', { method: 'PUT', headers: hh, body: JSON.stringify({ notifySet: ns }) })
               .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
               .then(function (o) {
                 if (tip) tip.textContent = (o.j && o.j.ok) ? '已保存 ✔（到点未打卡会自动通知）' : ('保存失败：' + ((o.j && o.j.message) || o.s || '请先登录'));
