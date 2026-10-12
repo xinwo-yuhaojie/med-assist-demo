@@ -440,6 +440,39 @@
       }
     } catch (e) {}
 
+    /* 9) 聊天体验：长回复自动把“开头”对齐到可视区顶部（豆包手感），短回复仍滚到底 */
+    try {
+      function kbAlignReply(node) {
+        try {
+          var box = document.getElementById('chatScroll');
+          if (!box || !node || !node.isConnected) return;
+          var h = node.getBoundingClientRect().height;
+          var viewH = box.clientHeight;
+          if (h > viewH * 0.7) {
+            var delta = node.getBoundingClientRect().top - box.getBoundingClientRect().top;
+            box.scrollTop = Math.max(0, box.scrollTop + delta - 10);
+          } else {
+            box.scrollTop = box.scrollHeight;
+          }
+        } catch (e) {}
+      }
+      var boxEl = document.getElementById('chatScroll');
+      if (boxEl && window.MutationObserver && !boxEl.__kbObserved) {
+        boxEl.__kbObserved = true;
+        new MutationObserver(function (muts) {
+          muts.forEach(function (m) {
+            Array.prototype.forEach.call(m.addedNodes || [], function (n) {
+              if (n && n.nodeType === 1 && n.classList && n.classList.contains('msg') && n.classList.contains('agent')) {
+                setTimeout(function () { kbAlignReply(n); }, 320);
+                setTimeout(function () { kbAlignReply(n); }, 1000);   /* 卡片/追问 chips 渲染完再校一次 */
+              }
+            });
+          });
+        }).observe(boxEl, { childList: true });
+      }
+      window.__kbAlignReply = kbAlignReply;
+    } catch (e) {}
+
     /* 5) 把“云端账号”字样改准确（数据其实在本机） */
     try {
       var ab = document.getElementById('accountBtn');
