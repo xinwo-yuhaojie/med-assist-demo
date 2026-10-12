@@ -471,13 +471,49 @@
           muts.forEach(function (m) {
             Array.prototype.forEach.call(m.addedNodes || [], function (n) {
               if (n && n.nodeType === 1 && n.classList && n.classList.contains('msg') && n.classList.contains('agent')) {
-                setTimeout(function () { kbAlignReply(n); }, 320);
-                setTimeout(function () { kbAlignReply(n); }, 1000);   /* 卡片/追问 chips 渲染完再校一次 */
+                setTimeout(function () { if (window.__kbType) window.__kbType(n); else kbAlignReply(n); }, 80);
+                setTimeout(function () { kbAlignReply(n); }, 1600);   /* 卡片/追问 chips 渲染完再校一次 */
               }
             });
           });
         }).observe(boxEl, { childList: true });
       }
+      /* 打字机：新回复逐字出现（豆包手感）；打字过程中同步做滚动对齐 */
+      function kbType(node) {
+        try {
+          if (!node || !node.isConnected) return;
+          if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+          var bub = node.querySelector('.bubble');
+          if (!bub) return;
+          var body = null;
+          for (var i = 0; i < bub.children.length; i++) { if (bub.children[i].tagName === 'DIV') { body = bub.children[i]; break; } }
+          if (!body) return;
+          var full = String(body.textContent || '');
+          if (full.length < 12) return;                              /* 太短不弄，避免闪一下 */
+          if (/^(正在思考|正在为您|正在查|正在)/.test(full)) return;   /* 等待态不做动画 */
+          body.textContent = '';
+          var total = Math.min(2400, Math.max(800, full.length * 8));  /* 总时长 0.8–2.4 秒 */
+          var t0 = Date.now();
+          var lastAlign = 0;
+          var timer = setInterval(function () {
+            if (!node.isConnected) { clearInterval(timer); return; }
+            var k = Math.min(1, (Date.now() - t0) / total);
+            var n = Math.max(1, Math.floor(full.length * k));
+            if (n !== body.textContent.length) body.textContent = full.slice(0, n);
+            var now = Date.now();
+            if (now - lastAlign > 150) { lastAlign = now; if (window.__kbAlignReply) window.__kbAlignReply(node); }
+            if (k >= 1) {
+              clearInterval(timer);
+              body.textContent = full;
+              if (window.__kbAlignReply) window.__kbAlignReply(node);
+            }
+          }, 30);
+          /* 兜底：无论定时器是否被浏览器节流，最多 total+600ms 后一定是完整文本 */
+          setTimeout(function () { try { clearInterval(timer); body.textContent = full; } catch (e) {} }, total + 600);
+        } catch (e) {}
+      }
+      window.__kbType = kbType;
+
       window.__kbAlignReply = kbAlignReply;
     } catch (e) {}
 
