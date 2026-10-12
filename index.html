@@ -408,11 +408,6 @@
       /* 关闭浮层：优先点应用自己的“关闭/取消”按钮，保持应用的返回键记账平衡（否则会多退一次历史 → 浏览器退出） */
       function kbCloseMask(m) {
         try {
-          /* 用户中心没有独立关闭键：点右上角账号键（应用自己的开关会做完整的记账） */
-          if (m.id === 'ucModal') {
-            var ab = document.getElementById('accountBtn');
-            if (ab) { ab.click(); return; }
-          }
           var cand = ['ucClose', 'authCancel', 'moreCancel', 'helpClose', 'resetCancel'];
           for (var i = 0; i < cand.length; i++) {
             var e2 = m.querySelector('#' + cand[i]);
@@ -572,6 +567,23 @@
           kbShowRecovery('页面出了点小问题');
         } catch (e) {}
       });
+    } catch (e) {}
+
+    /* 12) 硬保护：绝不让应用自己把用户“带出网站”
+     * 应用的返回键机制在关浮层时会调 history.back()；一旦记账不平衡，就会把用户退回上一个页面/退出浏览器。
+     * 这里包一层：只有当前确实有浮层可关时才允许回退，否则忽略。 */
+    try {
+      if (!window.__kbBackGuard) {
+        window.__kbBackGuard = true;
+        var _kbBack = history.back ? history.back.bind(history) : null;
+        if (_kbBack) {
+          history.back = function () {
+            /* 应用发起的自动回退全部忽略：关闭浮层由按钮自己完成，
+             * 退出网站只能由用户按手机返回键（浏览器行为，不走这里） */
+            return;
+          };
+        }
+      }
     } catch (e) {}
 
     /* 5) 把“云端账号”字样改准确（数据其实在本机） */
