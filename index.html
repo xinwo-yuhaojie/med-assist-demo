@@ -425,6 +425,21 @@
       }
     } catch (e) {}
 
+    /* 8) 微信内置浏览器提示（语音播报可能无声，引导用系统浏览器打开） */
+    try {
+      var ua = navigator.userAgent || '';
+      if (/MicroMessenger/i.test(ua) && !document.getElementById('kbWxBanner')) {
+        var wx = document.createElement('div');
+        wx.id = 'kbWxBanner';
+        wx.setAttribute('style', 'position:fixed;left:0;right:0;bottom:0;z-index:90;background:#fff7e6;color:#7a4b00;border-top:2px solid #f0b429;padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));font-size:15px;line-height:1.7;box-shadow:0 -4px 16px rgba(0,0,0,.15)');
+        wx.innerHTML = '<b>提示：</b>您现在在<b>微信</b>里打开，语音播报可能没声音。<br>请点右上角 <b>···</b> → <b>在浏览器打开</b>，体验更完整。' +
+          '<button id="kbWxClose" style="margin-left:8px;padding:6px 12px;border:1px solid #f0b429;background:#fff;border-radius:6px;font-size:15px">知道了</button>';
+        document.body.appendChild(wx);
+        var kc = document.getElementById('kbWxClose');
+        if (kc) kc.addEventListener('click', function () { wx.remove(); });
+      }
+    } catch (e) {}
+
     /* 5) 把“云端账号”字样改准确（数据其实在本机） */
     try {
       var ab = document.getElementById('accountBtn');
