@@ -376,6 +376,22 @@
       }
     } catch (e) {}
 
+    /* 6) 修复浮层过高被遮挡：整层可滚动 + 顶部对齐（桌面/手机都生效） */
+    try {
+      if (!document.getElementById('kbModalFix')) {
+        var st = document.createElement('style');
+        st.id = 'kbModalFix';
+        st.textContent = [
+          '.mask{align-items:flex-start!important;overflow-y:auto!important;overflow-x:hidden!important;',
+          '-webkit-overflow-scrolling:touch!important;',
+          'padding:calc(12px + env(safe-area-inset-top,0px)) 12px calc(12px + env(safe-area-inset-bottom,0px))!important}',
+          '.mask .dialog,.mask .uc-dialog{margin:auto!important;max-height:none!important}',
+          '@media (max-height:760px){.mask .dialog,.mask .uc-dialog{margin:0 auto 20px!important}}'
+        ].join('');
+        document.head.appendChild(st);
+      }
+    } catch (e) {}
+
     /* 5) 把“云端账号”字样改准确（数据其实在本机） */
     try {
       var ab = document.getElementById('accountBtn');
