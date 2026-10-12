@@ -473,14 +473,18 @@
           '@media (max-width:820px){.btn.sm,.icon-btn{min-height:40px}}',
           /* 手机端聊天区：略加高 + 底部留白，避免最后一行被悬浮按钮（更多/回到最新/SOS）压住 */
           '@media (max-width:1023px){.chat-scroll{height:calc(var(--vvh,100dvh) * 0.46 - 40px)!important;padding-bottom:22px!important}}',
-          /* 服药提醒弹层（.reminder-full）：整层可滚动 + 安全区，并把“已服用/稍后提醒”拉到可见区 */
+          /* 服药提醒：手机端改为从顶部滑出的卡片（不再全屏遮挡），✕ 关闭在卡片右上角 */
           '@media (max-width:1023px){',
-          '.reminder-full{align-items:flex-start!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;',
-          'padding:calc(10px + env(safe-area-inset-top,0px)) 10px calc(10px + env(safe-area-inset-bottom,0px))!important}',
-          '.reminder-full .rem-body{margin:auto!important;max-height:none!important;padding:16px 14px!important}',
+          '@keyframes kbRemDrop{from{transform:translateY(-105%)}to{transform:translateY(0)}}',
+          '.reminder-full{align-items:flex-start!important;padding:0!important;background:rgba(0,0,0,.45)!important;overflow:visible!important}',
+          '.reminder-full .rem-body{margin:0!important;width:100%!important;max-width:none!important;border-radius:0 0 22px 22px;',
+          'max-height:78vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 16px calc(20px + env(safe-area-inset-bottom,0px))!important;',
+          'animation:kbRemDrop .3s ease;box-shadow:0 12px 32px rgba(0,0,0,.35)}',
           '.reminder-full .rem-list{max-height:24vh;overflow-y:auto}',
           '.reminder-full .rem-actions .btn-lg{min-height:52px!important;font-size:1.05em!important}',
           '.reminder-full .rem-actions{gap:8px!important}',
+          /* 顶栏绿块不再固定，随页面滚动融入界面 */
+          '.topbar{position:static!important}',
           '}'
         ].join('');
         document.head.appendChild(st2);
@@ -1716,6 +1720,8 @@ input[type="range"] {
 .reminder-full button:focus { outline: 3px solid #fff; outline-offset: 2px; }
 .reminder-full .rem-hint { margin-top: 10px; font-size: .82em; color: var(--c-text-sub); line-height: 1.7; }
 .reminder-full .rem-confirm { background: rgba(0,0,0,.75); }
+/* 二次确认层必须在提醒浮层之上（此前 z60<100 被压住、点了没反应） */
+.mask.rem-confirm { z-index: 130; }
 /* S-12：通知日志折叠/清空工具条 */
 .notify-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .notify-tools .btn { width: auto; flex: 0 0 auto; }
@@ -10131,7 +10137,11 @@ EMC.Care = (function () {
       escHandler = onKeydown;
     }
 
+    var takenBusy = false;
     mask.querySelector('#dlgTaken').addEventListener('click', function () {
+      if (takenBusy) return; takenBusy = true;   /* 一次点击即生效，防重复提交 */
+      var tb = this;
+      try { tb.disabled = true; tb.textContent = '⏳ 正在为您记录…'; } catch (e) {}
       var key = E.fmtDate(new Date());
       var toCheck = S.records.filter(function (r) { return r.date === key && r.slot === slot.key && r.status === 'pending'; });
       (async function () {
@@ -10179,10 +10189,12 @@ EMC.Care = (function () {
     // D-12 需求 1：「稍后提醒」——一次点击即可退出，10 分钟内不再重复弹同一时段
     var snoozeBtn = mask.querySelector('#dlgSnooze');
     if (snoozeBtn) snoozeBtn.addEventListener('click', function () { closeAndSnooze(); });
-    mask.querySelector('#dlgLater').addEventListener('click', askConfirm);
+    /* 稍后再说：点一次直接消失，本时段 30 分钟内不再自动弹出（不再弹二次确认框） */
+    mask.querySelector('#dlgLater').addEventListener('click', function () { closeAndSnooze(30); });
     // D-12 需求 3：✕ 关闭改为直接「稍后提醒」，不再要求二次确认（老人不会因找不到确认框而被锁死）
     mask.querySelector('#remClose').addEventListener('click', function () { closeAndSnooze(); });
-    mask.addEventListener('click', function (e) { if (e.target === mask) askConfirm(); });
+    /* 点卡片外的空白处 = 关闭，10 分钟内不再弹 */
+    mask.addEventListener('click', function (e) { if (e.target === mask) closeAndSnooze(); });
 
     // D-12：登记程序化关闭入口（EMC.closeReminder），语义 = 用户点「稍后提醒」
     activeReminderDismiss = function () { closeAndSnooze(); };
@@ -12081,6 +12093,15 @@ EMC.Care = (function () {
   /** 当前是否有强提醒浮层（供外部判断是否需要关闭） */
   EMC.hasReminder = function () {
     return !!(document.querySelector('.reminder-full'));
+  };
+  /** QA 调试入口：手动触发指定时段的强提醒（与真实提醒同一函数，同一渲染路径） */
+  EMC.__kbShowReminder = function (slotKey) {
+    var slot = (EMC.SLOTS_USER || []).filter(function (s) { return s.key === slotKey; })[0] || (EMC.SLOTS_USER || [])[0];
+    if (!slot) return false;
+    var key = E.fmtDate(new Date());
+    var items = S.records.filter(function (r) { return r.date === key && r.slot === slot.key && r.status === 'pending'; });
+    showReminder(true, slot, items);
+    return true;
   };
   /* v21 P2-5：对外暴露「打开用户中心」，供老人端快捷入口与 QA 脚本复用，
    * 避免各处直接操作 #ucModal 的 style.display（脆弱）。 */
