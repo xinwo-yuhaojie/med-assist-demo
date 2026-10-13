@@ -2784,7 +2784,7 @@ body.simple-mode .more-item { font-size: .95em; }
       <div class="simple-only">
         <div class="card simple-hero">
           <div class="hh-row">
-            <div class="hh-avatar" aria-hidden="true">👴</div>
+            <div class="hh-avatar" aria-hidden="true" id="kbAvatarSimple">👴</div>
             <div>
               <div class="hh-title" id="simpleHello">您好！</div>
               <div class="hh-sub" id="simpleDate">—</div>
@@ -2825,7 +2825,7 @@ body.simple-mode .more-item { font-size: .95em; }
 
       <div class="card home-hero">
         <div class="hh-row">
-          <div class="hh-avatar" aria-hidden="true">👴</div>
+          <div class="hh-avatar" aria-hidden="true" id="kbAvatarHome">👴</div>
           <div>
             <div class="hh-title" id="homeHello">您好！</div>
             <div class="hh-sub" id="homeDate">—</div>
@@ -8355,7 +8355,7 @@ EMC.Care = (function () {
     var box = $id('chatScroll');
     var wrap = document.createElement('div');
     wrap.className = 'msg ' + (role === 'user' ? 'user' : 'agent');
-    var av = document.createElement('div'); av.className = 'avatar'; av.textContent = role === 'user' ? '👴' : '🤖';
+    var av = document.createElement('div'); av.className = 'avatar'; av.textContent = role === 'user' ? ((S.profile.gender === '女') ? '👵' : '👴') : '🤖';
     var bub = document.createElement('div'); bub.className = 'bubble';
     if (meta && meta.intentLabel) {
       var it = document.createElement('span'); it.className = 'intent'; it.textContent = '智能体 · ' + meta.intentLabel;
@@ -8856,6 +8856,12 @@ EMC.Care = (function () {
   function renderHome() {
     var ov = $id('homeOverview');
     if (!ov) return;
+
+    /* 性别头像：男→老爷爷👴，女→奶奶👵（首页两处头像，绝不能混用） */
+    var avEmoji = (S.profile.gender === '女') ? '👵' : '👴';
+    var avH = $id('kbAvatarHome'), avS = $id('kbAvatarSimple');
+    if (avH) avH.textContent = avEmoji;
+    if (avS) avS.textContent = avEmoji;
 
     /* —— 今日概览（与顶部概览卡同源数据） —— */
     var key = E.fmtDate(new Date());
@@ -9519,6 +9525,7 @@ EMC.Care = (function () {
     await store.setProfile({ name: S.profile.name, age: S.profile.age, gender: S.profile.gender });
     toast('已保存老人信息');
     renderGuardian();
+    renderHome();   /* 性别变了立刻换头像（爷爷/奶奶不能混用） */
   }
   async function addContact() {
     var name = $id('contactName').value.trim();
