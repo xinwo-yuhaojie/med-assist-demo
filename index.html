@@ -489,6 +489,9 @@
           '.auth-tab-off{flex:1;min-height:56px;border-radius:16px;border:3px solid #ddd!important;background:#fff!important;color:#666!important;font-size:20px;font-weight:800;cursor:pointer;}',
           '.auth-gender-on{flex:1;min-height:58px;border-radius:16px;border:3px solid #2e7d32!important;background:#e8f5e9!important;color:#2e7d32!important;font-size:18px;font-weight:800;cursor:pointer;}',
           '.auth-gender-off{flex:1;min-height:58px;border-radius:16px;border:3px solid #ccc!important;background:#fff!important;color:#666!important;font-size:18px;font-weight:800;cursor:pointer;}',
+          /* 排版优化：顶栏副标题手机隐藏防换行拥挤；底栏按钮文字不换行不重叠 */
+          '@media (max-width:1023px){.topbar .logo .sub{display:none!important}.topbar .logo{font-size:1.02em;line-height:1.25}.tabbar button{white-space:nowrap;letter-spacing:0;padding:6px 1px}}',
+          '#kbHomePill{display:none;position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:10px;z-index:120;min-height:46px;padding:11px 18px;border:0;border-radius:24px;background:#08221E;color:#fff;font-size:16px;font-weight:800;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer}',
           /* 服药提醒：手机端改为从顶部滑出的卡片（不再全屏遮挡），✕ 关闭在卡片右上角 */
           '@media (max-width:1023px){',
           '@keyframes kbRemDrop{from{transform:translateY(-105%)}to{transform:translateY(0)}}',
@@ -778,9 +781,34 @@
       }, true);
     } catch (e) {}
 
-    /* 16) 版本自检：只检查，不自动跳转（防止误触发退站） */
+    /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      window.__kbVersionProbe = true; /* 直接标记为已运行 */
+      var KB_BUILD = 2026101402;
+      window.__kbVersionProbe = true;
+      setTimeout(function () {
+        try {
+          if (location.href.indexOf('_probe') >= 0) return;
+          fetch(location.pathname + '?_probe=' + Date.now(), { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.text() : ''; })
+            .then(function (t) {
+              var mm = t && t.match(/KB_BUILD\s*=\s*(\d{8,})/);
+              if (mm && Number(mm[1]) > KB_BUILD && !document.getElementById('kbUpdateBar')) {
+                var d = document.createElement('div');
+                d.id = 'kbUpdateBar';
+                d.setAttribute('style', 'position:fixed;left:10px;right:10px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:150;background:#fff8e1;border:2px solid #f0a020;color:#6b4a00;border-radius:12px;padding:12px 14px;font-size:15px;line-height:1.6;box-shadow:0 6px 20px rgba(0,0,0,.25)');
+                d.innerHTML = '<b>发现新版本！</b>点右侧按钮刷新即可（只是刷新页面，不会退出网站）。 <button id="kbUpdateGo" style="margin-top:6px;min-height:44px;padding:8px 14px;border:none;border-radius:8px;background:#f0a020;color:#fff;font-size:15px;font-weight:700">立即更新</button>';
+                document.body.appendChild(d);
+                document.getElementById('kbUpdateGo').addEventListener('click', function () {
+                  var base = location.href.split('?')[0].split('#')[0];
+                  var a = document.createElement('a');
+                  a.href = base + '?r=' + Date.now();
+                  a.target = '_self';
+                  document.body.appendChild(a); a.click(); a.remove();
+                });
+              }
+            }).catch(function () {});
+        } catch (e) {}
+      }, 5000);
     } catch (e) {}
 
     /* 5) 把“云端账号”字样改准确（数据其实在本机） */
@@ -3015,19 +3043,19 @@ body.simple-mode .more-item { font-size: .95em; }
             <select id="medDisease"><option value="">（不指定，由智能体自动判断）</option></select>
           </div>
           <div class="form-row">
-            <label for="medPerTime">④ 每次用量（片）——每次打卡自动扣这么多，吃完后需手动补药</label>
+            <label for="medPerTime">④ 每次吃几片？（打一次卡自动扣这么多）</label>
             <input id="medPerTime" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="每次用量片数" placeholder="如 1 或 2（按医嘱，不填默认按药品说明）">
           </div>
           <div class="form-row">
-            <label for="medRemain">⑤ 余量（片），用于余药提醒（可不填，默认 30）</label>
+            <label for="medRemain">⑤ 现在盒里还剩几片？（药盒现有数量，不填默认 30）</label>
             <input id="medRemain" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="余量片数" placeholder="如 30（可用天数 = 余量 ÷ 每日次数）">
           </div>
           <div class="form-row">
-            <label for="medTotal">⑤-② 满盒量（片，用于「一键补充」补满，可不填，默认 30）</label>
+            <label for="medTotal">⑥ 一盒装满是几片？（点「补满」时补到这个数，不填默认同剩余）</label>
             <input id="medTotal" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="满盒量片数" placeholder="如 30">
           </div>
           <div class="form-row">
-            <label for="medNote">⑥ 备注（可不填）</label>
+            <label for="medNote">⑦ 备注（可不填）</label>
             <input id="medNote" type="text" autocomplete="off" aria-label="用药备注" placeholder="如：随餐服用 / 半片 / 医生交代">
           </div>
           <div class="btn-row">
@@ -3274,6 +3302,9 @@ body.simple-mode .more-item { font-size: .95em; }
        桌面端（≥1024px）底栏整体隐藏，改用左侧栏的「#btnMoreSide」。 -->
   <!-- 「更多」悬浮按钮已按需求删除：手机端不再有悬浮入口；
        风险筛查 / 我的数据已放回底栏（见 .tabbar 媒体查询） -->
+
+  <!-- ⌂ 回首页浮动键（手机专享，不在首页时显示，一点即回） -->
+  <button id="kbHomePill" type="button" aria-label="回首页">⌂ 回首页</button>
 
   <!-- v19 P1-11 / P1-10：长页回顶、聊天「回到最新」 -->
   <button id="backTop" type="button" aria-label="回到页面顶部" title="回到顶部">↑</button>
@@ -7984,6 +8015,21 @@ EMC.Care = (function () {
       });
       window.addEventListener('scroll', syncBackTop, { passive: true });
 
+      /* 回首页浮动键：一点即回，不走任何历史导航 */
+      var hp2 = $id('kbHomePill');
+      if (hp2) hp2.addEventListener('click', function () {
+        /* 极简态：先点顶栏「退出」再回首页；普通态：直接回首页。全部走页面内切换，零历史导航 */
+        if (document.body.classList.contains('simple-mode')) {
+          var ex = $id('btnSimpleExit');
+          if (ex) ex.click();
+        }
+        switchTab('home');
+      });
+      window.addEventListener('resize', function () {
+        var hp = $id('kbHomePill');
+        if (hp) hp.style.display = ((S.tab !== 'home' || document.body.classList.contains('simple-mode')) && window.innerWidth < 1024) ? 'block' : 'none';
+      });
+
       /* 离线横幅 */
       window.addEventListener('online', function () { syncOffline(); clearChatSkeleton(); toast('网络已恢复'); });
       window.addEventListener('offline', function () { syncOffline(); });
@@ -8205,6 +8251,9 @@ EMC.Care = (function () {
   function applySimpleMode(on) {
     on = on === true;
     document.body.classList.toggle('simple-mode', on);
+    /* 极简态下即使停在首页也要露出回首页键（一点退极简+回完整首页） */
+    var hpS = $id('kbHomePill');
+    if (hpS) hpS.style.display = ((S.tab !== 'home' || on) && window.innerWidth < 1024) ? 'block' : 'none';
     /* 进入 / 退出两个顶栏入口互斥；用 aria-hidden + tabindex 保证键盘可达性与 CSS 显隐一致。
      *（不用 hidden 属性：其 UA 样式会与 display:inline-flex 打架） */
     [['btnSimpleExit', on]].forEach(function (pair) {
@@ -8272,6 +8321,9 @@ EMC.Care = (function () {
 
   function switchTab(tab) {
     S.tab = tab;
+    /* 回首页浮动键：手机端且不在首页时显示 */
+    var hp = $id('kbHomePill');
+    if (hp) hp.style.display = ((tab !== 'home' || document.body.classList.contains('simple-mode')) && window.innerWidth < 1024) ? 'block' : 'none';
     TABS.forEach(function (t) {
       var el = $id('tab-' + t);
       if (!el) return;
@@ -9402,8 +9454,8 @@ EMC.Care = (function () {
       // S-03：明确反馈补充结果与可用天数
       var daily = (m.slots || []).length || 1;
       var days = Math.ceil(m.remain / daily);
-      if (m.remain > before) toast('已补充至 ' + m.remain + ' 片，约可用 ' + days + ' 天');
-      else toast('该药品已为满盒（' + m.remain + ' 片），无需补充');
+      if (m.remain > before) toast('已补满一整盒：共 ' + m.remain + ' 片，约够吃 ' + days + ' 天');
+      else toast('还是满盒（' + m.remain + ' 片），不用补');
     }
   }
 
