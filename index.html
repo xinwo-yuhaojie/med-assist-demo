@@ -618,23 +618,52 @@
       });
     } catch (e) {}
 
-    /* 12) 彻底硬保护：绝不让任何代码把用户“带出网站” */
+    /* 12) 终极硬保护：绝不让任何代码把用户“带出网站” */
     try {
       if (!window.__kbBackGuard) {
         window.__kbBackGuard = true;
-        /* 禁用所有历史操作 */
+        /* ============ A. 拦截所有历史操作（多环境兼容） ============ */
         try { history.back = function () { return; }; } catch (e1) {}
         try { history.forward = function () { return; }; } catch (e2) {}
         try { history.go = function () { return; }; } catch (e3) {}
         try { history.pushState = function () { return; }; } catch (e4) {}
         try { history.replaceState = function () { return; }; } catch (e5) {}
-        /* 禁用所有 location 导航 */
-        try { location.assign = function () { return; }; } catch (e6) {}
-        try { location.replace = function () { return; }; } catch (e7) {}
-        try { Object.defineProperty(location, 'href', { set: function () { return; } }); } catch (e8) {}
-        /* 禁用版本自动跳转（改为静默跳过） */
+        try { Object.defineProperty(window.history, 'back', { value: function () { return; }, writable: false, configurable: false }); } catch (e6) {}
+        try { Object.defineProperty(window.history, 'forward', { value: function () { return; }, writable: false, configurable: false }); } catch (e7) {}
+        try { Object.defineProperty(window.history, 'go', { value: function () { return; }, writable: false, configurable: false }); } catch (e8) {}
+        try { Object.defineProperty(window.history, 'pushState', { value: function () { return; }, writable: false, configurable: false }); } catch (e9) {}
+        try { Object.defineProperty(window.history, 'replaceState', { value: function () { return; }, writable: false, configurable: false }); } catch (eA) {}
+        /* ============ B. 拦截所有 location 导航 ============ */
+        try { location.assign = function () { return; }; } catch (eB) {}
+        try { location.replace = function () { return; }; } catch (eC) {}
+        try { location.reload = function () { return; }; } catch (eD) {}
+        try { Object.defineProperty(window.location, 'assign', { value: function () { return; }, writable: false, configurable: false }); } catch (eE) {}
+        try { Object.defineProperty(window.location, 'replace', { value: function () { return; }, writable: false, configurable: false }); } catch (eF) {}
+        try { Object.defineProperty(window.location, 'reload', { value: function () { return; }, writable: false, configurable: false }); } catch (eG) {}
+        /* ============ C. 拦截 window.close / open（内置浏览器会退站） ============ */
+        try { window.close = function () { return; }; } catch (eH) {}
+        try { window.open = function () { return null; }; } catch (eI) {}
+        try { Object.defineProperty(window, 'close', { value: function () { return; }, writable: false, configurable: false }); } catch (eJ) {}
+        try { Object.defineProperty(window, 'open', { value: function () { return null; }, writable: false, configurable: false }); } catch (eK) {}
+        /* ============ D. 【核心】beforeunload 拦截：唯一所有浏览器都必须支持的标准事件 ============ */
+        var __kbUnloadMsg = '康伴：仅需在主界面内使用';
+        window.addEventListener('beforeunload', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.returnValue = __kbUnloadMsg;
+          return __kbUnloadMsg;
+        }, true);
+        window.addEventListener('pagehide', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }, true);
+        window.addEventListener('unload', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }, true);
+        /* ============ E. 禁用版本自动跳转 ============ */
         window.__kbVersionProbe = true;
-        /* 完全禁用 BackGuard 系统 */
+        /* ============ F. 完全禁用 BackGuard 系统 ============ */
         window.BackGuard = {
           pushLayer: function () { return; },
           popLayer: function () { return; },
