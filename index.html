@@ -10263,7 +10263,7 @@ EMC.Care = (function () {
       'aria-label="关闭提醒，10 分钟内不再提醒">✕ 关闭</button>' +
       '<div class="rem-body"><h3 class="rem-title">⏰ 该吃药啦</h3>' +
       '<div class="muted">当前时段：' + slot.icon + ' ' + slot.label + '　' + slot.range + '</div>' +
-      '<div class="rem-list">' + names.map(function (n) { return '<div>· ' + n + '</div>'; }).join('') + '</div>' +
+      '<div class="rem-list">' + names.map(function (n) { return '<div>· ' + esc(n) + '</div>'; }).join('') + '</div>' +
       '<div class="rem-footer">' + footer + '</div>' +
       '<div class="rem-actions">' +
       '<button class="btn-lg" id="dlgTaken">✅ 已服用</button>' +
