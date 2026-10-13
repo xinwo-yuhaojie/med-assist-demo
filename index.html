@@ -3028,6 +3028,14 @@ body.simple-mode .more-item { font-size: .95em; }
             <div id="medPicked" style="border:1px solid var(--line);border-radius:12px;padding:10px;background:#F7F9FB">
               <span class="muted">尚未选择药品</span>
             </div>
+            <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center">
+              <label style="flex:1;min-width:150px;font-size:.98em" for="medPerTime">每次吃
+                <input id="medPerTime" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="每次用量片数" placeholder="1" style="width:64px;text-align:center;display:inline-block;margin:0 4px">
+                粒/片</label>
+              <label style="flex:1;min-width:150px;font-size:.98em" for="medFreq">每日
+                <input id="medFreq" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="每日服用次数" placeholder="自动" style="width:64px;text-align:center;display:inline-block;margin:0 4px">
+                次</label>
+            </div>
           </div>
           <div class="form-row">
             <label>③ 选择服药时段（可多选，不选则按该药常规时段自动填）</label>
@@ -3043,19 +3051,26 @@ body.simple-mode .more-item { font-size: .95em; }
             <select id="medDisease"><option value="">（不指定，由智能体自动判断）</option></select>
           </div>
           <div class="form-row">
-            <label for="medPerTime">④ 每次吃几片？（打一次卡自动扣这么多）</label>
-            <input id="medPerTime" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="每次用量片数" placeholder="如 1 或 2（按医嘱，不填默认按药品说明）">
+            <label for="medTimes">③-③ 具体服药时间（选填，按所选时段顺序对应，提醒更精准）</label>
+            <input id="medTimes" type="text" autocomplete="off" aria-label="具体服药时间" placeholder="如 8:00、21:30（多个用逗号分开）">
           </div>
           <div class="form-row">
-            <label for="medRemain">⑤ 现在盒里还剩几片？（药盒现有数量，不填默认 30）</label>
+            <label>③-④ 具体服用日期（选填，不填为长期服用）</label>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span class="muted">从</span><input id="medStart" type="date" aria-label="服用开始日期" style="flex:1;min-width:130px">
+              <span class="muted">到</span><input id="medEnd" type="date" aria-label="服用结束日期" style="flex:1;min-width:130px">
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="medRemain">④ 现在盒里还剩几片？（药盒现有数量，不填默认 30）</label>
             <input id="medRemain" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="余量片数" placeholder="如 30（可用天数 = 余量 ÷ 每日次数）">
           </div>
           <div class="form-row">
-            <label for="medTotal">⑥ 一盒装满是几片？（点「补满」时补到这个数，不填默认同剩余）</label>
+            <label for="medTotal">⑤ 一盒装满是几片？（点「补满」时补到这个数，不填默认同剩余）</label>
             <input id="medTotal" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="满盒量片数" placeholder="如 30">
           </div>
           <div class="form-row">
-            <label for="medNote">⑦ 备注（可不填）</label>
+            <label for="medNote">⑥ 备注（可不填）</label>
             <input id="medNote" type="text" autocomplete="off" aria-label="用药备注" placeholder="如：随餐服用 / 半片 / 医生交代">
           </div>
           <div class="btn-row">
@@ -5588,6 +5603,14 @@ EMC.Engine = (function () {
     ctx = ctx || {};
     var meds = (ctx.meds || []).map(function (m) {
       var s = (m.name || m.mid || '药品') + (m.dose ? '（' + m.dose + '）' : '') + '，服用时段：' + (m.slots || []).join('、');
+      var perN = (Number(m.perTime) > 0) ? Number(m.perTime) : null;
+      var freqN = (Number(m.freqTimes) > 0) ? Number(m.freqTimes) : null;
+      if (perN || freqN) s += '，' + (perN ? ('每次 ' + perN + ' 片') : '') + (perN && freqN ? '，' : '') + (freqN ? ('每日 ' + freqN + ' 次') : '');
+      if (m.times && typeof m.times === 'object') {
+        var tl = []; ['morning', 'noon', 'evening', 'bedtime'].forEach(function (k) { if (m.times[k]) tl.push(k + ' ' + m.times[k]); });
+        if (tl.length) s += '，具体时间：' + tl.join('、');
+      }
+      if (m.start || m.end) s += '，服用日期：' + (m.start || '现在') + ' 至 ' + (m.end || '长期');
       if (typeof m.remain === 'number') {
         var per = (Number(m.perTime) > 0) ? Number(m.perTime) : 1;
         var dd = Math.floor(m.remain / per / ((m.slots || []).length || 1));
@@ -6152,6 +6175,7 @@ EMC.Voice = (function () {
      注册时机：本模块在解析期执行，早于头部解锁脚本；故延迟到 DOMContentLoaded 再注册一次 */
   var voicePending = [];
   function flushPending() {
+    probeCloud();   /* 解锁即预热云端探测，首次播报省一个来回 */
     var list = voicePending.slice();
     voicePending.length = 0;
     list.forEach(function (it) { try { speakNow(it.text, it.opts); } catch (e) {} });
@@ -6181,40 +6205,63 @@ EMC.Voice = (function () {
       .catch(function () { cloud.available = false; return false; });
   }
 
-  /* 云端合成：千问 TTS（温柔女声 Cherry）。长文本按句分块合成、逐块连播，
-     每块之间停 260ms，节奏更像家人面对面慢慢讲（老年友好） */
+  /* 云端合成：千问 TTS（温柔女声 Cherry）。首块≤26字先出声；播当前块时并行预合成下一块；
+     同文本 1 小时缓存；被打断时丢弃在途任务；块间停 260ms 保持老人友好的节奏 */
+  var cloudGen = 0;
+  var ttsCache = Object.create(null);
+  function synthChunk(p) {
+    var hit = ttsCache[p];
+    if (hit && Date.now() < hit.exp) return Promise.resolve(hit.url);
+    return fetch('/api/ai/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ text: p, voice: 'Cherry' })
+    })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('tts http ' + r.status)); })
+      .then(function (j) {
+        if (!j || !j.url) throw new Error('no audio url');
+        if (Object.keys(ttsCache).length > 60) ttsCache = Object.create(null);
+        ttsCache[p] = { url: j.url, exp: Date.now() + 3600000 };
+        return j.url;
+      });
+  }
   function speakCloud(text, opts) {
     opts = opts || {};
-    var parts = cloudChunks(humanizeForTts(text));
-    var i = 0;
-    function next() {
+    var parts = cloudChunks(humanizeForTts(text), 26);
+    var myGen = ++cloudGen;
+    function chain(i, prefetched) {
+      if (myGen !== cloudGen) return Promise.resolve(true);   /* 已被停止/新播报取代 */
       if (i >= parts.length) return Promise.resolve(true);
-      var part = parts[i]; i++;
-      return fetch('/api/ai/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-        body: JSON.stringify({ text: part, voice: 'Cherry' })
-      })
-        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('tts http ' + r.status)); })
-        .then(function (j) {
-          if (!j || !j.url) throw new Error('no audio url');
-          return playAudioUrl(j.url, opts);
-        })
-        .then(function () {
-          if (i < parts.length) {
-            return new Promise(function (res) { setTimeout(res, 260); }).then(next);
-          }
-          return true;
+      var urlP = prefetched
+        ? Promise.resolve(prefetched).then(function (u) { return u || synthChunk(parts[i]); })
+        : synthChunk(parts[i]);
+      var nextP = null;
+      return urlP.then(function (url) {
+        if (myGen !== cloudGen) return true;
+        if (i + 1 < parts.length) nextP = synthChunk(parts[i + 1]).catch(function () { return null; });
+        return playAudioUrl(url, opts).then(function () {
+          if (i + 1 >= parts.length) return true;
+          return new Promise(function (res) { setTimeout(res, 260); }).then(function () { return chain(i + 1, nextP); });
         });
+      });
     }
-    return next().catch(function () { return false; });   // 由调用方回退浏览器 TTS
+    return chain(0, null).catch(function () { return false; });   // 由调用方回退浏览器 TTS
   }
 
   /* 把整段文本按句合并成 ≤110 字的合成块（避免长文本合成超时，也利于分句停顿） */
-  function cloudChunks(text) {
+  function cloudChunks(text, firstMax) {
     var out = [], cur = '';
+    var cap = firstMax || 110;
     (splitSegments(text) || [text]).forEach(function (s) {
+      /* 首块过长时在标点处截短：云端首包更快出声 */
+      if (!out.length && !cur && s.length > cap) {
+        var cut = -1;
+        for (var q = cap - 8; q < Math.min(s.length, cap + 8); q++) {
+          if ('。！？；，、：'.indexOf(s.charAt(q)) >= 0) { cut = q + 1; break; }
+        }
+        if (cut > 4) { out.push(s.slice(0, cut)); s = s.slice(cut); }
+      }
       if (cur && (cur + s).length > 110) { out.push(cur); cur = s; }
       else { cur += s; }
     });
@@ -6242,6 +6289,7 @@ EMC.Voice = (function () {
 
   /* 停止：同时停止浏览器播报与云端音频 */
   function stop() {
+    cloudGen++;
     queue = [];
     speaking = false;
     if (synth) { try { synth.cancel(); } catch (e) {} }
@@ -6879,10 +6927,12 @@ window.EMCStore = (function () {
       var key = fmtDate(new Date());
       var SLOT_TIME = { morning: '08:00', noon: '12:30', evening: '18:30', bedtime: '21:30' };
       meds.forEach(function (m) {
-        m.slots.forEach(function (slot) {
+        if (m.start && key < String(m.start).slice(0, 10)) return;
+        if (m.end && key > String(m.end).slice(0, 10)) return;
+        (m.slots || []).forEach(function (slot) {
           var id = key + '_' + m.mid + '_' + slot;
           if (!records.some(function (r) { return r.id === id; })) {
-            records.push({ id: id, date: key, mid: m.mid, slot: slot, status: 'pending', time: SLOT_TIME[slot] || '' });
+            records.push({ id: id, date: key, mid: m.mid, slot: slot, status: 'pending', time: (m.times && m.times[slot]) || SLOT_TIME[slot] || '' });
           }
         });
       });
@@ -7098,6 +7148,9 @@ window.EMCStore = (function () {
         id: 'm' + Date.now(), mid: med.mid, name: med.name, dose: med.dose,
         slots: med.slots.slice(), note: med.note || '', remain: remain, initRemain: remain, refillAt: remain, total: total,
         perTime: (typeof med.perTime === 'number' && med.perTime > 0) ? med.perTime : 0,
+        freqTimes: (typeof med.freqTimes === 'number' && med.freqTimes > 0) ? Math.min(12, med.freqTimes) : 0,
+        times: (med.times && typeof med.times === 'object') ? med.times : null,
+        start: String(med.start || '').slice(0, 10), end: String(med.end || '').slice(0, 10),
         /* v13：家属代录标记 + 病种关联（游客态同样持久化，保证与云端行为一致） */
         byFamily: med.byFamily === true, disease: String(med.disease || '')
       });
@@ -7111,6 +7164,10 @@ window.EMCStore = (function () {
         if (patch.remain != null) { m.remain = patch.remain; if (patch.refill) m.refillAt = patch.remain; }
         if (patch.total != null) m.total = patch.total;
         if (typeof patch.perTime === 'number' && patch.perTime > 0) m.perTime = patch.perTime;
+        if (typeof patch.freqTimes === 'number' && patch.freqTimes > 0) m.freqTimes = Math.min(12, patch.freqTimes);
+        if (patch.times && typeof patch.times === 'object') m.times = patch.times;
+        if (typeof patch.start === 'string') m.start = patch.start.slice(0, 10);
+        if (typeof patch.end === 'string') m.end = patch.end.slice(0, 10);
         if (patch.name != null) m.name = patch.name;
         if (patch.dose != null) m.dose = patch.dose;
         if (Array.isArray(patch.slots)) m.slots = patch.slots;
@@ -7298,6 +7355,10 @@ window.EMCStore = (function () {
         /* v23：满盒量与每次用量随云端往返（旧数据回退 refillAt/30） */
         total: (typeof b.total === 'number' && b.total > 0) ? b.total : ((typeof b.refillAt === 'number' && b.refillAt > 0) ? b.refillAt : r0),
         perTime: (typeof b.perTime === 'number' && b.perTime > 0) ? b.perTime : 0,
+        freqTimes: (typeof b.freqTimes === 'number' && b.freqTimes > 0) ? Math.min(12, b.freqTimes) : 0,
+        times: (b.times && typeof b.times === 'object') ? b.times : null,
+        start: /^\d{4}-\d{2}-\d{2}$/.test(b.start || '') ? b.start : '',
+        end: /^\d{4}-\d{2}-\d{2}$/.test(b.end || '') ? b.end : '',
         initRemain: r0,
         refillAt: b.refillAt == null ? r0 : b.refillAt,
         /* v13：家属代录标记 + 病种关联（后端缺字段时回落为未标记 / 未关联） */
@@ -7311,6 +7372,9 @@ window.EMCStore = (function () {
         remain: r0, remaining: r0,
         total: (typeof m.total === 'number' && m.total > 0) ? m.total : r0,
         perTime: (typeof m.perTime === 'number' && m.perTime > 0) ? m.perTime : 0,
+        freqTimes: (typeof m.freqTimes === 'number' && m.freqTimes > 0) ? m.freqTimes : 0,
+        times: (m.times && typeof m.times === 'object') ? m.times : {},
+        start: String(m.start || ''), end: String(m.end || ''),
         /* v13：把代录标记与病种关联透传给后端持久化 */
         byFamily: m.byFamily === true, disease: String(m.disease || ''),
         /* v20：备注（note）一并透传，避免云端模式下老人备注丢失 */
@@ -8733,7 +8797,7 @@ EMC.Care = (function () {
   function tabName(t) { return { home: '首页', meds: '用药管理', risk: '风险筛查', data: '我的数据', health: '健康档案', guardian: '家属守护', chat: '智能助手' }[t] || '相关页面'; }
 
   function medsForEngine() {
-    return S.meds.map(function (m) { return { mid: m.mid, name: m.name, dose: m.dose, slots: m.slots, note: m.note, perTime: m.perTime, remain: (typeof m.remain === 'number' ? m.remain : null) }; });
+    return S.meds.map(function (m) { return { mid: m.mid, name: m.name, dose: m.dose, slots: m.slots, note: m.note, perTime: m.perTime, freqTimes: m.freqTimes, times: m.times, start: m.start, end: m.end, remain: (typeof m.remain === 'number' ? m.remain : null) }; });
   }
   function todayPending() {
     var key = E.fmtDate(new Date());
@@ -9017,9 +9081,16 @@ EMC.Care = (function () {
   }
 
   /* ---------- 用药管理 ---------- */
+  /* 每日消耗片数 = 每次用量 × 每日次数 */
+  function medDailyPills(m) {
+    var perN = (typeof m.perTime === 'number' && m.perTime > 0) ? m.perTime : 1;
+    var freqN = (typeof m.freqTimes === 'number' && m.freqTimes > 0) ? m.freqTimes : ((m.slots || []).length || 1);
+    return perN * freqN;
+  }
   function lowMedsList() {
     return S.meds.filter(function (m) {
-      return typeof m.remain === 'number' && Math.floor(m.remain / ((m.slots || []).length || 1)) < 7;
+      if (m.end && E.fmtDate(new Date()) > String(m.end).slice(0, 10)) return false;
+      return typeof m.remain === 'number' && Math.floor(m.remain / medDailyPills(m)) < 7;
     });
   }
 
@@ -9112,7 +9183,9 @@ EMC.Care = (function () {
 
     var arc = S.meds.map(function (m) {
       var dr = E.drugOf(m.mid);
-      var daily = (m.slots || []).length || 1;
+      var perN = (typeof m.perTime === 'number' && m.perTime > 0) ? m.perTime : 1;
+      var freqN = (typeof m.freqTimes === 'number' && m.freqTimes > 0) ? m.freqTimes : ((m.slots || []).length || 1);
+      var daily = perN * freqN;
       var remain = (typeof m.remain === 'number') ? m.remain : null;
       var total = (typeof m.total === 'number' && m.total > 0) ? m.total
         : (typeof m.refillAt === 'number' && m.refillAt > 0) ? m.refillAt
@@ -9133,6 +9206,7 @@ EMC.Care = (function () {
       var warn = (lowCls === 'low') ? ' <span class="pill missed">余药告急</span>'
         : (lowCls === 'warn' ? ' <span class="pill pending">余药偏少</span>' : '');
       var refillBtn = remain != null ? '<button class="btn orange sm" data-refill="' + m.id + '">一键补充</button>' : '';
+      var guideBtn = '<button class="btn gray sm" data-guide="' + m.id + '">🔊 专业指导</button>';
       var editBtn = '<button class="btn gray sm" data-edit="' + m.id + '">编辑</button>';
       // v7 P1-2：近 7 天依从率小标
       var adh7 = medAdherence7(m.mid);
@@ -9145,9 +9219,13 @@ EMC.Care = (function () {
       var disHtml = cdz ? ' <span class="pill dis-tag">' + esc(cdz.icon + ' ' + cdz.name) + '</span>' : '';
       var famHtml = m.byFamily ? ' <span class="pill fam-tag">' + esc(BY_FAMILY_TAG) + '</span>' : '';
       return '<div class="med-row"><div class="info"><div class="nm">' + (dr ? dr.name : m.mid) + disHtml + famHtml + '</div>' +
-        '<div class="ds">' + (dr ? dr.dose : '') + ' · ' + m.slots.map(function (s) { return EMC.slotOf(s).label; }).join('、') +
+        '<div class="ds">每次 ' + perN + ' 片/粒 · 每日 ' + freqN + ' 次 · ' + m.slots.map(function (s) {
+          var tv = m.times && m.times[s];
+          return EMC.slotOf(s).label + (tv ? ' ' + tv : '');
+        }).join('、') +
+        (m.start || m.end ? ' · 疗程 ' + (m.start || '现在') + ' ~ ' + (m.end || '长期') : '') +
         (m.note ? ' · ' + esc(m.note) : '') + '</div>' + adhHtml +
-        '<div class="rem-row">' + remHtml + warn + refillBtn + '</div></div>' +
+        '<div class="rem-row">' + remHtml + warn + refillBtn + guideBtn + '</div></div>' +
         editBtn +
         '<button class="btn gray sm" data-del="' + m.id + '">删除</button></div>';
     }).join('');
@@ -9156,6 +9234,22 @@ EMC.Care = (function () {
       b.addEventListener('click', function () {
         var id = b.getAttribute('data-del');
         deleteMed(id);
+      });
+    });
+    /* 🔊 专业指导：智能体把该药用法+个性化数据用语音讲给老人听 */
+    $id('medArchive').querySelectorAll('[data-guide]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var g = S.meds.filter(function (x) { return x.id === b.getAttribute('data-guide'); })[0];
+        if (!g) return;
+        var perN2 = (typeof g.perTime === 'number' && g.perTime > 0) ? g.perTime : 1;
+        var freqN2 = (typeof g.freqTimes === 'number' && g.freqTimes > 0) ? g.freqTimes : ((g.slots || []).length || 1);
+        var msg = (E.medKnowledge ? (E.medKnowledge(g.mid) || '') : '') || ((g.name || '') + '，请按医嘱服用');
+        msg += '。您目前的用法是：每次 ' + perN2 + ' 片，每日 ' + freqN2 + ' 次' +
+          (g.slots && g.slots.length ? '，主要在' + g.slots.map(function (s) { var tv = g.times && g.times[s]; return EMC.slotOf(s).label + (tv ? ' ' + tv + ' 左右' : ''); }).join('、') + '服用' : '') + '。' +
+        (g.start || g.end ? ('这个药的服用日期是从 ' + (g.start || '现在') + ' 到 ' + (g.end || '长期') + '。') : '') +
+          (typeof g.remain === 'number' ? ('现在还剩 ' + g.remain + ' 片，约够吃 ' + Math.ceil(g.remain / (perN2 * freqN2)) + ' 天' + (g.remain <= perN2 * freqN2 * 7 ? '，请提前补充。' : '。')) : '');
+        V.speak(msg);
+        toast('智能体正在为您朗读专业指导');
       });
     });
     $id('medArchive').querySelectorAll('[data-refill]').forEach(function (b) {
@@ -9372,6 +9466,10 @@ EMC.Care = (function () {
     });
     $id('medRemain').value = (typeof m.remain === 'number') ? m.remain : '';
     var mpt = $id('medPerTime'); if (mpt) mpt.value = (typeof m.perTime === 'number' && m.perTime > 0) ? m.perTime : '';
+    var mf = $id('medFreq'); if (mf) mf.value = (typeof m.freqTimes === 'number' && m.freqTimes > 0) ? m.freqTimes : '';
+    var mtm = $id('medTimes'); if (mtm) mtm.value = (m.times && typeof m.times === 'object') ? (m.slots || []).map(function (s) { return m.times[s]; }).filter(Boolean).join('、') : '';
+    var mss = $id('medStart'); if (mss) mss.value = /^\d{4}-\d{2}-\d{2}$/.test(m.start || '') ? m.start : '';
+    var mes = $id('medEnd'); if (mes) mes.value = /^\d{4}-\d{2}-\d{2}$/.test(m.end || '') ? m.end : '';
     var mt = $id('medTotal'); if (mt) mt.value = (typeof m.total === 'number' && m.total > 0) ? m.total : '';
     $id('medNote').value = m.note || '';
     /* v13 P2：回填「关联慢病」。未手动关联时回显自动归类结果，方便老人改成自己想要的病种 */
@@ -9404,6 +9502,30 @@ EMC.Care = (function () {
     if (mptEl) { var pt = parseInt(mptEl.value, 10); if (!isNaN(pt) && pt > 0) perTime = pt; }
     if (!perTime) { var dm = String(S.picked.dose || '').match(/([0-9.]+)\s*(片|粒|包|袋)/); if (dm) { var dc = Math.round(Number(dm[1])); if (dc > 0) perTime = dc; } }
     if (!perTime) perTime = 1;
+    /* 每日几次：手输优先，否则按勾选时段数 */
+    var freqTimes = 0;
+    var mfEl = $id('medFreq');
+    if (mfEl) { var fq = parseInt(mfEl.value, 10); if (!isNaN(fq) && fq > 0) freqTimes = Math.min(12, fq); }
+    if (!freqTimes) freqTimes = slots.length || 1;
+    /* 具体时间：解析「8:00、21:30」按所选时段顺序对应 */
+    var timesMap = {};
+    var mtEl = $id('medTimes');
+    if (mtEl) {
+      String(mtEl.value || '').split(/[,，、;；\s]+/).filter(Boolean).slice(0, 4).forEach(function (tv, ti) {
+        var hm = tv.match(/^([0-9]{1,2})[:：]?([0-9]{1,2})?$/);
+        if (!hm) return;
+        var h = parseInt(hm[1], 10); var mi = parseInt(hm[2] || '0', 10);
+        if (h > 23 || mi > 59) return;
+        var sk = slots[ti] || (EMC.SLOTS[ti] && EMC.SLOTS[ti].key);
+        if (sk) timesMap[sk] = (h < 10 ? '0' : '') + h + ':' + (mi < 10 ? '0' : '') + mi;
+      });
+    }
+    /* 服用日期范围 */
+    var startD = '', endD = '';
+    var msEl = $id('medStart'), meEl = $id('medEnd');
+    if (msEl && /^\d{4}-\d{2}-\d{2}$/.test(msEl.value || '')) startD = msEl.value;
+    if (meEl && /^\d{4}-\d{2}-\d{2}$/.test(meEl.value || '')) endD = meEl.value;
+    if (startD && endD && endD < startD) { var ttmp = startD; startD = endD; endD = ttmp; }
     var wasEdit = !!editingMedId;
     /* v13 P1-2：家属协助模式下写入的药品统一打「由家属代录」标 */
     var note = $id('medNote').value.trim();
@@ -9416,6 +9538,7 @@ EMC.Care = (function () {
       // D-05 / S-01：编辑保存 → updateMed
       S.meds = await store.updateMed(editingMedId, {
         name: S.picked.name, dose: S.picked.dose, slots: slots, remain: remain, total: total, perTime: perTime,
+        freqTimes: freqTimes, times: timesMap, start: startD, end: endD,
         note: note, disease: disease, byFamily: familyAssist
       });
       editingMedId = null;
@@ -9423,7 +9546,8 @@ EMC.Care = (function () {
     } else {
       S.meds = await store.addMed({
         mid: S.picked.id, name: S.picked.name, dose: S.picked.dose, slots: slots,
-        remain: remain, total: total, perTime: perTime, note: note, disease: disease, byFamily: familyAssist
+        remain: remain, total: total, perTime: perTime, freqTimes: freqTimes, times: timesMap, start: startD, end: endD,
+        note: note, disease: disease, byFamily: familyAssist
       });
     }
     S.picked = null; renderPicked();
@@ -9431,6 +9555,10 @@ EMC.Care = (function () {
     $id('medSearch').value = '';
     $id('medRemain').value = '';
     var mpt0 = $id('medPerTime'); if (mpt0) mpt0.value = '';
+    var mf0 = $id('medFreq'); if (mf0) mf0.value = '';
+    var mtm0 = $id('medTimes'); if (mtm0) mtm0.value = '';
+    var mss0 = $id('medStart'); if (mss0) mss0.value = '';
+    var mes0 = $id('medEnd'); if (mes0) mes0.value = '';
     var mt = $id('medTotal'); if (mt) mt.value = '';
     var md = $id('medDisease'); if (md) md.value = '';
     var vt = $id('medVoiceTip'); if (vt) vt.textContent = '';
@@ -9452,7 +9580,7 @@ EMC.Care = (function () {
     var m = S.meds.filter(function (x) { return x.id === id; })[0];
     if (m) {
       // S-03：明确反馈补充结果与可用天数
-      var daily = (m.slots || []).length || 1;
+      var daily = medDailyPills(m);
       var days = Math.ceil(m.remain / daily);
       if (m.remain > before) toast('已补满一整盒：共 ' + m.remain + ' 片，约够吃 ' + days + ' 天');
       else toast('还是满盒（' + m.remain + ' 片），不用补');
@@ -10198,6 +10326,18 @@ EMC.Care = (function () {
       // D-12 / S-13：用户点过「稍后提醒」后，本时段在 snoozeUntil 之前不再重复弹
       if (snoozeUntil[sk] && Date.now() < snoozeUntil[sk]) return;
       var items = S.records.filter(function (r) { return r.date === key && r.slot === slot.key && r.status === 'pending'; });
+      /* 按药品自定义时间/日期过滤：设了具体时间的到点才提；疗程外不提 */
+      items = items.filter(function (r) {
+        var med = S.meds.filter(function (m) { return m.mid === r.mid; })[0];
+        if (!med) return true;
+        if (med.start && key < String(med.start).slice(0, 10)) return false;
+        if (med.end && key > String(med.end).slice(0, 10)) return false;
+        var ct = med.times && med.times[slot.key];
+        if (!ct) return true;
+        var hm = String(ct).split(':');
+        var ch = (Number(hm[0]) || 0) + (Number(hm[1]) || 0) / 60;
+        return Math.abs(hh - ch) <= 1.2;
+      });
       if (!items.length) return;
       reminderShown[sk] = true;
       showReminder(false, slot, items);
