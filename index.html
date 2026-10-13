@@ -608,14 +608,11 @@
     try {
       if (!window.__kbBackGuard) {
         window.__kbBackGuard = true;
-        var _kbBack = history.back ? history.back.bind(history) : null;
-        if (_kbBack) {
-          history.back = function () {
-            /* 应用发起的自动回退全部忽略：关闭浮层由按钮自己完成，
-             * 退出网站只能由用户按手机返回键（浏览器行为，不走这里） */
-            return;
-          };
-        }
+        /* 应用发起的一切自动导航（后退/前进/go）全部忽略：关闭浮层由按钮自己完成；
+         * 退出网站只能由用户按手机返回键（浏览器行为，不走这里） */
+        try { history.back = function () { return; }; } catch (e1) {}
+        try { history.forward = function () { return; }; } catch (e2) {}
+        try { history.go = function () { return; }; } catch (e3) {}
       }
     } catch (e) {}
 
@@ -706,6 +703,28 @@
         window.__kbPendingBoard = a.getAttribute('href') || 'dashboard.html';
         kbGateOpen();
       }, true);
+    } catch (e) {}
+
+    /* 16) 版本自检：手机内置浏览器常缓存旧页面 —— 发现线上有新版就自动带版本参数重进一次（不退出网站） */
+    try {
+      if (!window.__kbVersionProbe) {
+        window.__kbVersionProbe = true;
+        var KB_BUILD_N = 2026101301;
+        setTimeout(function () {
+          try {
+            if (location.href.indexOf('kbn=') >= 0) return;   /* 已经跳过一次，防循环 */
+            fetch(location.pathname + '?_probe=' + Date.now(), { cache: 'no-store' })
+              .then(function (r) { return r.ok ? r.text() : ''; })
+              .then(function (t) {
+                var m = t && t.match(/KB_BUILD_N\s*=\s*(\d{8,})/);
+                if (m && Number(m[1]) > KB_BUILD_N) {
+                  var sep = location.href.indexOf('?') >= 0 ? '&' : '?';
+                  location.replace(location.href + sep + 'kbn=' + m[1]);
+                }
+              }).catch(function () {});
+          } catch (e) {}
+        }, 4000);
+      }
     } catch (e) {}
 
     /* 5) 把“云端账号”字样改准确（数据其实在本机） */
