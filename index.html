@@ -3203,6 +3203,7 @@ body.simple-mode .more-item { font-size: .95em; }
         </div>
         <button class="btn orange sm" id="btnNotifyFamily" style="margin-top:4px">📣 立即通报家属联系人</button>
         <button class="btn ghost sm" id="btnFamilyBrief" style="margin-top:4px">📝 一键生成家属简报</button>
+        <button class="btn ghost sm" id="btnWeeklyFamily" style="margin-top:4px">📤 本周小结发给家属（真实发送）</button>
         <button class="btn ghost sm" id="btnDemoNotify" style="margin-top:4px">📣 发送演示通报（不真实推送）</button>
       </div>
 
@@ -5629,7 +5630,12 @@ EMC.Engine = (function () {
     L.push('您可以慢慢说，别着急，我陪着您；用药或身体上有任何小问题，都可以随时问我。');
     L.push('你可以讲解用药知识、药物注意事项、慢病管理、健康生活方式，并提醒按时服药。');
     L.push('涉及具体诊断、调整药量、换药等医疗决策时，必须明确提醒：以医生或药师意见为准，不能替代医生诊断。');
-    if (name) L.push('用户称呼：' + name + '（' + [(ctx.profile && ctx.profile.gender) || '', age ? age + '岁' : ''].filter(Boolean).join('，') + '）。');
+    var gnd = (ctx.profile && ctx.profile.gender) || '';
+    if (name) {
+      var callName = name + (gnd === '女' ? '阿姨' : (gnd === '男' ? '伯伯' : ''));
+      L.push('用户称呼：' + name + '（' + [gnd, age ? age + '岁' : ''].filter(Boolean).join('，') + '）。回答时请始终称呼用户为「' + callName + '」，不要直呼全名。');
+    }
+    L.push('老人可能用方言提问（您能听懂方言），但您必须始终用普通话回答与朗读，不要模仿方言用词。');
     if (cond.length) L.push('慢病档案：' + cond.join('、') + '。');
     if (meds.length) L.push('当前用药：' + meds.join('；') + '。');
     /* v23：把用户填写的所有资料都纳入上下文 —— 血压/血糖记录、打卡依从、紧急联系人，
@@ -5639,6 +5645,13 @@ EMC.Engine = (function () {
     var gls = hp.filter(function (h) { return h.type === 'glu' && h.val; });
     if (bps.length) { var b0 = bps[bps.length - 1]; L.push('最近血压：' + b0.sys + '/' + b0.dia + ' mmHg，近段时间共记录 ' + bps.length + ' 次。'); }
     if (gls.length) { var g0 = gls[gls.length - 1]; L.push('最近血糖：' + g0.val + ' mmol/L，共记录 ' + gls.length + ' 次。'); }
+    var adrs = hp.filter(function (h) { return h.type === 'adr'; });
+    if (adrs.length) {
+      var aSev = adrs.filter(function (a) { return a.val === 'severe'; }).length;
+      var aMild = adrs.filter(function (a) { return a.val === 'mild'; }).length;
+      var la = adrs[adrs.length - 1];
+      L.push('不良反应自查：近期共反馈 ' + adrs.length + ' 次（轻微 ' + aMild + '、明显 ' + aSev + '）' + (la && la.note ? ('，最近一次 ' + la.date + '：' + la.note) : '') + '。回答时适度关心；若反馈明显不适，要勝其联系医生或家人。');
+    }
     var recs = Array.isArray(ctx.records) ? ctx.records : [];
     var tk = recs.filter(function (r) { return r.status === 'taken'; }).length;
     var ms = recs.filter(function (r) { return r.status === 'missed'; }).length;
@@ -7713,6 +7726,7 @@ EMC.Care = (function () {
   /* 代录标记文案：老人端与家属端使用同一串，便于 grep 与回归断言 */
   var BY_FAMILY_TAG = '由家属代录';
   var reminderShown = {};
+  var remindCounts = {};   /* 漏服递增多提醒：{n 已提醒次数, last 上次时刻} */
   /* D-12 / S-13：「稍后提醒」冷静期。key = 'YYYY-MM-DD'+slotKey，值 = 到期时间戳。
    * 老人点「稍后提醒」/ ESC / ✕ 关闭后，同一时段在到期前不再自动弹出。 */
   var snoozeUntil = {};
@@ -8210,6 +8224,18 @@ EMC.Care = (function () {
     $id('btnGuardianCheck').addEventListener('click', function () { guardianAutoCheck(true); });
     if ($id('btnNotifyFamily')) $id('btnNotifyFamily').addEventListener('click', notifyFamilyExplicit);
     if ($id('btnFamilyBrief')) $id('btnFamilyBrief').addEventListener('click', generateFamilyBrief);
+  if ($id('btnWeeklyFamily')) $id('btnWeeklyFamily').addEventListener('click', function () {
+    if (!EMCAuth.isLoggedIn()) { toast('请先登录云端账号后再发送'); openLogin(); return; }
+    toast('正在生成并发送本周小结…');
+    EMCAuth.api('/api/notify/weekly', { method: 'POST', body: {} }).then(function (r) {
+      if (r && r.ok) {
+        toast('已发送：' + ((r.sent || []).filter(Boolean).join('、') || '见通知日志'));
+        V.speak('本周小结已经发给您的家人了。');
+      } else {
+        toast('发送失败：' + ((r && (r.error || r.message)) || '请先在通知设置里开启邮箱并填写邮箱'));
+      }
+    }).catch(function () { toast('发送失败，请检查网络与通知设置'); });
+  });
     $id('btnSos').addEventListener('click', openSos);
     /* v7：演示通报（仅生成预览卡，不调用真实 notify 通道） */
     if ($id('btnDemoNotify')) $id('btnDemoNotify').addEventListener('click', sendDemoNotice);
@@ -8488,8 +8514,18 @@ EMC.Care = (function () {
   }
 
   /* ---------- 对话 ---------- */
+  /* 称呼规则：男→X伯伯，女→X阿姨；无性别→名字，无名字→您 */
+  function addressText() {
+    var p = S.profile || {};
+    var nm = String(p.name || '').trim();
+    if (!nm) return '您';
+    if (p.gender === '女') return nm + '阿姨';
+    if (p.gender === '男') return nm + '伯伯';
+    return nm;
+  }
   function greeting() {
-    pushMsg('agent', '您好！我是康伴，您的用药小助手。想问什么直接说，或点下面的问题。',
+    var ga = addressText();
+    pushMsg('agent', (ga === '您' ? '您好！' : '您好，' + ga + '！') + '我是康伴，您的用药小助手。想问什么直接说，或点下面的问题。',
       { intentLabel: '陪伴问候', steps: ['适老化语音交互已就绪', '已载入用药档案 ' + S.meds.length + ' 种药', '等待用户指令'] });
   }
 
@@ -9061,8 +9097,8 @@ EMC.Care = (function () {
     if (hello) {
       var hr = new Date().getHours();
       var greet = hr < 6 ? '夜深了' : (hr < 11 ? '早上好' : (hr < 14 ? '中午好' : (hr < 18 ? '下午好' : '晚上好')));
-      var nm = (S.profile && S.profile.name) ? S.profile.name : '';
-      hello.textContent = greet + (nm ? '，' + nm : '') + '！';
+      var at = addressText();
+      hello.textContent = greet + (at === '您' ? '！' : '，' + at + '！');
     }
     var dt = $id('homeDate');
     if (dt) {
@@ -9327,6 +9363,7 @@ EMC.Care = (function () {
     r.status = act; r.time = new Date().toTimeString().slice(0, 5); // 乐观更新，保证即时反馈
     r.byFamily = isProxy;
     var res = await store.addCheckin({ date: r.date, mid: r.mid, slot: r.slot, status: act, byFamily: isProxy });
+    try { delete remindCounts[r.date + r.slot]; } catch (e) {}   /* 打过卡就重置该时段提醒计数 */
     S.records = res.records;
     if (res.med) {
       var idx = S.meds.findIndex(function (m) { return m.mid === res.med.mid; });
@@ -9608,6 +9645,7 @@ EMC.Care = (function () {
   }
   function isAnomaly(h) {
     if (h.type === 'bp') return E.bpStatus(h.sys, h.dia) !== 'normal';
+    if (h.type !== 'glu') return false;   /* 不良反应等其它记录不参与血压血糖异常判断 */
     return E.gluStatus(h.val, h.meal) !== 'normal';
   }
   function healthAdvice(h) {
@@ -9661,9 +9699,12 @@ EMC.Care = (function () {
 
     var bpTone = (bpSysAvg != null) ? toneOf('bp', E.bpStatus(bpSysAvg, bpDiaAvg)) : '';
     var gluTone = (gluAvg != null) ? toneOf('glu', E.gluStatus(gluAvg, 'fasting')) : '';
+    var adr7 = recent.filter(function (h) { return h.type === 'adr'; });
+    var adrSev = adr7.filter(function (a) { return a.val === 'severe'; }).length;
     box.innerHTML =
       statTone((bpSysAvg != null ? bpSysAvg + '/' + bpDiaAvg : '—'), '近 7 天血压均值', bpTone) +
       statTone((gluAvg != null ? gluAvg : '—'), '近 7 天血糖均值', gluTone) +
+      statTone(adr7.length ? (adr7.length + ' 次' + (adrSev ? '（明显 ' + adrSev + '）' : '')) : '无', '近 7 天不适反馈', adrSev ? 'danger' : (adr7.length ? 'warn' : 'ok')) +
       statTone(anomaly7, '近 7 天异常次数', anomaly7 > 0 ? 'danger' : 'ok');
 
     var bpAll = S.health.filter(function (h) { return h.type === 'bp'; })
@@ -10316,15 +10357,86 @@ EMC.Care = (function () {
   }
 
   /* ---------- 到点提醒 ---------- */
+  /* ---------- 每日不良反应自查（每晚问一次，答过即止） ---------- */
+  function adrDoneToday() {
+    var key = E.fmtDate(new Date());
+    try { if (localStorage.getItem('kb_adr_done_v1') === key) return true; } catch (e) {}
+    return (S.health || []).some(function (h) { return h.type === 'adr' && h.date === key; });
+  }
+  function checkAdr() {
+    var now = new Date(); var hh = now.getHours() + now.getMinutes() / 60;
+    if (Math.abs(hh - 19.5) > 1.2) return;
+    if (adrDoneToday()) return;
+    if (document.querySelector('.adr-mask') || document.querySelector('.reminder-full')) return;
+    showAdrSheet();
+  }
+  function showAdrSheet() {
+    var addr = addressText();
+    var mask = document.createElement('div');
+    mask.className = 'reminder-full adr-mask';
+    mask.setAttribute('role', 'dialog'); mask.setAttribute('aria-modal', 'true');
+    mask.innerHTML = '<button class="rem-close" id="adrClose" aria-label="稍后再问">✕ 稍后</button>' +
+      '<div class="rem-body"><h3 class="rem-title">🩺 今天吃药后，身体有没有不舒服？' + (addr === '您' ? '' : ('，' + addr)) + '</h3>' +
+      '<div class="rem-actions" style="margin-top:14px">' +
+      '<button class="btn-lg" id="adrNone">😊 没有不舒服</button>' +
+      '<button class="btn-lg" id="adrMild" style="background:#f0a020;color:#fff">😐 有一点</button>' +
+      '<button class="btn-lg" id="adrSevere" style="background:#d9534f;color:#fff">😣 很明显</button></div>' +
+      '<div class="small muted" style="margin-top:10px">每天问一次，帮您盯住药物不良反应；结果会进健康档案和家属周报。</div></div>';
+    document.body.appendChild(mask);
+    function closeM() { if (document.body.contains(mask)) document.body.removeChild(mask); V.stop(); }
+    function saveAdr(val, note) {
+      var key = E.fmtDate(new Date());
+      try { localStorage.setItem('kb_adr_done_v1', key); } catch (e) {}
+      store.addHealth({ type: 'adr', date: key, time: new Date().toTimeString().slice(0, 5), val: val, note: note || '' }).then(function (hs) {
+        S.health = hs;
+        if (S.tab === 'health') renderHealth();
+      }).catch(function () {});
+    }
+    document.getElementById('adrClose').addEventListener('click', function () { closeM(); });
+    document.getElementById('adrNone').addEventListener('click', function () {
+      saveAdr('none');
+      closeM();
+      V.speak((addr === '您' ? '好的' : addr + '，好的') + '，没有不舒服就好。今天也请按时吃药，明天我再接着问您。');
+    });
+    function askSymptom(severe) {
+      var body = mask.querySelector('.rem-body');
+      body.innerHTML = '<h3 class="rem-title">🩺 ' + (severe ? '别着急，' : '慢慢说，') + '是哪里不舒服？点一下就行</h3>' +
+        '<div class="chips" style="margin-top:12px">' +
+        ['头晕', '恶心胃不舒服', '食欲差', '皮疹发痒', '心慌', '咳嗽', '睡眠差', '其他'].map(function (s) { return '<button class="chip adr-sym" data-sym="' + s + '">' + s + '</button>'; }).join('') +
+        '</div>';
+      body.querySelectorAll('.adr-sym').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var sym = b.getAttribute('data-sym');
+          saveAdr(severe ? 'severe' : 'mild', sym);
+          closeM();
+          if (severe) {
+            V.speak('谢谢您告诉我。' + sym + '比较明显的话，建议今天就联系医生，或让家人陪您去。已经记入健康档案，家人周报里也会看到。');
+            toast('已记录：明显不适（' + sym + '）。建议联系医生或请家人陪同就诊');
+            try { guardianAutoCheck(true); } catch (e) {}
+          } else {
+            V.speak('好的，' + sym + '属于轻微反应，先观察一下，多喝水多休息。如果明天还有这个感觉，请告诉家人或医生。');
+            toast('已记录：轻微不适（' + sym + '）');
+          }
+        });
+      });
+      V.speak(severe ? '很不舒服是吗？别着急，点一下是哪里不舒服。' : '好的，那您点一下是哪里不舒服。');
+    }
+    document.getElementById('adrMild').addEventListener('click', function () { askSymptom(false); });
+    document.getElementById('adrSevere').addEventListener('click', function () { askSymptom(true); });
+    V.speak((addr === '您' ? '现在' : addr + '，现在') + '问您一个小问题：今天吃药以后，身体有没有不舒服？');
+  }
+
   function checkReminder() {
     var now = new Date(), hh = now.getHours() + now.getMinutes() / 60;
     var key = E.fmtDate(now);
     EMC.SLOTS_USER.forEach(function (slot) {
       if (Math.abs(hh - slot.remindHour) > 1.2) return;
       var sk = key + slot.key;
-      if (reminderShown[sk]) return;
       // D-12 / S-13：用户点过「稍后提醒」后，本时段在 snoozeUntil 之前不再重复弹
       if (snoozeUntil[sk] && Date.now() < snoozeUntil[sk]) return;
+      /* 自动多次提醒：每时段最多3次、至少间隔5分钟；第2次起语音带「家人担心」 */
+      var rc = remindCounts[sk] || (remindCounts[sk] = { n: 0, last: 0 });
+      if (reminderShown[sk] && (rc.n >= 3 || Date.now() - rc.last < 5 * 60000)) return;
       var items = S.records.filter(function (r) { return r.date === key && r.slot === slot.key && r.status === 'pending'; });
       /* 按药品自定义时间/日期过滤：设了具体时间的到点才提；疗程外不提 */
       items = items.filter(function (r) {
@@ -10339,10 +10451,12 @@ EMC.Care = (function () {
         return Math.abs(hh - ch) <= 1.2;
       });
       if (!items.length) return;
+      rc.n++; rc.last = Date.now();
       reminderShown[sk] = true;
-      showReminder(false, slot, items);
+      showReminder(false, slot, items, rc.n);
     });
     guardianAutoCheck();
+    checkAdr();
   }
 
   /* 记录「稍后提醒」：同一日期 + 同一时段在 10 分钟内不再自动弹出。
@@ -10361,7 +10475,7 @@ EMC.Care = (function () {
    *   ④ ESC 键关闭（等同「稍后提醒」，不标记已服用）
    * 浮层为 role="dialog" + aria-modal="true"，打开时焦点移入首个按钮、
    * 关闭后焦点归还触发元素，保证键盘与读屏用户不被困住。 */
-  function showReminder(force, slot, items) {
+  function showReminder(force, slot, items, repeatN) {
     slot = slot || EMC.SLOTS_USER[0];
     items = items || S.records.filter(function (r) {
       return r.date === E.fmtDate(new Date()) && r.status === 'pending';
@@ -10388,7 +10502,9 @@ EMC.Care = (function () {
       ? ('📅 今日剩余还需服用：' + next.slot.label + ' ' +
         next.names.map(function (n) { return n.name + '（' + n.dose + '）'; }).join('、'))
       : '📅 今日用药已全部完成，您做得非常好！';
-    var speakText = '该吃药了。' + nameList.join('，') + '。请按时服用，服完后点击已服用。';
+    var addr = addressText();
+    var speakText = (addr === '您' ? '该吃药了。' : addr + '，该吃药了。') + nameList.join('，') + '。请按时服用，服完后点击已服用。' +
+      (repeatN >= 2 ? ('这是第' + (repeatN >= 3 ? '三' : '二') + '次提醒您了，再不吃药家人会担心的。') : '');
 
     // D-12 无障碍：记录打开前的焦点元素，关闭后归还
     var prevFocus = (document.activeElement && document.activeElement !== document.body)
@@ -10401,7 +10517,7 @@ EMC.Care = (function () {
     // D-12 需求 3：关闭按钮改为带文字的明显按钮（不再是易被漏找的无文字小 ✕）
     mask.innerHTML = '<button class="rem-close" id="remClose" title="关闭并在 10 分钟内不再提醒" ' +
       'aria-label="关闭提醒，10 分钟内不再提醒">✕ 关闭</button>' +
-      '<div class="rem-body"><h3 class="rem-title">⏰ 该吃药啦</h3>' +
+      '<div class="rem-body"><h3 class="rem-title">⏰ 该吃药啦' + (addr === '您' ? '' : ('，' + addr)) + (repeatN >= 2 ? ('（第' + repeatN + '次提醒）') : '') + '</h3>' +
       '<div class="muted">当前时段：' + slot.icon + ' ' + slot.label + '　' + slot.range + '</div>' +
       '<div class="rem-list">' + names.map(function (n) { return '<div>· ' + esc(n) + '</div>'; }).join('') + '</div>' +
       '<div class="rem-footer">' + footer + '</div>' +
