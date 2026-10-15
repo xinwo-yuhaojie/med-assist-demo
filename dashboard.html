@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>康伴 · 社区治理看板</title>
+<title>康伴 · 社区治理管理者页面</title>
 <style>
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; background:#f5f6f8; color:#222; }
@@ -46,18 +46,18 @@
 <div id="gate">
   <div class="box">
     <h2>🔒 管理者验证</h2>
-    <p>社区治理看板仅限工作人员进入，密码由管理员在服务端配置。</p>
+    <p>社区治理管理者页面仅限工作人员进入，密码由管理员在服务端配置。</p>
     <input id="pwd" type="password" inputmode="numeric" autocomplete="off" placeholder="请输入密码">
     <div class="err" id="err"></div>
     <div class="btns">
       <button class="c" id="cancel">取消</button>
-      <button class="o" id="ok">进入看板</button>
+      <button class="o" id="ok">进入管理者页面</button>
     </div>
   </div>
 </div>
 <div id="main">
   <div class="wrap">
-    <h1>康伴 · 社区治理看板 <button class="rfr" id="btnRefresh" style="float:right;margin-top:2px">刷新</button></h1>
+    <h1>康伴 · 社区治理管理者页面 <button class="rfr" id="btnRefresh" style="float:right;margin-top:2px">刷新</button></h1>
     <div class="sub" id="genLine">—</div>
     <div class="card">
       <h2>今日 / 近 7 天总览</h2>
@@ -73,7 +73,7 @@
     <div class="card">
       <h2>服务与提醒渠道</h2>
       <div class="note" id="chLine">—</div>
-      <div class="note">看板数据由服务端实时汇总（不落盘、不含手机号等隐私字段）；居民端入口：https://xinwo-yuhaojie.github.io/my-first-site/</div>
+      <div class="note">管理者页面数据由服务端实时汇总（不落盘、不含手机号等隐私字段）；居民端入口：https://xinwo-yuhaojie.github.io/my-first-site/</div>
     </div>
     <a class="back" id="exitLine" href="index.html">← 返回康伴首页</a>
   </div>
