@@ -783,7 +783,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101402;
+      var KB_BUILD = 2026101501;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -2693,6 +2693,38 @@ body:not(.simple-mode) .simple-exit { display: none; }
   color: var(--c-text-sub); margin-top: 2px; line-height: 1.4;
 }
 .more-item:active { transform: scale(.98); }
+/* ===== 老人模式 / 家属模式 新增样式 ===== */
+.mode-pick-title { font-size: 1.05em; font-weight: 800; margin: 2px 0 10px; }
+.mode-pick { display: flex; gap: 10px; flex-wrap: wrap; }
+.mode-pick .simple-toggle { flex: 1; min-width: 220px; }
+.mode-family { background: #eaf2ff; border-color: #2b7de9; color: #1d5fd0; }
+#btnFamilyExit { display: none; align-items: center; justify-content: center; font-weight: 800; background: #fff; color: #08221E; border-color: #08221E; }
+body.family-mode #btnFamilyExit { display: inline-flex; }
+.family-only { display: none; }
+body.family-mode .family-only { display: block !important; }
+body.family-mode .simple-toggle-card { display: none !important; }
+.fam-ov-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px dashed var(--c-border); font-size: 1.02em; }
+.fam-ov-row:last-child { border-bottom: 0; }
+.fam-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.fam-btns .btn { flex: 1; min-width: 130px; }
+.warn-red { color: #d32f2f !important; font-weight: 800; }
+.simple-plan .plan-item { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px dashed var(--c-border); flex-wrap: wrap; }
+.simple-plan .plan-item:last-of-type { border-bottom: 0; }
+.simple-plan .plan-time { font-size: 1.3em; font-weight: 800; min-width: 60px; }
+.simple-plan .plan-name { flex: 1; font-size: 1.15em; font-weight: 700; min-width: 110px; }
+.simple-plan .plan-item .btn { min-height: 52px; font-size: 1.05em; }
+.simple-addmed { width: 100%; min-height: 60px; margin-top: 12px; border: 0; border-radius: var(--radius-lg); background: #2e7d32; color: #fff; font-size: 1.25em; font-weight: 800; cursor: pointer; }
+/* 药物相互作用警告：小号居中弹窗，带 ✕ 关闭 */
+.warn-mask { position: fixed; inset: 0; z-index: 128; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.warn-card { position: relative; background: #fff; color: #222; border-radius: 16px; max-width: 340px; width: 100%; padding: 20px 18px 16px; box-shadow: 0 10px 34px rgba(0,0,0,.3); }
+.warn-card .warn-title { color: #d32f2f; font-size: 1.18em; font-weight: 800; text-align: center; margin-bottom: 10px; }
+.warn-card .warn-body { font-size: .98em; line-height: 1.7; max-height: 38vh; overflow-y: auto; }
+.warn-card .warn-close { position: absolute; top: 6px; right: 6px; width: 38px; height: 38px; border: 0; background: transparent; font-size: 20px; color: #888; cursor: pointer; }
+.warn-card .warn-btns { display: flex; gap: 10px; margin-top: 14px; }
+.warn-card .warn-btns button { flex: 1; min-height: 48px; border-radius: 12px; font-size: 1.02em; font-weight: 700; cursor: pointer; }
+.warn-cancel { border: 2px solid #ccc; background: #fff; color: #555; }
+.warn-ok { border: 0; background: #2b7de9; color: #fff; }
+
 /* 极简模式：帮助类入口次要，降一档视觉权重但热区不变 */
 body.simple-mode .more-item { font-size: .95em; }
 
@@ -2802,7 +2834,8 @@ body.simple-mode .more-item { font-size: .95em; }
       <!-- 文案刻意压到「退出」两字：顶栏 .topbar-tools 是 flex-wrap，
            按钮宽一涨就会换行把顶栏撑成两行（v19 红线 A13：390px 下顶栏 <120px）。
            完整语义放在 title/aria-label 与页面内的 #simpleExitInline 大按钮上。 -->
-      <button class="icon-btn" id="btnSimpleExit" title="退出极简模式，恢复完整界面" aria-label="退出极简模式，恢复完整界面">退出</button>
+      <button class="icon-btn" id="btnSimpleExit" title="退出老人模式，恢复完整界面" aria-label="退出老人模式，恢复完整界面">退出</button>
+      <button class="icon-btn" id="btnFamilyExit" title="退出家属模式" aria-label="退出家属模式">退出</button>
       <a class="icon-btn" href="dashboard.html" title="社区治理数据看板" aria-label="社区治理数据看板" style="text-decoration:none">看板</a>
       <button class="icon-btn" id="accountBtn" title="登录或注册云端账号" aria-label="登录或注册云端账号">登录/注册</button>
     </div>
@@ -2828,7 +2861,13 @@ body.simple-mode .more-item { font-size: .95em; }
               <div class="hh-sub" id="simpleDate">—</div>
             </div>
           </div>
-          <div class="hh-tip">下面三件事，点一下就能用。</div>
+          <div class="hh-tip">下面都是大字大按钮，点一下就能用。</div>
+        </div>
+        <!-- 老人模式：今日用药计划（参考图样式：时间+药名+一键已服用） -->
+        <div class="card simple-plan">
+          <div class="card-title">📋 今日用药计划 <span class="tag" id="simplePlanCount"></span></div>
+          <div id="simplePlan"></div>
+          <button class="simple-addmed" id="simpleAddMed">＋ 添加药品</button>
         </div>
         <div class="simple-grid">
           <button class="simple-btn" id="simpleMed">
@@ -2846,7 +2885,7 @@ body.simple-mode .more-item { font-size: .95em; }
         </div>
         <!-- 极简态的第二个退出入口：就放在三件事正下方，老人用完顺手就能退回 -->
         <button class="simple-exit" id="simpleExitInline">
-          退出极简模式，恢复完整界面
+          退出老人模式，恢复完整界面
         </button>
       </div>
 
@@ -2854,11 +2893,32 @@ body.simple-mode .more-item { font-size: .95em; }
            游客态也可用：顶栏「登录/注册」只打开登录弹窗，到不了用户中心，
            所以首页/助手页各放一个显式大按钮，是真正无门槛的入口。
            与顶栏「退出极简」互斥显示：普通态显示本卡片，极简态显示顶栏退出按钮。 -->
+      <!-- 家属模式专属：监督概览（默认隐藏，body.family-mode 显示） -->
+      <div class="family-only">
+        <div class="card">
+          <div class="card-title">👨‍👩‍👧 家属监督概览 <span class="tag">实时数据</span></div>
+          <div id="famOverview"></div>
+          <div class="fam-btns">
+            <button class="btn" id="famGoData">查看全部数据</button>
+            <button class="btn gray" id="famGoGuardian">通知与家属设置</button>
+            <button class="btn orange" id="famWeekly">📤 发本周小结给家属</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 模式选择卡：首页并列「老人模式 / 家属模式」两个大入口，随时可切换 -->
       <div class="card simple-toggle-card" id="simpleToggle">
-        <button class="simple-toggle" id="simpleToggleBtn">
-          <span class="s-ic" aria-hidden="true">🧓</span>
-          <span class="s-tx">极简模式<span class="s-sub">只留吃药、量血压、求助，字更大</span></span>
-        </button>
+        <div class="mode-pick-title">选择使用方式（随时可切换）</div>
+        <div class="mode-pick">
+          <button class="simple-toggle" id="simpleToggleBtn">
+            <span class="s-ic" aria-hidden="true">👴</span>
+            <span class="s-tx">老人模式<span class="s-sub">字大、按钮大：吃药、量血压、求助一点就中</span></span>
+          </button>
+          <button class="simple-toggle mode-family" id="familyToggleBtn">
+            <span class="s-ic" aria-hidden="true">👨‍‍👧</span>
+            <span class="s-tx">家属模式<span class="s-sub">家人监督：漏服、余药、不良反应、周报一眼看到</span></span>
+          </button>
+        </div>
       </div>
 
       <div class="card home-hero">
@@ -2920,7 +2980,7 @@ body.simple-mode .more-item { font-size: .95em; }
       <div class="card simple-toggle-card simple-toggle-chat">
         <button class="simple-toggle" id="simpleToggleBtn2">
           <span class="s-ic" aria-hidden="true">🧓</span>
-          <span class="s-tx">极简模式<span class="s-sub">只留吃药、量血压、求助，字更大</span></span>
+          <span class="s-tx">老人模式<span class="s-sub">字大、按钮大：吃药、量血压、求助一点就中</span></span>
         </button>
       </div>
 
@@ -8101,11 +8161,31 @@ EMC.Care = (function () {
           var ex = $id('btnSimpleExit');
           if (ex) ex.click();
         }
+        if (document.body.classList.contains('family-mode')) {
+          var fex = $id('btnFamilyExit');
+          if (fex) fex.click();
+        }
         switchTab('home');
       });
       window.addEventListener('resize', function () {
         var hp = $id('kbHomePill');
-        if (hp) hp.style.display = ((S.tab !== 'home' || document.body.classList.contains('simple-mode')) && window.innerWidth < 1024) ? 'block' : 'none';
+        if (hp) hp.style.display = ((S.tab !== 'home' || document.body.classList.contains('simple-mode') || document.body.classList.contains('family-mode')) && window.innerWidth < 1024) ? 'block' : 'none';
+      });
+
+      /* 老人模式 / 家属模式：入口与出口绑定 */
+      var famBtn = $id('familyToggleBtn');
+      if (famBtn) famBtn.addEventListener('click', function () { applyFamilyMode(true); switchTab('home'); });
+      var famEx = $id('btnFamilyExit');
+      if (famEx) famEx.addEventListener('click', function () { applyFamilyMode(false); });
+      if ($id('famGoData')) $id('famGoData').addEventListener('click', function () { switchTab('data'); });
+      if ($id('famGoGuardian')) $id('famGoGuardian').addEventListener('click', function () { switchTab('guardian'); });
+      if ($id('famWeekly')) $id('famWeekly').addEventListener('click', function () {
+        var b = $id('btnWeeklyFamily');
+        if (b) b.click(); else toast('请先登录云端账号后再发送');
+      });
+      if ($id('simpleAddMed')) $id('simpleAddMed').addEventListener('click', function () {
+        switchTab('meds');
+        setTimeout(function () { var b = $id('btnAddMed'); if (b) b.click(); }, 80);
       });
 
       /* 离线横幅 */
@@ -8338,9 +8418,77 @@ EMC.Care = (function () {
    * 【安全红线】顶栏常驻「退出极简」按钮，任何时候都能一键退回完整界面。
    * 持久化走既有 settings 白名单（simpleMode），游客态与登录态都生效。
    * ========================================================== */
+  /* ===== 老人模式：今日用药计划（时间+药名+一键已服用/漏服） ===== */
+  function renderSimplePlan() {
+    var box = $id('simplePlan'); if (!box) return;
+    var key = E.fmtDate(new Date());
+    var recs = S.records.filter(function (r) { return r.date === key; });
+    var cnt = $id('simplePlanCount');
+    var done = recs.filter(function (r) { return r.status === 'taken'; }).length;
+    if (cnt) cnt.textContent = recs.length ? ('已完成 ' + done + ' / ' + recs.length + ' 次') : '';
+    if (!recs.length) { box.innerHTML = '<div class="muted" style="padding:8px 2px">今天没有用药安排。点下面绿色大按钮添加药品。</div>'; return; }
+    recs.sort(function (a, b) { return String(a.time).localeCompare(String(b.time)); });
+    box.innerHTML = recs.map(function (r) {
+      var d = E.drugOf(r.mid); var nm = (r.name || (d ? d.name : r.mid));
+      var st = r.status === 'taken' ? '<span style="color:#2e7d32;font-weight:800;font-size:1.05em">✔ 已服用</span>'
+        : r.status === 'missed' ? '<span class="warn-red">✘ 今天没吃</span><button class="btn sm gray" data-sp-taken="' + r.id + '">现在补上</button>'
+        : '<button class="btn sm" style="background:#2e7d32;color:#fff" data-sp-taken="' + r.id + '">✅ 已服用</button><button class="btn sm gray" data-sp-missed="' + r.id + '">没吃</button>';
+      return '<div class="plan-item"><span class="plan-time">' + esc(r.time || '—') + '</span><span class="plan-name">' + esc(nm) + '</span>' + st + '</div>';
+    }).join('');
+    box.querySelectorAll('[data-sp-taken]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var r = S.records.filter(function (x) { return x.id === b.getAttribute('data-sp-taken'); })[0];
+        if (r) doCheckin(r, 'taken');
+      });
+    });
+    box.querySelectorAll('[data-sp-missed]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var r = S.records.filter(function (x) { return x.id === b.getAttribute('data-sp-missed'); })[0];
+        if (r) doCheckin(r, 'missed');
+      });
+    });
+  }
+
+  /* ===== 家属模式：监督概览 ===== */
+  function renderFamilyOverview() {
+    var box = $id('famOverview'); if (!box) return;
+    var key = E.fmtDate(new Date());
+    var recs = S.records.filter(function (r) { return r.date === key; });
+    var taken = recs.filter(function (r) { return r.status === 'taken'; }).length;
+    var missed = recs.filter(function (r) { return r.status === 'missed'; }).length;
+    var pend = recs.filter(function (r) { return r.status === 'pending'; }).length;
+    var s7 = E.summary(S.records, S.meds, 7);
+    var low = lowMedsList();
+    var cutoff = E.fmtDate(new Date(Date.now() - 6 * 86400000));
+    var adr7 = (S.health || []).filter(function (h) { return h.type === 'adr' && h.date >= cutoff; });
+    var adrSev = adr7.filter(function (a) { return a.val === 'severe'; }).length;
+    var bpLast = (S.health || []).filter(function (h) { return h.type === 'bp'; }).slice(-1)[0];
+    var rows = [];
+    rows.push('<div class="fam-ov-row"><span>今天吃药</span><span>' + (missed ? '<span class="warn-red">漏服 ' + missed + ' 次</span>·' : '') + ' 已服 ' + taken + ' · 待服 ' + pend + '</span></div>');
+    rows.push('<div class="fam-ov-row"><span>近 7 天依从率</span><span>' + s7.rate + '%' + (s7.rate < 80 ? ' <span class="warn-red">(偏低)</span>' : '') + '</span></div>');
+    rows.push('<div class="fam-ov-row"><span>余药告急</span><span>' + (low.length ? '<span class="warn-red">' + low.length + ' 种快吃完</span>' : '充足') + '</span></div>');
+    rows.push('<div class="fam-ov-row"><span>近 7 天不适反馈</span><span>' + (adr7.length ? (adr7.length + ' 次' + (adrSev ? ' <span class="warn-red">明显 ' + adrSev + ' 次</span>' : '')) : '无') + '</span></div>');
+    if (bpLast) rows.push('<div class="fam-ov-row"><span>最近血压</span><span>' + bpLast.sys + '/' + bpLast.dia + ' mmHg</span></div>');
+    box.innerHTML = rows.join('');
+  }
+  function applyFamilyMode(on) {
+    on = on === true;
+    document.body.classList.toggle('family-mode', on);
+    if (on) {
+      if (document.body.classList.contains('simple-mode')) { try { applySimpleMode(false); } catch (e) {} }
+      renderFamilyOverview();
+      toast('已进入家属模式');
+    } else {
+      toast('已退出家属模式，回到普通界面');
+    }
+    var hp = $id('kbHomePill');
+    if (hp) hp.style.display = ((S.tab !== 'home' || on || document.body.classList.contains('simple-mode')) && window.innerWidth < 1024) ? 'block' : 'none';
+  }
+
   function applySimpleMode(on) {
     on = on === true;
     document.body.classList.toggle('simple-mode', on);
+    if (on) document.body.classList.remove('family-mode');
     /* 极简态下即使停在首页也要露出回首页键（一点退极简+回完整首页） */
     var hpS = $id('kbHomePill');
     if (hpS) hpS.style.display = ((S.tab !== 'home' || on) && window.innerWidth < 1024) ? 'block' : 'none';
@@ -9054,6 +9202,8 @@ EMC.Care = (function () {
     var avH = $id('kbAvatarHome'), avS = $id('kbAvatarSimple');
     if (avH) avH.textContent = avEmoji;
     if (avS) avS.textContent = avEmoji;
+    try { renderSimplePlan(); } catch (e) {}
+    if (document.body.classList.contains('family-mode')) { try { renderFamilyOverview(); } catch (e) {} }
 
     /* —— 今日概览（与顶部概览卡同源数据） —— */
     var key = E.fmtDate(new Date());
@@ -9520,7 +9670,38 @@ EMC.Care = (function () {
     $id('medPanel').style.display = 'block';
     try { $id('medPanel').scrollIntoView({ block: 'center' }); } catch (e) {}
   }
-  async function saveMed() {
+  /* 保存药品：先做相互作用检查，有冲突弹小警告窗（可取消/仍然添加/✕关闭），确认后才保存 */
+  function saveMed() {
+    if (!S.picked) { alert('请先搜索并选择药品'); return; }
+    var scr = null;
+    try { if (!editingMedId) scr = E.screenAdd(S.meds, S.picked.id); } catch (e) {}
+    if (scr && scr.count && (scr.high || scr.medium)) {
+      showWarnDialog(scr, function (proceed) { if (proceed) saveMedCore(); });
+      return;
+    }
+    saveMedCore();
+  }
+  function showWarnDialog(scr, cb) {
+    var old = document.querySelector('.warn-mask'); if (old && old.parentNode) old.parentNode.removeChild(old);
+    var fs = (scr.findings || []).slice().sort(function (a, b) { return (b.level === 'high' ? 1 : 0) - (a.level === 'high' ? 1 : 0); }).slice(0, 3);
+    var lines = fs.map(function (f) {
+      return '<div style="margin-bottom:8px"><span class="warn-red">⚠ ' + esc(f.title || '') + '</span><br>' + esc(f.advice || f.detail || '') + '</div>';
+    }).join('');
+    var mask = document.createElement('div');
+    mask.className = 'warn-mask';
+    mask.innerHTML = '<div class="warn-card"><button class="warn-close" id="warnX" aria-label="关闭警告">✕</button>' +
+      '<div class="warn-title">⚠️ 药物相互作用警告</div>' +
+      '<div class="warn-body">这个药和您正在用的药可能有冲突：<br>' + lines + '请先咨询医生或药师，不要自行停药、换药。</div>' +
+      '<div class="warn-btns"><button class="warn-cancel" id="warnCancel">取消添加</button><button class="warn-ok" id="warnOk">仍然添加</button></div></div>';
+    document.body.appendChild(mask);
+    function close(v) { if (document.body.contains(mask)) document.body.removeChild(mask); cb(v); }
+    document.getElementById('warnX').addEventListener('click', function () { close(false); });
+    document.getElementById('warnCancel').addEventListener('click', function () { close(false); });
+    document.getElementById('warnOk').addEventListener('click', function () { close(true); });
+    mask.addEventListener('click', function (ev) { if (ev.target === mask) close(false); });
+    try { V.speak('提醒一下：这个药和您现在的药可能有相互作用，建议先问医生或药师。您可以点取消添加，或者仍然添加。'); } catch (e) {}
+  }
+  async function saveMedCore() {
     if (!S.picked) { alert('请先搜索并选择药品'); return; }
     var boxes = document.querySelectorAll('#medSlots input:checked');
     var slots = [];
@@ -10844,9 +11025,9 @@ EMC.Care = (function () {
         '<div class="theme-row" id="ucTheme">' +
         themeOpt('light', '☀️ 明亮') + themeOpt('dark', '🌙 夜间') + themeOpt('contrast', '🔆 高对比') +
         '</div></div>' +
-      '<div class="form-row"><label class="switch-row">极简模式（只保留吃药、量血压、求助，字更大）' +
+      '<div class="form-row"><label class="switch-row">老人模式（只保留用药计划、量血压、求助，字更大）' +
         '<input type="checkbox" id="ucSimple" ' + (S.settings.simpleMode === true ? 'checked' : '') + '></label></div>' +
-      '<div class="notice-family" id="ucSimpleTip">开启后首页与助手页只显示三件要紧事，专业术语卡自动隐藏；随时可用顶栏的「退出极简」按钮退回完整界面。</div>' +
+      '<div class="notice-family" id="ucSimpleTip">开启后首页与助手页只显示要紧事，专业术语卡自动隐藏；随时可用顶栏的「退出」按钮退回完整界面；首页也有「老人模式 / 家属模式」入口。</div>' +
       '<div class="form-row"><label>修改密码（留空则不修改）</label>' +
         '<input id="ucPwd1" type="password" placeholder="新密码（至少 6 位）"></div>' +
       '<div class="form-row"><input id="ucPwd2" type="password" placeholder="再次输入新密码"></div>' +
