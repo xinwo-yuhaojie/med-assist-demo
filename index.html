@@ -114,14 +114,30 @@
       if (method === 'GET') return R({ ok: true, meds: u.meds });
       if (method === 'POST') {
         var id = body.mid || ('m' + rid(6));
-        u.meds.push({ mid: id, name: body.name || '', dose: body.dose || '', slots: body.slots || [], remaining: typeof body.remaining === 'number' ? body.remaining : 30, refillAt: typeof body.remaining === 'number' ? body.remaining : 30, note: body.note || '', byFamily: body.byFamily === true, disease: body.disease || '' });
+        var r0m = (typeof body.remain === 'number') ? body.remain : ((typeof body.remaining === 'number') ? body.remaining : 30);
+        var t0m = (typeof body.total === 'number' && body.total > 0) ? body.total : r0m;
+        u.meds.push({ mid: id, name: String(body.name || '').slice(0, 40), dose: String(body.dose || '').slice(0, 60), slots: Array.isArray(body.slots) ? body.slots.slice(0, 6) : [], remain: r0m, remaining: r0m, total: t0m, refillAt: t0m, perTime: (typeof body.perTime === 'number' && body.perTime > 0) ? Math.min(999, Math.round(body.perTime)) : 0, freqTimes: (typeof body.freqTimes === 'number' && body.freqTimes > 0) ? Math.min(12, Math.round(body.freqTimes)) : 0, times: (body.times && typeof body.times === 'object') ? body.times : {}, start: String(body.start || '').slice(0, 10), end: String(body.end || '').slice(0, 10), photo: (typeof body.photo === 'string' && body.photo.indexOf('data:image/') === 0 && body.photo.length <= 160000) ? body.photo : '', note: String(body.note || '').slice(0, 200), byFamily: body.byFamily === true, disease: String(body.disease || '').slice(0, 20) });
         save(); return R({ ok: true, meds: u.meds });
       }
       if (method === 'PUT') {
         var m = u.meds.filter(function (x) { return x.mid === mid; })[0];
         if (!m) return R({ ok: false, message: '药品不存在' }, 404);
-        if (body.refill) m.remaining = m.refillAt == null ? 30 : m.refillAt;
-        else { ['name', 'dose', 'slots', 'note', 'disease'].forEach(function (k) { if (body[k] !== undefined) m[k] = body[k]; }); if (typeof body.remaining === 'number') m.remaining = body.remaining; if (body.byFamily !== undefined) m.byFamily = body.byFamily === true; }
+        if (body.refill) { m.remain = (typeof m.total === 'number' && m.total > 0) ? m.total : ((typeof m.refillAt === 'number') ? m.refillAt : 30); m.remaining = m.remain; }
+        else {
+          ['name', 'dose', 'note', 'disease'].forEach(function (k) { if (body[k] !== undefined) m[k] = String(body[k]).slice(0, 200); });
+          if (Array.isArray(body.slots)) m.slots = body.slots.slice(0, 6);
+          if (typeof body.remain === 'number') m.remain = Math.max(0, Math.min(99999, Math.round(body.remain)));
+          else if (typeof body.remaining === 'number') m.remain = Math.max(0, Math.min(99999, Math.round(body.remaining)));
+          if (typeof m.remain === 'number') m.remaining = m.remain;
+          if (typeof body.total === 'number' && body.total > 0) m.total = Math.min(99999, Math.round(body.total));
+          if (typeof body.perTime === 'number' && body.perTime > 0) m.perTime = Math.min(999, Math.round(body.perTime));
+          if (typeof body.freqTimes === 'number' && body.freqTimes > 0) m.freqTimes = Math.min(12, Math.round(body.freqTimes));
+          if (body.times !== undefined) m.times = (body.times && typeof body.times === 'object') ? body.times : {};
+          if (body.start !== undefined) m.start = String(body.start).slice(0, 10);
+          if (body.end !== undefined) m.end = String(body.end).slice(0, 10);
+          if (body.photo !== undefined) m.photo = (typeof body.photo === 'string' && body.photo.indexOf('data:image/') === 0 && body.photo.length <= 160000) ? body.photo : '';
+          if (body.byFamily !== undefined) m.byFamily = body.byFamily === true;
+        }
         save(); return R({ ok: true, meds: u.meds });
       }
       if (method === 'DELETE') { u.meds = u.meds.filter(function (x) { return x.mid !== mid; }); save(); return R({ ok: true, meds: u.meds }); }
@@ -363,8 +379,8 @@
             var ch = ns.channels || {};
             var set = function (id, v) { var e = document.getElementById(id); if (e) e.checked = !!v; };
             var val = function (id, v) { var e = document.getElementById(id); if (e) e.value = (v == null ? '' : v); };
-            set('kbChEmail', ch.email); set('kbChWechat', ch.wechat); set('kbChSms', ch.sms);
-            val('kbEmail', ns.email); val('kbWechat', ns.wechatWebhook); val('kbPhone', ns.smsPhone);
+            set('kbChEmail', ch.email); set('kbChWechat', ch.wechat); set('kbChSms', ch.sms); set('kbChWx', ch.wxpush);
+            val('kbEmail', ns.email); val('kbWechat', ns.wechatWebhook); val('kbPhone', ns.smsPhone); val('kbWxToken', ns.wxpushToken);
             val('kbFamilyEmail', ns.familyEmail); val('kbOverdue', ns.overdueMinutes || 60);
             if (tip) tip.textContent = '';
           }).catch(function () {});
@@ -385,9 +401,11 @@
             '<label class="switch-row"><input type="checkbox" id="kbChEmail"> 邮箱</label>' +
             '<label class="switch-row"><input type="checkbox" id="kbChWechat"> 微信</label>' +
             '<label class="switch-row"><input type="checkbox" id="kbChSms"> 短信</label>' +
+            '<label class="switch-row"><input type="checkbox" id="kbChWx"> 个人微信推送</label>' +
             '</div></div>' +
             '<div class="form-row"><label for="kbEmail">接收提醒的邮箱</label><input id="kbEmail" type="email" inputmode="email" placeholder="如 me@qq.com"></div>' +
             '<div class="form-row"><label for="kbWechat">企业微信群机器人 Webhook</label><input id="kbWechat" type="text" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."></div>' +
+            '<div class="form-row"><label for="kbWxToken">个人微信推送 Token（免费，推荐家属使用）</label><input id="kbWxToken" type="text" placeholder="微信搜公众号「PushPlus服务号」→关注→复制首页的token粘到这里"><div class="muted small" style="margin-top:4px">开通后，老人漏服时家属微信直接收到提醒，不用打开网页。</div></div>' +
             '<div class="form-row"><label for="kbPhone">接收短信的手机号</label><input id="kbPhone" type="tel" inputmode="numeric" placeholder="如 13800000000"></div>' +
             '<div class="form-row"><label for="kbFamilyEmail">家属邮箱（可选）</label><input id="kbFamilyEmail" type="email" inputmode="email" placeholder="如 son@qq.com"></div>' +
             '<div class="form-row"><label for="kbOverdue">漏服超过（分钟）</label><input id="kbOverdue" type="text" inputmode="numeric" placeholder="60"></div>' +
@@ -401,8 +419,9 @@
                 email: !!(document.getElementById('kbChEmail') || {}).checked,
                 wechat: !!(document.getElementById('kbChWechat') || {}).checked,
                 sms: !!(document.getElementById('kbChSms') || {}).checked,
+                wxpush: !!(document.getElementById('kbChWx') || {}).checked,
               },
-              email: g('kbEmail'), wechatWebhook: g('kbWechat'), smsPhone: g('kbPhone'),
+              email: g('kbEmail'), wechatWebhook: g('kbWechat'), smsPhone: g('kbPhone'), wxpushToken: g('kbWxToken'),
               familyEmail: g('kbFamilyEmail'), overdueMinutes: Number(g('kbOverdue') || 60),
             };
             var tip = document.getElementById('kbNotifyTip');
@@ -783,7 +802,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101501;
+      var KB_BUILD = 2026101502;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -2724,6 +2743,25 @@ body.family-mode .simple-toggle-card { display: none !important; }
 .warn-card .warn-btns button { flex: 1; min-height: 48px; border-radius: 12px; font-size: 1.02em; font-weight: 700; cursor: pointer; }
 .warn-cancel { border: 2px solid #ccc; background: #fff; color: #555; }
 .warn-ok { border: 0; background: #2b7de9; color: #fff; }
+/* ===== 首页精简：隐藏冗余说明文字 ===== */
+.home-hero .hh-tip { display: none; }
+#homeEntries .h-item .small { display: none; }
+.rem-photo { width: 42px; height: 42px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; margin-right: 8px; vertical-align: middle; }
+.plan-photo { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; }
+/* ===== 老人模式再简化：只留用药计划+量血压+求助 ===== */
+body.simple-mode #simpleMed { display: none !important; }
+body.simple-mode .simple-grid { grid-template-columns: 1fr 1fr; }
+body.simple-mode .home-hero { display: none !important; }
+body.simple-mode #tab-home > .card { display: none !important; }
+body.simple-mode .kb-home-sos { display: none !important; }
+body.simple-mode .tabbar button[data-tab="meds"],
+body.simple-mode .tabbar button[data-tab="risk"],
+body.simple-mode .tabbar button[data-tab="data"] { display: none !important; }
+/* ===== 家属模式：聚焦监督数据，隐藏老人自用区 ===== */
+body.family-mode .home-hero { display: none !important; }
+body.family-mode .card-entries { display: none !important; }
+body.family-mode .quick-card { display: none !important; }
+body.family-mode .kb-home-sos { display: none !important; }
 
 /* 极简模式：帮助类入口次要，降一档视觉权重但热区不变 */
 body.simple-mode .more-item { font-size: .95em; }
@@ -2902,6 +2940,7 @@ body.simple-mode .more-item { font-size: .95em; }
             <button class="btn" id="famGoData">查看全部数据</button>
             <button class="btn gray" id="famGoGuardian">通知与家属设置</button>
             <button class="btn orange" id="famWeekly">📤 发本周小结给家属</button>
+            <button class="btn gray" id="famGoSimple">👴 切到老人模式</button>
           </div>
         </div>
       </div>
@@ -2933,16 +2972,16 @@ body.simple-mode .more-item { font-size: .95em; }
       </div>
 
       <div class="card">
-        <div class="card-title">📌 今日概览 <span class="tag">点一下可跳转</span></div>
+        <div class="card-title">📌 今日概览</div>
         <div class="home-ov" id="homeOverview"></div>
       </div>
 
       <div class="card card-entries">
-        <div class="card-title">🧭 全部功能 <span class="tag">点击直达</span></div>
+        <div class="card-title">🧭 全部功能</div>
         <div class="home-grid" id="homeEntries"></div>
       </div>
 
-      <div class="card">
+      <div class="card quick-card">
         <div class="card-title">⚡ 快捷操作</div>
         <div class="quick-row">
           <button class="btn" id="homeQuickBp">🩸 记血压</button>
@@ -3050,6 +3089,15 @@ body.simple-mode .more-item { font-size: .95em; }
           <input type="file" id="medPhotoInput" accept="image/*" capture="environment" style="display:none">
         </div>
         <div class="muted small" id="importHint">拍下药盒或处方单，智能体可自动读出药名、剂量、每日次数和早中晚睡前时段；识别后您可以逐项修改再保存。</div>
+        <div class="form-row" id="medPhotoRow" style="margin-top:10px">
+          <label>📷 药盒照片（选填，保存后吃药提醒会显示这张图，老人看图认药）</label>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button class="btn ghost sm" id="btnMedPhotoPick" type="button">选择/拍照</button>
+            <img id="medPhotoPrev" alt="药盒照片预览" style="display:none;max-height:72px;border-radius:10px;border:1px solid #ccc">
+            <button class="btn gray sm" id="btnMedPhotoDel" type="button" style="display:none">删除照片</button>
+          </div>
+          <input type="file" id="medPhotoFile" accept="image/*" capture="environment" style="display:none">
+        </div>
 
         <div id="importPastePanel" style="display:none;margin-top:12px;border-top:2px dashed var(--line);padding-top:12px">
           <div class="form-row">
@@ -7222,6 +7270,7 @@ window.EMCStore = (function () {
         slots: med.slots.slice(), note: med.note || '', remain: remain, initRemain: remain, refillAt: remain, total: total,
         perTime: (typeof med.perTime === 'number' && med.perTime > 0) ? med.perTime : 0,
         freqTimes: (typeof med.freqTimes === 'number' && med.freqTimes > 0) ? Math.min(12, med.freqTimes) : 0,
+        photo: String(med.photo || '').slice(0, 160000),
         times: (med.times && typeof med.times === 'object') ? med.times : null,
         start: String(med.start || '').slice(0, 10), end: String(med.end || '').slice(0, 10),
         /* v13：家属代录标记 + 病种关联（游客态同样持久化，保证与云端行为一致） */
@@ -7237,6 +7286,7 @@ window.EMCStore = (function () {
         if (patch.remain != null) { m.remain = patch.remain; if (patch.refill) m.refillAt = patch.remain; }
         if (patch.total != null) m.total = patch.total;
         if (typeof patch.perTime === 'number' && patch.perTime > 0) m.perTime = patch.perTime;
+        if (typeof patch.photo === 'string') m.photo = patch.photo.slice(0, 160000);
         if (typeof patch.freqTimes === 'number' && patch.freqTimes > 0) m.freqTimes = Math.min(12, patch.freqTimes);
         if (patch.times && typeof patch.times === 'object') m.times = patch.times;
         if (typeof patch.start === 'string') m.start = patch.start.slice(0, 10);
@@ -7432,6 +7482,7 @@ window.EMCStore = (function () {
         times: (b.times && typeof b.times === 'object') ? b.times : null,
         start: /^\d{4}-\d{2}-\d{2}$/.test(b.start || '') ? b.start : '',
         end: /^\d{4}-\d{2}-\d{2}$/.test(b.end || '') ? b.end : '',
+        photo: (typeof b.photo === 'string' && b.photo.indexOf('data:image/') === 0) ? b.photo.slice(0, 160000) : '',
         initRemain: r0,
         refillAt: b.refillAt == null ? r0 : b.refillAt,
         /* v13：家属代录标记 + 病种关联（后端缺字段时回落为未标记 / 未关联） */
@@ -7448,6 +7499,7 @@ window.EMCStore = (function () {
         freqTimes: (typeof m.freqTimes === 'number' && m.freqTimes > 0) ? m.freqTimes : 0,
         times: (m.times && typeof m.times === 'object') ? m.times : {},
         start: String(m.start || ''), end: String(m.end || ''),
+        photo: (typeof m.photo === 'string' && m.photo.indexOf('data:image/') === 0) ? m.photo.slice(0, 160000) : '',
         /* v13：把代录标记与病种关联透传给后端持久化 */
         byFamily: m.byFamily === true, disease: String(m.disease || ''),
         /* v20：备注（note）一并透传，避免云端模式下老人备注丢失 */
@@ -8179,6 +8231,7 @@ EMC.Care = (function () {
       if (famEx) famEx.addEventListener('click', function () { applyFamilyMode(false); });
       if ($id('famGoData')) $id('famGoData').addEventListener('click', function () { switchTab('data'); });
       if ($id('famGoGuardian')) $id('famGoGuardian').addEventListener('click', function () { switchTab('guardian'); });
+      if ($id('famGoSimple')) $id('famGoSimple').addEventListener('click', function () { applyFamilyMode(false); setSimpleMode(true); });
       if ($id('famWeekly')) $id('famWeekly').addEventListener('click', function () {
         var b = $id('btnWeeklyFamily');
         if (b) b.click(); else toast('请先登录云端账号后再发送');
@@ -8243,6 +8296,7 @@ EMC.Care = (function () {
 
     $id('btnAddMed').addEventListener('click', function () {
       editingMedId = null;
+      try { setMedPhoto(''); } catch (e) {}
       $id('btnSaveMed').textContent = '保存药品';
       $id('medPanel').style.display = 'block';
       safeFocus($id('medSearch'));
@@ -8254,6 +8308,17 @@ EMC.Care = (function () {
       $id('medPanel').style.display = 'none'; S.picked = null; renderPicked();
     });
     $id('medSearch').addEventListener('input', function (e) { renderSuggest(e.target.value); });
+    if ($id('btnMedPhotoPick')) $id('btnMedPhotoPick').addEventListener('click', function () { var f = $id('medPhotoFile'); if (f) f.click(); });
+    if ($id('medPhotoFile')) $id('medPhotoFile').addEventListener('change', function (ev) {
+      var file = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!file) return;
+      compressMedPhoto(file, function (d) {
+        if (d) { setMedPhoto(d); toast('药盒照片已就绪，保存后吃药提醒会显示图片'); }
+        else toast('照片处理失败，换一张试试');
+      });
+    });
+    if ($id('btnMedPhotoDel')) $id('btnMedPhotoDel').addEventListener('click', function () { setMedPhoto(''); });
     $id('btnSaveMed').addEventListener('click', saveMed);
 
     /* ---------- v13 P2-2：语音录入药品 ---------- */
@@ -8433,7 +8498,9 @@ EMC.Care = (function () {
       var st = r.status === 'taken' ? '<span style="color:#2e7d32;font-weight:800;font-size:1.05em">✔ 已服用</span>'
         : r.status === 'missed' ? '<span class="warn-red">✘ 今天没吃</span><button class="btn sm gray" data-sp-taken="' + r.id + '">现在补上</button>'
         : '<button class="btn sm" style="background:#2e7d32;color:#fff" data-sp-taken="' + r.id + '">✅ 已服用</button><button class="btn sm gray" data-sp-missed="' + r.id + '">没吃</button>';
-      return '<div class="plan-item"><span class="plan-time">' + esc(r.time || '—') + '</span><span class="plan-name">' + esc(nm) + '</span>' + st + '</div>';
+      var mm2 = S.meds.filter(function (x) { return x.mid === r.mid; })[0];
+      var ph2 = mm2 && typeof mm2.photo === 'string' && mm2.photo.indexOf('data:image/') === 0 ? '<img class="plan-photo" src="' + mm2.photo + '" alt="药盒照片">' : '';
+      return '<div class="plan-item"><span class="plan-time">' + esc(r.time || '—') + '</span>' + ph2 + '<span class="plan-name">' + esc(nm) + '</span>' + st + '</div>';
     }).join('');
     box.querySelectorAll('[data-sp-taken]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -9657,6 +9724,7 @@ EMC.Care = (function () {
     var mtm = $id('medTimes'); if (mtm) mtm.value = (m.times && typeof m.times === 'object') ? (m.slots || []).map(function (s) { return m.times[s]; }).filter(Boolean).join('、') : '';
     var mss = $id('medStart'); if (mss) mss.value = /^\d{4}-\d{2}-\d{2}$/.test(m.start || '') ? m.start : '';
     var mes = $id('medEnd'); if (mes) mes.value = /^\d{4}-\d{2}-\d{2}$/.test(m.end || '') ? m.end : '';
+    try { setMedPhoto((typeof m.photo === 'string') ? m.photo : ''); } catch (e) {}
     var mt = $id('medTotal'); if (mt) mt.value = (typeof m.total === 'number' && m.total > 0) ? m.total : '';
     $id('medNote').value = m.note || '';
     /* v13 P2：回填「关联慢病」。未手动关联时回显自动归类结果，方便老人改成自己想要的病种 */
@@ -9670,6 +9738,37 @@ EMC.Care = (function () {
     $id('medPanel').style.display = 'block';
     try { $id('medPanel').scrollIntoView({ block: 'center' }); } catch (e) {}
   }
+  /* ===== 药盒照片：草稿状态 + 压缩（提醒图文同步） ===== */
+  var medPhotoDraft = '';
+  function setMedPhoto(dataUrl) {
+    medPhotoDraft = dataUrl || '';
+    var img = $id('medPhotoPrev'), del = $id('btnMedPhotoDel');
+    if (img) { img.style.display = medPhotoDraft ? 'inline-block' : 'none'; if (medPhotoDraft) img.src = medPhotoDraft; }
+    if (del) del.style.display = medPhotoDraft ? 'inline-block' : 'none';
+  }
+  function compressMedPhoto(file, cb) {
+    try {
+      var url = URL.createObjectURL(file);
+      var im = new Image();
+      im.onload = function () {
+        try {
+          var maxW = 320;
+          var sc = Math.min(1, maxW / (im.width || maxW));
+          var cv = document.createElement('canvas');
+          cv.width = Math.max(1, Math.round((im.width || maxW) * sc));
+          cv.height = Math.max(1, Math.round((im.height || maxW) * sc));
+          var g = cv.getContext('2d');
+          g.drawImage(im, 0, 0, cv.width, cv.height);
+          var out = cv.toDataURL('image/jpeg', 0.62);
+          cb(out && out.length < 160000 ? out : '');
+        } catch (e) { cb(''); }
+        try { URL.revokeObjectURL(url); } catch (e) {}
+      };
+      im.onerror = function () { cb(''); };
+      im.src = url;
+    } catch (e) { cb(''); }
+  }
+
   /* 保存药品：先做相互作用检查，有冲突弹小警告窗（可取消/仍然添加/✕关闭），确认后才保存 */
   function saveMed() {
     if (!S.picked) { alert('请先搜索并选择药品'); return; }
@@ -9756,7 +9855,7 @@ EMC.Care = (function () {
       // D-05 / S-01：编辑保存 → updateMed
       S.meds = await store.updateMed(editingMedId, {
         name: S.picked.name, dose: S.picked.dose, slots: slots, remain: remain, total: total, perTime: perTime,
-        freqTimes: freqTimes, times: timesMap, start: startD, end: endD,
+        freqTimes: freqTimes, times: timesMap, start: startD, end: endD, photo: medPhotoDraft,
         note: note, disease: disease, byFamily: familyAssist
       });
       editingMedId = null;
@@ -9765,7 +9864,7 @@ EMC.Care = (function () {
       S.meds = await store.addMed({
         mid: S.picked.id, name: S.picked.name, dose: S.picked.dose, slots: slots,
         remain: remain, total: total, perTime: perTime, freqTimes: freqTimes, times: timesMap, start: startD, end: endD,
-        note: note, disease: disease, byFamily: familyAssist
+        photo: medPhotoDraft, note: note, disease: disease, byFamily: familyAssist
       });
     }
     S.picked = null; renderPicked();
@@ -9773,6 +9872,7 @@ EMC.Care = (function () {
     $id('medSearch').value = '';
     $id('medRemain').value = '';
     var mpt0 = $id('medPerTime'); if (mpt0) mpt0.value = '';
+    try { setMedPhoto(''); } catch (e) {}
     var mf0 = $id('medFreq'); if (mf0) mf0.value = '';
     var mtm0 = $id('medTimes'); if (mtm0) mtm0.value = '';
     var mss0 = $id('medStart'); if (mss0) mss0.value = '';
@@ -10700,7 +10800,12 @@ EMC.Care = (function () {
       'aria-label="关闭提醒，10 分钟内不再提醒">✕ 关闭</button>' +
       '<div class="rem-body"><h3 class="rem-title">⏰ 该吃药啦' + (addr === '您' ? '' : ('，' + addr)) + (repeatN >= 2 ? ('（第' + repeatN + '次提醒）') : '') + '</h3>' +
       '<div class="muted">当前时段：' + slot.icon + ' ' + slot.label + '　' + slot.range + '</div>' +
-      '<div class="rem-list">' + names.map(function (n) { return '<div>· ' + esc(n) + '</div>'; }).join('') + '</div>' +
+      '<div class="rem-list">' + names.map(function (n, ni) {
+        var src = (items.length ? items[ni] : S.meds[ni]);
+        var mm = src ? S.meds.filter(function (x) { return x.mid === src.mid; })[0] : null;
+        var ph = mm && typeof mm.photo === 'string' && mm.photo.indexOf('data:image/') === 0;
+        return '<div>' + (ph ? '<img class="rem-photo" src="' + mm.photo + '" alt="药盒照片">' : '') + '· ' + esc(n) + '</div>';
+      }).join('') + '</div>' +
       '<div class="rem-footer">' + footer + '</div>' +
       '<div class="rem-actions">' +
       '<button class="btn-lg" id="dlgTaken">✅ 已服用</button>' +
