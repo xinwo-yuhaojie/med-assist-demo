@@ -2981,6 +2981,64 @@ body.simple-mode .more-item { font-size: .95em; }
 }
 
 /* ==========================================================
+ * v24：实时态势条 + 智能体驾驶舱（数据连接 / 实时监测 / 综合研判）
+ * ========================================================== */
+#kbLiveBar {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  min-height: 40px; padding: 6px 14px; border: 0; cursor: pointer;
+  background: var(--c-primary-soft); color: var(--c-primary);
+  font-size: var(--fs-small); font-weight: 700; text-align: left;
+  border-bottom: 1px solid var(--c-border);
+}
+#kbLiveBar .lv-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--c-ok); }
+#kbLiveBar.lv-warn .lv-dot { background: var(--c-warn); }
+#kbLiveBar.lv-danger .lv-dot { background: var(--c-danger); animation: lvPulse 1.6s infinite var(--ease); }
+#kbLiveBar .lv-tx { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#kbLiveBar .lv-tm { flex: 0 0 auto; font-size: .82em; opacity: .75; font-variant-numeric: tabular-nums; }
+@keyframes lvPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+[data-theme="contrast"] #kbLiveBar { border-bottom-width: 2px; }
+
+/* —— 驾驶舱 —— */
+.cockpit { border: 2px solid var(--c-primary); }
+.cp-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.cp-kpi {
+  border: 1px solid var(--c-border); border-radius: 12px; background: var(--c-bg);
+  padding: 8px 4px; text-align: center; min-height: 62px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+}
+.cp-kpi .v { font-size: 1.25em; font-weight: 800; color: var(--c-primary); line-height: 1.15; }
+.cp-kpi .k { font-size: .68em; color: var(--c-text-sub); line-height: 1.3; }
+.cp-kpi.tone-ok { border-color: var(--c-ok); background: var(--c-ok-soft); }
+.cp-kpi.tone-ok .v { color: var(--c-ok); }
+.cp-kpi.tone-warn { border-color: var(--c-warn); background: var(--c-warn-soft); }
+.cp-kpi.tone-warn .v { color: var(--c-warn); }
+.cp-kpi.tone-danger { border-color: var(--c-danger); background: var(--c-danger-soft); }
+.cp-kpi.tone-danger .v { color: var(--c-danger); }
+.cp-insights { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.cp-insight {
+  display: flex; align-items: flex-start; gap: 10px;
+  border: 1px solid var(--c-border); border-left: 6px solid var(--c-primary);
+  border-radius: 12px; padding: 10px 12px; background: var(--c-bg-elev);
+  font-size: .95em; line-height: 1.75; cursor: pointer; text-align: left; width: 100%;
+}
+.cp-insight:active { transform: scale(.99); }
+.cp-insight .ci-ic { flex: 0 0 auto; font-size: 1.15em; line-height: 1.5; }
+.cp-insight .ci-tx { flex: 1 1 auto; min-width: 0; }
+.cp-insight .ci-go { flex: 0 0 auto; font-size: .78em; font-weight: 800; color: var(--c-primary); align-self: center; }
+.cp-insight.tone-ok { border-left-color: var(--c-ok); background: var(--c-ok-soft); }
+.cp-insight.tone-warn { border-left-color: var(--c-warn); background: var(--c-warn-soft); }
+.cp-insight.tone-danger { border-left-color: var(--c-danger); background: var(--c-danger-soft); }
+.cp-insight.tone-danger .ci-go { color: var(--c-danger); }
+.cp-foot { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.cp-foot .btn { flex: 1; min-width: 140px; width: auto; }
+/* 驾驶舱在极简/家属模式下也保留（它是“实时监测”的核心入口），但收敛为精简形态 */
+body.simple-mode #kbCockpit .cp-insights { display: none; }
+body.simple-mode #kbCockpit .cp-foot { display: none; }
+@media (max-width: 419px) {
+  .cp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ==========================================================
  * v22 P1-14：回答「逐段朗读」按钮
  * 【为什么要做】老人拿到一段长回答时，往往只想重听其中一句
  *   （比如「这个药能不能和另一个一起吃」）。原来只有整条重读，
@@ -3088,6 +3146,9 @@ body.simple-mode .more-item { font-size: .95em; }
     </div>
   </header>
 
+  <!-- v24：实时态势条（顶栏下常驻，30 秒自动刷新；点它直达智能体驾驶舱） -->
+  <button type="button" id="kbLiveBar" aria-label="查看实时数据驾驶舱"></button>
+
   <!-- 今日概览卡（常驻顶部） -->
   <div class="overview-card" id="overviewCard"></div>
 
@@ -3173,6 +3234,17 @@ body.simple-mode .more-item { font-size: .95em; }
             <span class="s-ic" aria-hidden="true">👨‍‍👧</span>
             <span class="s-tx">家属模式<span class="s-sub">家人监督：漏服、余药、不良反应、周报一眼看到</span></span>
           </button>
+        </div>
+      </div>
+
+      <!-- v24：智能体驾驶舱（实时监测各板块数据 + 跨模块综合研判） -->
+      <div class="card cockpit" id="kbCockpit">
+        <div class="card-title">🚀 智能体驾驶舱 <span class="tag" id="cockpitClock">实时</span></div>
+        <div class="cp-kpis" id="cpKpis"></div>
+        <div class="cp-insights" id="cpInsights"></div>
+        <div class="cp-foot">
+          <button class="btn orange sm" id="cpAsk">🤖 让智能体帮我分析</button>
+          <button class="btn ghost sm" id="cpGoData">📊 看全部数据</button>
         </div>
       </div>
 
@@ -6095,6 +6167,22 @@ EMC.Engine = (function () {
     if (tk || ms) L.push('近期打卡：按时 ' + tk + ' 次，漏服 ' + ms + ' 次。');
     var fam = (ctx.guardian && Array.isArray(ctx.guardian.contacts)) ? ctx.guardian.contacts.length : 0;
     if (fam) L.push('已绑定紧急联系人 ' + fam + ' 位。');
+    /* v24：实时态势注入——各版块数据汇成一句"当前形势"，
+       让大模型回答"我最近怎么样/帮我看看情况"这类综合问题时有据可依、分得清轻重 */
+    try {
+      var d0 = new Date();
+      var snapKey = d0.getFullYear() + '-' + ('0' + (d0.getMonth() + 1)).slice(-2) + '-' + ('0' + d0.getDate()).slice(-2);
+      var td = (ctx.records || []).filter(function (r) { return r.date === snapKey; });
+      var tTake = td.filter(function (r) { return r.status === 'taken'; }).length;
+      var tMiss = td.filter(function (r) { return r.status === 'missed'; }).length;
+      var tPend = td.filter(function (r) { return r.status === 'pending'; }).length;
+      if (td.length) L.push('今日实时态势：应服 ' + td.length + ' 次，已服 ' + tTake + '、漏服 ' + tMiss + '、待服 ' + tPend + '。');
+      var riskNow = screen((ctx.meds || []).map(function (m) { return { mid: m.mid, slots: m.slots, note: m.note }; }));
+      if (riskNow && riskNow.level) L.push('当前用药风险等级：' + riskNow.level + '。');
+      var lowNow = (ctx.meds || []).filter(function (m) { return typeof m.remain === 'number' && m.remain <= 7; });
+      if (lowNow.length) L.push('余药不足（7 天以内）的药品：' + lowNow.map(function (m) { return m.name || m.mid; }).join('、') + '。');
+      L.push('当用户问"我最近怎么样、帮我看看情况、整体如何"这类综合问题时，请基于以上各板块数据给一个温暖、简短、分轻重的总结，并明确提示最需要注意的一件事。');
+    } catch (e) { /* 态势注入失败不影响主流程 */ }
     return L.join('\n');
   }
 
@@ -6261,6 +6349,16 @@ EMC.Engine = (function () {
           ts: Date.now(), llm: true
         };
       }
+      /* v24：大模型不可用时，综合态势类问题走本地跨模块研判（有数据依据，不空话） */
+      if (/最近.{0,6}(怎么样|如何|状况|情况)|帮我看看|整体.{0,3}(情况|状况)|概况|总结一下|近况|态势/.test(text)) {
+        var ov2 = agentOverviewLocal(ctx);
+        return {
+          intent: 'overview', intentLabel: '综合研判',
+          hits: intent.hits, text: ov2.text, steps: ov2.steps || [],
+          action: null, drug: null, card: ov2.card || null,
+          followups: genFollowups('report', text), ts: Date.now()
+        };
+      }
     }
     var out;
     switch (intent.intent) {
@@ -6297,6 +6395,18 @@ EMC.Engine = (function () {
     llmLastError = null;      // 本地链路不涉及大模型，清掉旧失败状态，避免误报「再试一次」
     var resolved = resolveEntity(ctx, text);
     var intent = detectIntent(resolved);
+    /* v24：综合态势问句（"我最近怎么样/帮我看看情况"）优先走本地跨模块研判，
+       大模型不可用时老人也能得到一份有数据依据的总结 */
+    if ((intent.intent === 'knowledge' || intent.intent === 'greeting') &&
+        /最近.{0,6}(怎么样|如何|状况|情况)|帮我看看|整体.{0,3}(情况|状况)|概况|总结一下|近况|态势/.test(text)) {
+      var ov = agentOverviewLocal(ctx);
+      return {
+        intent: 'overview', intentLabel: '综合研判',
+        hits: intent.hits, text: ov.text, steps: ov.steps || [],
+        action: ov.action || null, drug: null, card: ov.card || null,
+        followups: genFollowups('report', text), ts: Date.now()
+      };
+    }
     var out;
     switch (intent.intent) {
       case 'reminder': out = agentReminder(ctx); break;
@@ -6322,6 +6432,57 @@ EMC.Engine = (function () {
       card: (out && out.card) ? out.card : null,
       followups: genFollowups(intent.intent, text),
       ts: Date.now()
+    };
+  }
+
+  /* v24：本地跨模块综合研判（不依赖大模型）：把用药/健康/风险/余粮数据汇成一段温暖的人话总结 */
+  function agentOverviewLocal(ctx) {
+    ctx = ctx || {};
+    var d0 = new Date();
+    var key = d0.getFullYear() + '-' + ('0' + (d0.getMonth() + 1)).slice(-2) + '-' + ('0' + d0.getDate()).slice(-2);
+    var recs = ctx.records || [];
+    var meds = ctx.meds || [];
+    var hp = ctx.health || [];
+    var td = recs.filter(function (r) { return r.date === key; });
+    var taken = td.filter(function (r) { return r.status === 'taken'; }).length;
+    var missed = td.filter(function (r) { return r.status === 'missed'; }).length;
+    var pending = td.filter(function (r) { return r.status === 'pending'; }).length;
+    var s7 = summary(recs, meds, 7);
+    var res = screen(meds);
+    var low = meds.filter(function (m) { return typeof m.remain === 'number' && m.remain <= 7; });
+    var bps = hp.filter(function (h) { return h.type === 'bp' && h.sys; });
+    var lastBp = bps.length ? bps[bps.length - 1] : null;
+    var bpBad = bps.slice(-3).filter(function (h) { return bpStatus(h.sys, h.dia) !== 'normal'; }).length;
+    var L = [];
+    L.push('我帮您把各个方面看了一遍：');
+    L.push('今天该吃 ' + td.length + ' 次，已吃 ' + taken + ' 次' + (pending ? ('，还有 ' + pending + ' 次没吃') : '，都安排上了') + (missed ? ('，漏服 ' + missed + ' 次') : '') + '。');
+    L.push('最近一周依从率 ' + s7.rate + '%' + (s7.streak >= 2 ? ('，连续按时 ' + s7.streak + ' 天，很稳') : '') + '。');
+    if (res.level && res.level !== '低风险') L.push('用药风险' + res.level + '，有空点「风险筛查」看看详情。');
+    else L.push('用药风险目前是低风险，放心。');
+    if (lastBp) L.push('最近一次血压 ' + lastBp.sys + '/' + lastBp.dia + (bpBad >= 2 ? '，近几次有偏高，复诊时带给医生看' : '，还算平稳') + '。');
+    if (low.length) L.push('有 ' + low.length + ' 种药余量不足 7 天，记得提前补充。');
+    var top = '';
+    if (missed >= 2) top = '最要注意的是今天漏服的 ' + missed + ' 次，现在补上还来得及。';
+    else if (low.length) top = '最要注意的是' + (low[0].name || low[0].mid) + '快吃完了，提前买好。';
+    else if (bpBad >= 2) top = '最要注意的是血压近几次偏高，建议找时间复诊。';
+    else if (pending) top = '最要注意的是还有 ' + pending + ' 次药没吃，别错过时间。';
+    else top = '各方面都不错，保持就好，有我在呢。';
+    L.push(top);
+    return {
+      text: L.join('\n'),
+      steps: ['汇总今日打卡 / 一周依从 / 风险 / 血压 / 余药数据', '生成本地综合研判'],
+      action: null,
+      card: {
+        type: 'care', title: '综合研判', icon: '🚀', tone: (missed >= 2 || bpBad >= 2) ? 'warn' : 'ok',
+        body: { items: [
+          { k: '今日', v: '已服 ' + taken + ' / 应服 ' + td.length + (missed ? ('，漏服 ' + missed) : '') },
+          { k: '一周依从', v: s7.rate + '%' },
+          { k: '风险', v: res.level || '低风险' },
+          { k: '注意', v: top }
+        ] },
+        note: '数据来自您的用药与健康档案，仅供参考，具体以医生意见为准。',
+        actions: [{ label: '查看驾驶舱', action: 'tab', target: 'home' }]
+      }
     };
   }
 
@@ -8333,6 +8494,7 @@ EMC.Care = (function () {
     bind();
     bindMorePanel();   // v22 P1-12：低频入口聚合面板 + 帮助弹窗
     bindKbGuide();     // v24：图示操作手册（⚡入口，老人/家属双页签）
+    bindCockpit();     // v24：智能体驾驶舱（数据总线订阅 + 实时态势）
     BackGuard.init();  // v22 P1-16：pushState 哨兵 + popstate 返回键兜底
     initThemeBtn();   // D-08 / S-08：游客态显示模式切换入口
     initSimpleMode(); // v21 P2-5：极简模式开关 + 三件事入口 + 退出极简
@@ -8359,6 +8521,7 @@ EMC.Care = (function () {
     showChatSkeleton();         // v19 P1-15：弱网/离线时先铺骨架，避免白屏
     pushProactiveCare();        // v8 T04 主动关怀：今日待办 + 风险提醒（每日一次）
     setInterval(checkReminder, 30000);
+    setInterval(kbLiveTick, 30000);   // v24：实时态势刷新（30s）+ 登录态云端静默同步（90s）
     setInterval(checkMissedSimple, 60000);
     setTimeout(checkMissedSimple, 9000);
     setTimeout(checkReminder, 4000);
@@ -9820,6 +9983,182 @@ EMC.Care = (function () {
           ? ('有 ' + low.length + ' 种药快吃完了，记得提前补充。')
           : '今天的药都按时吃了，很棒！别忘了量一次血压。');
     }
+    /* v24：首页渲染时同步刷新驾驶舱（数据连接：任何首页刷新都带出最新态势） */
+    try { renderCockpit(); } catch (e) {}
+  }
+
+  /* ==========================================================
+   * v24：数据总线 + 实时态势 + 智能体驾驶舱
+   * 目标：① 打通各版块数据连接（用药/健康/风险/余药/家属互相联动）
+   *       ② 实时监测关键指标（30 秒自动刷新 + 登录态 90 秒静默同步云端）
+   *       ③ 跨模块综合研判（把各板块数据放一起产出优先建议，替代单点提醒）
+   * ========================================================== */
+  var Bus = {
+    map: {},
+    on: function (evt, fn) { (this.map[evt] || (this.map[evt] = [])).push(fn); },
+    emit: function (evt, data) {
+      (this.map[evt] || []).forEach(function (f) { try { f(data); } catch (e) {} });
+      (this.map['*'] || []).forEach(function (f) { try { f({ evt: evt, data: data }); } catch (e) {} });
+    }
+  };
+  EMC.Bus = Bus;   // 供其他模块订阅（如后续家属端/社区端接入）
+
+  /* —— 实时态势快照：各版板数据汇总，驾驶舱/态势条/智能体上下文共用同一口径 —— */
+  function kbSnapshot() {
+    var key = E.fmtDate(new Date());
+    var today = S.records.filter(function (r) { return r.date === key; });
+    var s7 = E.summary(S.records, S.meds, 7);
+    var res = E.screen(medsForEngine());
+    var low = lowMedsList();
+    var hp = S.health || [];
+    var bps = hp.filter(function (h) { return h.type === 'bp' && h.sys; });
+    var gls = hp.filter(function (h) { return h.type === 'glu' && h.val; });
+    return {
+      key: key,
+      due: today.length,
+      taken: today.filter(function (r) { return r.status === 'taken'; }).length,
+      missed: today.filter(function (r) { return r.status === 'missed'; }).length,
+      pending: today.filter(function (r) { return r.status === 'pending'; }).length,
+      rate: s7.rate, streak: s7.streak,
+      risk: res.level, riskCount: res.count,
+      low: low,
+      bpBad: bps.slice(-3).filter(function (h) { return E.bpStatus(h.sys, h.dia) !== 'normal'; }).length,
+      gluBad: gls.slice(-3).filter(function (h) { return E.gluStatus(h.val, h.meal) !== 'normal'; }).length,
+      adrSev: hp.filter(function (h) { return h.type === 'adr' && h.date === key && h.val === 'severe'; }).length,
+      healthBad: bps.slice(-3).filter(function (h) { return E.bpStatus(h.sys, h.dia) !== 'normal'; }).length +
+                 gls.slice(-3).filter(function (h) { return E.gluStatus(h.val, h.meal) !== 'normal'; }).length,
+      contacts: (S.guardian.contacts || []).length
+    };
+  }
+
+  /* —— 跨模块综合研判：用药/健康/风险/余药/家属数据一起看，产出优先级建议 —— */
+  function kbInsights(snap) {
+    var out = [];
+    if (snap.adrSev > 0) out.push({ tone: 'danger', ic: '🩺', tx: '今天报告了<b>明显不适</b>，建议今天就联系医生，或让家人陪您就诊。', go: 'guardian' });
+    if (snap.risk === '高风险' || snap.risk === '中风险') out.push({ tone: snap.risk === '高风险' ? 'danger' : 'warn', ic: '⚠️', tx: '当前用药风险<b>' + snap.risk + '</b>（命中 ' + snap.riskCount + ' 项），抽空看看详情。', go: 'risk' });
+    if (snap.missed >= 2) out.push({ tone: 'warn', ic: '⏰', tx: '今天有 <b>' + snap.missed + ' 次漏服</b>，现在补上还来得及，也可以让家人帮您记着。', go: 'meds' });
+    if (snap.low.length) out.push({ tone: 'warn', ic: '📦', tx: '<b>' + esc(snap.low[0].name) + '</b> 等 ' + snap.low.length + ' 种药快吃完了，记得提前补充。', go: 'meds' });
+    if (snap.bpBad >= 2) out.push({ tone: 'warn', ic: '🩸', tx: '最近血压<b>多次偏高</b>，复诊时把记录带给医生看看。', go: 'health' });
+    if (snap.gluBad >= 2) out.push({ tone: 'warn', ic: '🩸', tx: '最近血糖<b>多次异常</b>，注意饮食，必要时咨询医生。', go: 'health' });
+    if (snap.pending > 0 && snap.missed < 2) out.push({ tone: 'info', ic: '💊', tx: '今天还有 <b>' + snap.pending + ' 次药</b>没吃，点我去打卡。', go: 'meds' });
+    if (snap.streak >= 3) out.push({ tone: 'ok', ic: '🏅', tx: '已<b>连续按时 ' + snap.streak + ' 天</b>，您做得真好，继续保持！', go: 'data' });
+    if (snap.rate > 0 && snap.rate < 70) out.push({ tone: 'warn', ic: '📉', tx: '本周依从率 <b>' + snap.rate + '%</b>，偏低。要不要调整一下提醒时间？', go: 'data' });
+    if (!out.length) out.push({ tone: 'ok', ic: '🌿', tx: '各板块数据都正常，用药、血压、余量都没问题，保持得好。', go: 'data' });
+    var rank = { danger: 0, warn: 1, info: 2, ok: 3 };
+    out.sort(function (a, b) { return rank[a.tone] - rank[b.tone]; });
+    return out.slice(0, 3);
+  }
+
+  function renderCockpit() {
+    var snap = kbSnapshot();
+    var clock = $id('cockpitClock');
+    if (clock) {
+      var d = new Date();
+      clock.textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2) + ' 更新';
+    }
+    var kpis = $id('cpKpis');
+    if (kpis) {
+      function k(v, kk, tone) {
+        return '<div class="cp-kpi' + (tone ? ' tone-' + tone : '') + '"><div class="v">' + v + '</div><div class="k">' + kk + '</div></div>';
+      }
+      kpis.innerHTML =
+        k(snap.due, '今日应服') +
+        k(snap.taken, '已服', (snap.due && snap.taken >= snap.due) ? 'ok' : '') +
+        k(snap.pending, '待服', snap.pending ? 'warn' : 'ok') +
+        k(snap.missed, '漏服', snap.missed ? 'danger' : 'ok') +
+        k(snap.rate + '%', '7天依从', snap.rate >= 85 ? 'ok' : (snap.rate >= 70 ? 'warn' : 'danger')) +
+        k(snap.risk, '风险等级', snap.risk === '高风险' ? 'danger' : (snap.risk === '中风险' ? 'warn' : 'ok')) +
+        k(snap.low.length, '余药告急', snap.low.length ? 'warn' : 'ok') +
+        k(snap.healthBad, '指标异常', snap.healthBad ? 'warn' : 'ok');
+    }
+    var box = $id('cpInsights');
+    if (box) {
+      box.innerHTML = kbInsights(snap).map(function (i) {
+        return '<button type="button" class="cp-insight tone-' + i.tone + '" data-go="' + i.go + '">' +
+          '<span class="ci-ic" aria-hidden="true">' + i.ic + '</span>' +
+          '<span class="ci-tx">' + i.tx + '</span>' +
+          '<span class="ci-go">去处理 ›</span></button>';
+      }).join('');
+      box.querySelectorAll('[data-go]').forEach(function (b) {
+        b.addEventListener('click', function () { switchTab(b.getAttribute('data-go')); });
+      });
+    }
+    try { renderLiveBar(snap); } catch (e2) {}
+    return snap;
+  }
+
+  /* —— 实时态势条（全局常驻）：一句话说清今日态势，点它进驾驶舱 —— */
+  function renderLiveBar(snap) {
+    snap = snap || kbSnapshot();
+    var bar = $id('kbLiveBar');
+    if (!bar) return;
+    var worst = 'ok';
+    if (snap.adrSev > 0 || snap.risk === '高风险' || snap.missed > 0) worst = 'danger';
+    else if (snap.pending > 0 || snap.risk === '中风险' || snap.low.length || snap.healthBad) worst = 'warn';
+    bar.classList.remove('lv-warn', 'lv-danger');
+    if (worst === 'warn') bar.classList.add('lv-warn');
+    if (worst === 'danger') bar.classList.add('lv-danger');
+    var d = new Date();
+    var hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    var parts = ['今日 ' + snap.taken + '/' + snap.due + ' 已服'];
+    if (snap.pending) parts.push('待服 ' + snap.pending);
+    if (snap.missed) parts.push('漏服 ' + snap.missed);
+    parts.push('风险 ' + snap.risk);
+    if (snap.low.length) parts.push('余药告急 ' + snap.low.length);
+    bar.innerHTML = '<span class="lv-dot" aria-hidden="true"></span><span class="lv-tx">📊 ' + parts.join(' · ') + '</span><span class="lv-tm">' + hm + '</span>';
+    bar.onclick = function () {
+      switchTab('home');
+      setTimeout(function () {
+        var c = $id('kbCockpit');
+        if (c && c.scrollIntoView) c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 150);
+    };
+  }
+
+  /* 实时 tick：每 30 秒刷新态势；登录态且页面可见时每 ~90 秒静默拉一次云端数据
+     （家属在另一台设备代打卡/代录，老人这边最多 90 秒就看到 = 真正的信息共享） */
+  var kbLiveLastSync = 0;
+  var kbLiveSyncing = false;
+  async function kbLiveTick() {
+    try {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      renderCockpit();
+      var now = Date.now();
+      if (!kbLiveSyncing && EMCAuth.isLoggedIn() && now - kbLiveLastSync > 90000) {
+        kbLiveLastSync = now;
+        kbLiveSyncing = true;
+        try {
+          var recs = await store.getRecords(14);
+          var meds = await store.getMeds();
+          var changed = JSON.stringify(recs) !== JSON.stringify(S.records) || JSON.stringify(meds) !== JSON.stringify(S.meds);
+          if (changed) {
+            S.records = recs; S.meds = meds;
+            try { renderMeds(); renderHome(); renderOverview(); } catch (e2) {}
+            renderCockpit();
+            Bus.emit('sync', { records: true, meds: true });
+          }
+        } catch (e) { /* 静默失败不影响本地使用 */ }
+        kbLiveSyncing = false;
+      }
+    } catch (e) {}
+  }
+
+  function bindCockpit() {
+    var ask = $id('cpAsk');
+    if (ask) ask.addEventListener('click', function () {
+      var snap = kbSnapshot();
+      var q = '帮我看看现在的情况：今天已吃 ' + snap.taken + ' 次、还有 ' + snap.pending + ' 次没吃，漏服 ' + snap.missed + ' 次，风险' + snap.risk + '，请给我点建议。';
+      switchTab('chat');
+      $id('chatInput').value = q;
+      sendText();
+    });
+    var gd = $id('cpGoData');
+    if (gd) gd.addEventListener('click', function () { switchTab('data'); });
+    /* 数据总线订阅：任何板块的数据变更，驾驶舱与态势条立即联动刷新 */
+    Bus.on('checkin', function () { renderCockpit(); });
+    Bus.on('health', function () { renderCockpit(); });
+    Bus.on('meds', function () { renderCockpit(); });
+    Bus.on('guardian', function () { renderCockpit(); });
   }
 
   /* ---------- 用药管理 ---------- */
@@ -10099,6 +10438,7 @@ EMC.Care = (function () {
     try { var mbh = $id('kbMissedBar'); if (mbh) mbh.style.display = 'none'; } catch (e) {}
     renderMeds(); renderData(); renderOverview(); renderHome();
     if (S.tab === 'guardian') renderGuardian();
+    try { Bus.emit('checkin', { mid: r.mid, slot: r.slot, status: act }); } catch (e) {}   /* v24：打卡 → 驾驶舱/态势条立即联动 */
   }
 
   /* 用药反馈卡：连续按时激励 + 用法 + 下次用药 + 用药小知识（v6 §11 激励式反馈） */
@@ -10390,12 +10730,14 @@ EMC.Care = (function () {
     S.records = await store.getRecords(14);
     renderAll(); switchTab('meds');
     try { await ensureTodayRecords(); kbTrack('addmed'); } catch (e) {}
+    try { Bus.emit('meds', { id: wasEdit ? editingMedId : S.picked }); } catch (e) {}   /* v24：药品变更 → 驾驶舱/态势条联动 */
     V.speak(wasEdit ? '药品已更新' : '药品已添加，我会按时提醒您服用');
   }
   async function deleteMed(id) {
     S.meds = await store.deleteMed(id);
     S.records = await store.getRecords(14);
     renderAll();
+    try { Bus.emit('meds', { id: id, deleted: true }); } catch (e) {}
   }
   async function refillMed(id) {
     var before = (S.meds.filter(function (m) { return m.id === id; })[0] || {}).remain;
@@ -10429,6 +10771,7 @@ EMC.Care = (function () {
     rec.time = new Date().toTimeString().slice(0, 5);
     // D-01：先 await 落库返回的最新数组，再渲染，保证保存后立即刷新界面
     S.health = await store.addHealth(rec);
+    try { Bus.emit('health', rec); } catch (e) {}   /* v24：健康记录 → 驾驶舱/态势条立即联动 */
   }
   function isAnomaly(h) {
     if (h.type === 'bp') return E.bpStatus(h.sys, h.dia) !== 'normal';
@@ -10609,6 +10952,7 @@ EMC.Care = (function () {
     $id('contactRel').value = '';
     $id('contactPhone').value = '';
     renderGuardian();
+    try { Bus.emit('guardian', { contacts: S.guardian.contacts.length }); } catch (e) {}   /* v24：联系人变更 → 驾驶舱/态势条联动 */
   }
   async function renderGuardian() {
     // 紧急联系人 / 家属联系人（统一为 {id,name,relation,phone}，支持编辑/删除）
