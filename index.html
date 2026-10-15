@@ -890,7 +890,9 @@
 :root {
   /* —— 核心色令牌 —— */
   --c-primary:  #1F7A6B;   /* 主色：青绿（稳重、医疗感） */
+  --c-primary-deep: #16605A; /* 主色加深（渐变末端/按压态） */
   --c-accent:   #E07A2F;   /* 强调色：暖橙（仅大按钮底色/图标，禁用于正文） */
+  --c-accent-deep: #C4651F; /* 强调色加深（渐变末端） */
   --c-danger:   #C62828;   /* 危险/告警 */
   --c-ok:       #2E8B57;   /* 达标/安全 */
   --c-warn:     #E08A1E;   /* 提醒/警告 */
@@ -906,9 +908,16 @@
    * 必须改为深墨色前景（8.93:1 / 15.6:1），否则主按钮在夜间几乎不可读。 */
   --c-on-primary: #FFFFFF;
 
-  /* —— 边框 / 阴影 —— */
+  /* —— 渐变令牌（v23 图形升级：顶栏/主按钮/选中态共用，替代纯色平涂） —— */
+  --grad-primary: linear-gradient(135deg, #24857A 0%, #16605A 100%);
+  --grad-accent:  linear-gradient(135deg, #F08A3C 0%, #D96A1F 100%);
+  --grad-danger:  linear-gradient(135deg, #E53935 0%, #B71C1C 100%);
+  --grad-ok:      linear-gradient(135deg, #34A853 0%, #1E7A43 100%);
+
+  /* —— 边框 / 阴影（双层柔和投影，替代单层生硬阴影） —— */
   --c-border:   #E4DDD0;
-  --c-shadow:   0 2px 10px rgba(31, 41, 51, .08);
+  --c-shadow:   0 1px 2px rgba(31, 41, 51, .05), 0 4px 14px rgba(31, 41, 51, .07);
+  --c-shadow-lg: 0 2px 6px rgba(31, 41, 51, .06), 0 14px 34px rgba(31, 41, 51, .13);
 
   /* —— 图表调色板（均为令牌，便于换肤） —— */
   --c-p1: #1F7A6B; --c-p2: #E07A2F; --c-p3: #2E8B57; --c-p4: #C62828;
@@ -921,13 +930,14 @@
   --c-warn-soft:    #FCEFD9;
   --c-danger-soft:  #FBE7E5;
 
-  /* —— 字号令牌（v19 P0-5：正文 ≥21px / 辅助 ≥18px / 大数字 32px） —— */
-  --fs-body:  21px;        /* 正文 */
-  --fs-title: 28px;        /* 标题 */
-  --fs-btn:   21px;        /* 按钮文字 */
+  /* —— 字号令牌（v23 排版升级：正文 22px / 辅助 18px / 标题 30px / 大数字 34px） —— */
+  --fs-body:  22px;        /* 正文 */
+  --fs-title: 30px;        /* 标题 */
+  --fs-btn:   22px;        /* 按钮文字 */
   --fs-small: 18px;        /* 辅助说明 */
-  --fs-display: 32px;      /* 大数字（血压值等） */
+  --fs-display: 34px;      /* 大数字（血压值等） */
   --fs: var(--fs-body);    /* 兼容旧档位引用 */
+  --lh: 1.8;               /* 正文行距（老人长文阅读更省力） */
 
   /* —— v19 P0-2/P0-4：安全区与视口令牌（由 visualViewport JS 实时写入） —— */
   --sat: env(safe-area-inset-top, 0px);     /* 刘海 / 状态栏 */
@@ -938,9 +948,9 @@
   --vvh: 100vh;              /* visualViewport 高度，由 JS 覆写 */
   --tabh: 64px;              /* 底部导航实测高度，供吸底/悬浮层避让 */
 
-  /* —— 圆角 / 热区 / 动效 —— */
-  --radius:   16px;
-  --radius-lg:20px;
+  /* —— 圆角 / 热区 / 动效（圆角放大一档，视觉更柔和现代） —— */
+  --radius:   18px;
+  --radius-lg:24px;
   --tap:      48px;        /* 最小点击热区（v13 适老化：44px → 48px） */
 
   /* —— v21 P2-2：动效系统化令牌（全站唯一的时长/缓动来源） ——
@@ -1053,7 +1063,7 @@ html, body {
   color: var(--c-text);
   font-size: var(--fs);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
-  line-height: 1.7;
+  line-height: var(--lh, 1.8);
   -webkit-text-size-adjust: 100%;
 }
 
@@ -1068,18 +1078,20 @@ a { color: var(--c-primary); }
 
 .topbar {
   position: sticky; top: 0; z-index: 30;
-  /* v21 P2-4：顶栏为 --c-primary 底色，前景走 --c-on-primary（夜间/高对比自动转深墨） */
-  background: var(--c-primary); color: var(--c-on-primary);
+  /* v21 P2-4：顶栏为 --c-primary 底色，前景走 --c-on-primary（夜间/高对比自动转深墨）
+   * v23 图形升级：纯色平涂 → 主色渐变，增加层次与现代感 */
+  background: var(--grad-primary);
+  color: var(--c-on-primary);
   /* v19 P0-2：顶栏避让刘海/状态栏与横屏左右安全区 */
-  padding: calc(10px + var(--sat)) calc(16px + var(--sar)) 12px calc(16px + var(--sal));
+  padding: calc(12px + var(--sat)) calc(16px + var(--sar)) 13px calc(16px + var(--sal));
   display: flex; align-items: center; gap: 10px;
-  box-shadow: var(--c-shadow);
+  box-shadow: 0 2px 6px rgba(22, 96, 90, .18), var(--c-shadow);
   /* v19 P0-3：图标按钮 ::after 把热区外扩 8px，桌面单行顶栏需裁掉外扩部分，
    * 否则会撑出 8px 造成桌面横向滚动。裁剪不影响按钮本身的 48px 命中区。 */
   overflow: hidden;
 }
-.topbar .logo { font-size: 1.15em; font-weight: 700; letter-spacing: .5px; flex: 1; }
-.topbar .sub { display: block; font-size: .62em; font-weight: 400; opacity: .9; letter-spacing: 0; }
+.topbar .logo { font-size: 1.22em; font-weight: 800; letter-spacing: .5px; flex: 1; }
+.topbar .sub { display: block; font-size: .62em; font-weight: 400; opacity: .92; letter-spacing: 0; }
 .icon-btn {
   background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .35);
   color: var(--c-on-primary); border-radius: var(--radius); min-width: var(--tap); min-height: var(--tap);
@@ -1100,13 +1112,13 @@ main { padding: 14px calc(14px + var(--sar)) 0 calc(14px + var(--sal)); }
 /* v19 P0-2：body 兜底，避免 home indicator 遮住页面最底部 */
 body { padding-bottom: var(--sab); }
 
-/* ---------- 通用卡片 ---------- */
+/* ---------- 通用卡片（v23：内边距 14→16、圆角走令牌、双层柔和阴影） ---------- */
 .card {
   background: var(--c-bg-elev); border: 1px solid var(--c-border); border-radius: var(--radius);
-  padding: 14px; margin-bottom: 14px; box-shadow: var(--c-shadow);
+  padding: 16px; margin-bottom: 16px; box-shadow: var(--c-shadow);
 }
 .card-title {
-  font-size: 1.15em; font-weight: 700; margin: 0 0 10px;
+  font-size: 1.2em; font-weight: 800; margin: 0 0 10px;
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--c-text);
 }
 .card-title .tag {
@@ -1116,34 +1128,36 @@ body { padding-bottom: var(--sab); }
 .muted { color: var(--c-text-sub); font-size: .85em; }
 .small { font-size: var(--fs-small); }
 
-/* ---------- 按钮 ---------- */
+/* ---------- 按钮（v23：字重 800、投影提升按压层次） ---------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: 56px; min-width: var(--tap); padding: 12px 18px; border-radius: var(--radius);
-  border: 2px solid var(--c-primary); background: var(--c-primary); color: var(--c-on-primary);
-  font-weight: 700; font-size: var(--fs-btn); width: 100%;
-  transition: transform var(--dur) var(--ease), filter var(--dur) var(--ease);
+  border: 2px solid var(--c-primary); background: var(--grad-primary); color: var(--c-on-primary);
+  font-weight: 800; font-size: var(--fs-btn); width: 100%;
+  box-shadow: 0 2px 8px rgba(22, 96, 90, .18);
+  transition: transform var(--dur) var(--ease), filter var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .btn:active { transform: scale(.97); filter: brightness(.96); transition-duration: var(--dur-fast); }
-.btn.ghost { background: var(--c-bg-elev); color: var(--c-primary); }
-.btn.orange { background: var(--c-accent); border-color: var(--c-accent); }
-.btn.gray { background: var(--c-bg-elev); color: var(--c-text-sub); border-color: var(--c-border); }
+.btn.ghost { background: var(--c-bg-elev); color: var(--c-primary); box-shadow: none; }
+.btn.orange { background: var(--grad-accent); border-color: var(--c-accent); box-shadow: 0 2px 8px rgba(196, 101, 31, .2); }
+.btn.gray { background: var(--c-bg-elev); color: var(--c-text-sub); border-color: var(--c-border); box-shadow: none; }
 .btn.sm { min-height: var(--tap); font-size: .9em; padding: 8px 14px; border-radius: 12px; }
 .btn[disabled] { opacity: .5; filter: grayscale(.4); cursor: not-allowed; }
 .btn-row { display: flex; gap: 10px; }
 .btn-row .btn { flex: 1; }
 
-/* 大按钮：最小 88×56、文字 ≥20px（主操作） */
+/* 大按钮：最小 88×56、文字 ≥20px（主操作，v23：渐变+字重800+投影） */
 .btn-lg {
   min-height: 56px; min-width: 88px; font-size: var(--fs-btn); padding: 14px 20px;
-  border-radius: var(--radius); font-weight: 700; width: 100%;
+  border-radius: var(--radius); font-weight: 800; width: 100%;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  background: var(--c-primary); color: var(--c-on-primary); border: 2px solid var(--c-primary);
-  transition: transform var(--dur) var(--ease), filter var(--dur) var(--ease);
+  background: var(--grad-primary); color: var(--c-on-primary); border: 2px solid var(--c-primary);
+  box-shadow: 0 2px 8px rgba(22, 96, 90, .18);
+  transition: transform var(--dur) var(--ease), filter var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .btn-lg:active { transform: scale(.97); filter: brightness(.96); }
-.btn-lg.orange { background: var(--c-accent); border-color: var(--c-accent); }
-.btn-lg.gray { background: var(--c-bg-elev); color: var(--c-text-sub); border-color: var(--c-border); }
+.btn-lg.orange { background: var(--grad-accent); border-color: var(--c-accent); box-shadow: 0 2px 8px rgba(196, 101, 31, .2); }
+.btn-lg.gray { background: var(--c-bg-elev); color: var(--c-text-sub); border-color: var(--c-border); box-shadow: none; }
 
 /* ---------- 底部导航（6 项重做） ---------- */
 /* v19 P0-2：底部导航避让 home indicator，统一走 --sab 令牌 */
@@ -1161,7 +1175,12 @@ body { padding-bottom: var(--sab); }
   transition: transform var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .tabbar button .ic { font-size: 1.7em; line-height: 1.1; min-height: 28px; display: flex; align-items: center; }
+/* v23：选中态加胶囊底，老人一眼看出「现在在哪一页」 */
 .tabbar button.on { color: var(--c-primary); }
+.tabbar button.on .ic {
+  background: var(--c-primary-soft); border-radius: 999px;
+  padding: 0 12px; margin: 0 -12px;
+}
 .tabbar button.on .ic {
   color: var(--c-primary); transform: translateY(-4px) scale(1.1);
   /* v21 P2-2：图标位移过渡收敛到 --dur-fast（120ms），按压无拖尾 */
@@ -1190,10 +1209,15 @@ body { padding-bottom: var(--sab); }
 }
 .msg.user .avatar { background: var(--c-accent-soft); border-color: var(--c-border); }
 .bubble {
-  background: var(--c-bg); border: 1px solid var(--c-border); border-radius: var(--radius);
+  background: var(--c-bg); border: 1px solid var(--c-border);
+  /* v23：聊天气泡不对称圆角（左下收、左上放），对话方向感更清晰 */
+  border-radius: var(--radius) var(--radius) var(--radius) 6px;
   padding: 12px 14px; max-width: 78%; white-space: pre-wrap; word-break: break-word; box-shadow: var(--c-shadow);
 }
-.msg.user .bubble { background: var(--c-accent-soft); border-color: var(--c-border); }
+.msg.user .bubble {
+  background: var(--c-accent-soft); border-color: var(--c-border);
+  border-radius: var(--radius) var(--radius) 6px var(--radius);
+}
 .bubble .intent { display: block; font-size: .68em; color: var(--c-primary); font-weight: 700; margin-bottom: 4px;
   background: var(--c-primary-soft); border-radius: 999px; padding: 2px 10px; }
 
@@ -1365,13 +1389,14 @@ body.kb-open #sosFloat, body.kb-open #backTop { opacity: 0; pointer-events: none
 .date-bar .d { font-weight: 700; font-size: 1.05em; }
 .slot-block { margin-bottom: 12px; }
 .slot-head {
-  display: flex; align-items: center; gap: 8px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px; font-weight: 800;
   background: var(--c-primary-soft); border-radius: 12px; padding: 10px 12px; color: var(--c-primary);
 }
 .slot-head .cnt { margin-left: auto; font-size: .8em; font-weight: 500; color: var(--c-text-sub); }
 .med-item {
   display: flex; align-items: center; gap: 10px; background: var(--c-bg-elev);
-  border: 1px solid var(--c-border); border-radius: var(--radius); padding: 12px; margin-top: 8px;
+  border: 1px solid var(--c-border); border-radius: var(--radius); padding: 14px 12px; margin-top: 10px;
+  box-shadow: var(--c-shadow);
 }
 .med-item .info { flex: 1; min-width: 0; }
 .med-item .nm { font-weight: 700; font-size: 1.05em; }
@@ -1504,11 +1529,11 @@ table.grid th { background: var(--c-primary-soft); color: var(--c-primary); }
   padding: 10px 12px; font-size: .84em; color: var(--c-accent); margin-bottom: 12px;
 }
 
-/* 字号档位（v19 P0-5：21 / 24 / 28 / 32，设置项文案「小/中/大/特大」） */
-body.fs-1 { --fs: 21px; }
-body.fs-2 { --fs: 24px; }
-body.fs-3 { --fs: 28px; }
-body.fs-4 { --fs: 32px; }
+/* 字号档位（v23 排版升级：22 / 25 / 29 / 33，设置项文案「小/中/大/特大」） */
+body.fs-1 { --fs: 22px; }
+body.fs-2 { --fs: 25px; }
+body.fs-3 { --fs: 29px; }
+body.fs-4 { --fs: 33px; }
 
 /* ---------- v19 P0-3：触控热区统一（--tap:48px） ----------
  * 只施加最小热区尺寸，不改既有布局流式（避免把卡片类挤成横排）。 */
@@ -1535,8 +1560,8 @@ body.fs-4 { --fs: 32px; }
 }
 .ov-cell:last-child { border-right: 0; }
 .ov-cell:active { background: var(--c-primary-soft); transform: scale(.97); }
-.ov-cell .v { font-size: 1.4em; font-weight: 800; color: var(--c-primary); line-height: 1.2; }
-.ov-cell .k { font-size: .62em; color: var(--c-text-sub); margin-top: 2px; }
+.ov-cell .v { font-size: 1.5em; font-weight: 800; color: var(--c-primary); line-height: 1.2; }
+.ov-cell .k { font-size: .64em; color: var(--c-text-sub); margin-top: 2px; }
 
 /* 6 个 tab 时收紧图标与字号 */
 .app .tabbar button .ic { font-size: 1.6em; }
@@ -1589,8 +1614,8 @@ body.fs-4 { --fs: 32px; }
   /* v19 P0-2：底部避让统一走 --sab / --kb 令牌（不再直接写 env()） */
   position: fixed; right: calc(16px + var(--sar)); bottom: calc(78px + var(--sab) + var(--kb));
   z-index: 45; width: 60px; height: 60px; border-radius: 50%;
-  border: 3px solid #fff; background: var(--c-danger); color: #fff;
-  font-size: 1.5em; box-shadow: var(--c-shadow);
+  border: 3px solid #fff; background: var(--grad-danger); color: #fff;
+  font-size: 1.5em; box-shadow: 0 6px 18px rgba(183, 28, 28, .4);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
 #sosFloat:active { transform: scale(.94); }
@@ -2330,14 +2355,16 @@ html { overflow-x: hidden; }
 .side-foot { margin-top: auto; padding: 14px 6px 0; font-size: .7em; color: var(--c-text-sub); line-height: 1.7; }
 [data-theme="contrast"] .sidebar { border-right-width: 3px; }
 
-/* ---------- 首页：欢迎区 ---------- */
+/* ---------- 首页：欢迎区（v23：头像渐变底、标题放大） ---------- */
 .home-hero { border-left: 8px solid var(--c-primary); }
 .hh-row { display: flex; align-items: center; gap: 14px; }
 .hh-avatar {
-  width: 58px; height: 58px; flex: 0 0 58px; border-radius: 18px;
-  background: var(--c-primary-soft); display: flex; align-items: center; justify-content: center; font-size: 1.7em;
+  width: 62px; height: 62px; flex: 0 0 62px; border-radius: 18px;
+  background: var(--grad-primary); color: #fff;
+  box-shadow: 0 3px 10px rgba(22, 96, 90, .25);
+  display: flex; align-items: center; justify-content: center; font-size: 1.7em;
 }
-.hh-title { font-size: 1.25em; font-weight: 800; line-height: 1.4; color: var(--c-text); }
+.hh-title { font-size: 1.3em; font-weight: 800; line-height: 1.4; color: var(--c-text); }
 .hh-sub { font-size: .8em; color: var(--c-text-sub); margin-top: 2px; line-height: 1.5; }
 .home-hero .hh-tip {
   margin-top: 12px; font-size: .92em; line-height: 1.7; font-weight: 600;
@@ -2348,13 +2375,14 @@ html { overflow-x: hidden; }
 /* ---------- 首页：今日概览四格 ---------- */
 .home-ov { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .hov-cell {
-  min-height: 92px; padding: 12px 10px; text-align: center; cursor: pointer;
+  min-height: 96px; padding: 12px 10px; text-align: center; cursor: pointer;
   border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-bg);
+  box-shadow: var(--c-shadow);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 .hov-cell:active { background: var(--c-primary-soft); transform: scale(.97); }
-.hov-cell .v { font-size: 1.3em; font-weight: 800; color: var(--c-primary); line-height: 1.25; word-break: break-word; }
+.hov-cell .v { font-size: 1.4em; font-weight: 800; color: var(--c-primary); line-height: 1.25; word-break: break-word; }
 .hov-cell .k { font-size: .68em; color: var(--c-text-sub); line-height: 1.4; }
 
 /* ---------- 首页：全部板块入口网格 ---------- */
@@ -2364,16 +2392,19 @@ html { overflow-x: hidden; }
   display: flex; align-items: flex-start; gap: 12px; text-align: left;
   border: 2px solid var(--c-border); border-radius: var(--radius);
   background: var(--c-bg-elev); color: var(--c-text);
+  box-shadow: var(--c-shadow);
   transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .entry-card:active { transform: scale(.97); border-color: var(--c-primary); }
 .entry-card .e-ic {
   width: 50px; height: 50px; flex: 0 0 50px; border-radius: 14px;
-  background: var(--c-primary-soft); display: flex; align-items: center; justify-content: center; font-size: 1.5em;
+  background: var(--grad-primary); color: #fff;
+  box-shadow: 0 2px 8px rgba(22, 96, 90, .22);
+  display: flex; align-items: center; justify-content: center; font-size: 1.5em;
 }
 .entry-card .e-main { flex: 1 1 auto; min-width: 0; display: block; }
 .entry-card .e-nm {
-  font-weight: 800; font-size: 1.02em; line-height: 1.4; color: var(--c-text);
+  font-weight: 800; font-size: 1.04em; line-height: 1.4; color: var(--c-text);
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
 }
 .entry-card .e-ds { display: block; font-size: .76em; line-height: 1.55; color: var(--c-text-sub); margin-top: 4px; }
@@ -2592,7 +2623,8 @@ body.simple-mode .simple-btn {
   display: flex; align-items: center; gap: 14px;
   width: 100%; min-height: 84px; padding: 16px 18px;
   border-radius: var(--radius-lg); border: 2px solid var(--c-primary);
-  background: var(--c-primary); color: var(--c-on-primary);
+  background: var(--grad-primary); color: var(--c-on-primary);
+  box-shadow: 0 4px 14px rgba(22, 96, 90, .25);
   font-size: 1.28em; font-weight: 800; text-align: left; cursor: pointer;
 }
 body.simple-mode .simple-btn .s-ic { font-size: 1.7em; line-height: 1; flex: 0 0 auto; }
@@ -2827,7 +2859,7 @@ body.simple-mode .tabbar button[data-tab="data"] { display: none !important; }
 .bq-cell label { display: block; font-size: 15px; font-weight: 800; margin-bottom: 6px; color: #111; }
 .bq-cell input { width: 100%; box-sizing: border-box; min-height: 58px; border: 2px solid #ddd; border-radius: 14px; font-size: 24px; font-weight: 800; text-align: center; padding: 0 6px; background: #fff; }
 .bq-msg { min-height: 22px; margin-top: 10px; font-size: 15px; font-weight: 700; }
-.bq-save { width: 100%; min-height: 62px; margin-top: 8px; border: 0; border-radius: 16px; background: #2e8b57; color: #fff; font-size: 22px; font-weight: 800; cursor: pointer; }
+.bq-save { width: 100%; min-height: 62px; margin-top: 8px; border: 0; border-radius: 16px; background: var(--grad-ok); color: #fff; font-size: 22px; font-weight: 800; cursor: pointer; box-shadow: 0 3px 10px rgba(30, 122, 67, .28); }
 .bq-more { width: 100%; min-height: 44px; margin-top: 10px; border: 0; background: none; color: #1976d2; font-size: 16px; font-weight: 700; cursor: pointer; }
 .bq-save:active, .bq-more:active { transform: scale(.985); }
 /* ===== 家属模式：聚焦监督数据，隐藏老人自用区 ===== */
@@ -3149,7 +3181,7 @@ body.simple-mode .more-item { font-size: .95em; }
       <div class="card">
         <div class="card-title">🩺 我的慢病 <span class="tag" id="chronicCount">未选择</span></div>
         <div class="muted small" style="margin-bottom:10px">
-          勾选您确诊的慢病（可多选）。勾选后，智能体会按病种给您分组展示药品、监测指标和用药注意事项。
+          勾选您确诊的慢病，我会按病种给您分组展示用药和注意事项。
         </div>
         <div class="chronic-picker" id="chronicPicker"></div>
         <div id="chronicDetail"></div>
@@ -3175,7 +3207,7 @@ body.simple-mode .more-item { font-size: .95em; }
           <button class="btn ghost" id="btnImportPaste">📋 粘贴处方文字导入</button>
           <input type="file" id="medPhotoInput" accept="image/*" capture="environment" style="display:none">
         </div>
-        <div class="muted small" id="importHint">拍下药盒或处方单，智能体可自动读出药名、剂量、每日次数和早中晚睡前时段；识别后您可以逐项修改再保存。</div>
+        <div class="muted small" id="importHint">拍下药盒或处方单，我帮您读出药名和吃法，您核对后再保存。</div>
         <div class="form-row" id="medPhotoRow" style="margin-top:10px">
           <label>📷 药盒照片（选填，保存后吃药提醒会显示这张图，老人看图认药）</label>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -3278,7 +3310,7 @@ body.simple-mode .more-item { font-size: .95em; }
       <div class="card">
         <div class="card-title">⏰ 服药提醒时间 <span class="tag">到点自动提醒</span></div>
         <div class="muted small" style="margin-bottom:10px">
-          按您的生活作息调整每个时段的提醒时刻。到点后会在屏幕上弹出大字提醒并语音播报。
+          按您的生活作息调整每个时段的提醒时刻。到点会弹大字提醒，并用语音叫您吃药。
         </div>
         <div id="remindTimeBox"></div>
         <div class="btn-row" style="margin-top:6px">
@@ -3442,7 +3474,7 @@ body.simple-mode .more-item { font-size: .95em; }
       <div class="card">
         <div class="card-title">🤝 家属远程协助 <span class="tag" id="assistState">未开启</span></div>
         <div class="muted small" style="margin-bottom:10px">
-          家属用自己的设备登录老人账号后，可代为录入药品、代打卡、静默当前提醒。所有代操作都会标注「由家属代录」，老人端可一眼看出是谁改的。
+          家属登录您的账号后，可以代录药品、代打卡。所有代操作都会标注「由家属代录」，您一眼就能看出是谁改的。
         </div>
         <div class="assist-warn" id="assistWarn">
           ⚠️ 开启后，本设备上的<strong>每一次</strong>药品新增/修改与打卡都会标记为「由家属代录」。
@@ -3498,7 +3530,7 @@ body.simple-mode .more-item { font-size: .95em; }
       <div id="dataTable"></div>
       <div class="card">
         <div class="card-title">📤 数据导出与共享</div>
-        <div class="small muted" style="margin-bottom:10px">导出 CSV 后可提供给社区医生、家庭医生或调研人员，用于用药行为分析与养老服务质量评估。</div>
+        <div class="small muted" style="margin-bottom:10px">导出后可以交给社区医生或家人看，也可以自己留着。</div>
         <button class="btn" id="btnExport">导出用药行为数据（CSV）</button>
         <button class="btn gray" id="btnClearDemo" style="margin-top:10px">🧹 清空演示数据（游客模式）</button>
         <button class="btn gray" id="btnReloadDemo" style="margin-top:10px">📥 载入演示数据（游客模式）</button>
@@ -4903,7 +4935,7 @@ EMC.Engine = (function () {
   function agentReminder(ctx) {
     var meds = ctx.meds || [];
     if (!meds.length) {
-      return { text: '您还没有登记药品。请到「用药管理」中添加药品，我可以为您按时播报提醒。', steps: ['读取用药档案', '档案为空 → 引导登记'] };
+      return { text: '您还没有登记药品。到「用药管理」添加后，我到点提醒您。', steps: ['读取用药档案', '档案为空 → 引导登记'] };
     }
     var now = new Date(), hh = now.getHours();
     var curSlot = null;
@@ -5541,7 +5573,7 @@ EMC.Engine = (function () {
   /* ---------- 6.7 子智能体：余药管理 ---------- */
   async function agentRefill(ctx) {
     var meds = ctx.meds || [];
-    if (!meds.length) return { text: '您还没有登记药品。请到「用药管理」中添加，我会帮您跟踪余量。', steps: ['读取用药档案', '为空 → 引导登记'] };
+    if (!meds.length) return { text: '您还没有登记药品。到「用药管理」中添加，我帮您盯着余量。', steps: ['读取用药档案', '为空 → 引导登记'] };
     var list = meds.filter(function (m) { return typeof m.remain === 'number'; });
     if (!list.length) return { text: '当前药品尚未登记余量，无法估算可用天数。请在「用药管理」中为每种药填写余量。', steps: ['读取用药档案', '余量字段缺失'] };
     var lines = ['为您清点各药品余量与预计可用天数：\n'], warn = [], facts = [];
@@ -12403,7 +12435,7 @@ EMC.Care = (function () {
     if (!box || !importDraft) return;
     var ds = importDraft.drugs || [];
     if (!ds.length) {
-      box.innerHTML = '<div class="muted small" style="padding:8px 0">暂未识别到药品条目。您可以对照上方照片点「添加药品」手动录入，或粘贴处方文字再解析一次。</div>';
+      box.innerHTML = '<div class="muted small" style="padding:8px 0">没识别出药品。您可以对照上方照片点「添加药品」手动录入，或粘贴处方文字再试一次。</div>';
       return;
     }
     box.innerHTML = ds.map(function (d, i) {
