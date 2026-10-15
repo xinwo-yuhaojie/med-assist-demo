@@ -829,7 +829,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101515;
+      var KB_BUILD = 2026101516;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -2821,9 +2821,7 @@ body.simple-mode .tabbar button[data-tab="data"] { display: none !important; }
 .guard-sos { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 100%; min-height: 84px; margin: 0 0 14px; border: 0; border-radius: 18px; background: linear-gradient(135deg, #e53935, #c62828); color: #fff; font-size: 24px; font-weight: 800; cursor: pointer; box-shadow: 0 6px 18px rgba(217, 72, 43, .38); }
 .guard-sos .g-sub { font-size: 14.5px; font-weight: 700; opacity: .92; }
 .guard-sos:active { transform: scale(.985); }
-/* ===== 量血压速记卡（与档案页不重复：只填数保存，历史趋势在档案） ===== */
-.bp-quick { max-width: 420px; width: 94%; position: relative; padding: 24px 20px 20px; border-radius: 22px; }
-.bq-h { margin: 0 0 6px; font-size: 24px; font-weight: 800; color: #1e7d4f; }
+/* ===== 量血压独立页（与档案页不重复：只填数保存，历史趋势在档案） ===== */
 .bq-last { font-size: 16px; color: #666; margin-bottom: 14px; }
 .bq-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 .bq-cell label { display: block; font-size: 15px; font-weight: 800; margin-bottom: 6px; color: #111; }
@@ -2937,6 +2935,7 @@ body.simple-mode .more-item { font-size: .95em; }
       <button data-tab="home" class="on"><span class="ic">🏠</span>首页</button>
       <button data-tab="chat"><span class="ic">🤖</span>智能助手</button>
       <button data-tab="meds"><span class="ic">💊</span>用药管理</button>
+      <button data-tab="bp"><span class="ic">🩸</span>量血压</button>
       <button data-tab="health"><span class="ic">🩺</span>健康档案</button>
       <button data-tab="guardian"><span class="ic">👨‍👩‍👧</span>家属守护</button>
       <button data-tab="risk"><span class="ic">🛡️</span>风险筛查</button>
@@ -3368,6 +3367,22 @@ body.simple-mode .more-item { font-size: .95em; }
     </section>
 
     <!-- ============ 家属守护 ============ -->
+    <section id="tab-bp" style="display:none">
+      <!-- 量血压独立页面：只填数保存；历史/趋势/统计全部在「档案」，两处不重复 -->
+      <div class="card">
+        <div class="card-title">🩸 量血压</div>
+        <div class="bq-last" id="bpQuickLast">还没有血压记录</div>
+        <div class="bq-grid">
+          <div class="bq-cell"><label for="qBpSys">收缩压（高）</label><input id="qBpSys" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="收缩压" placeholder="如 135"></div>
+          <div class="bq-cell"><label for="qBpDia">舒张压（低）</label><input id="qBpDia" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="舒张压" placeholder="如 88"></div>
+          <div class="bq-cell"><label for="qBpHr">心率（选填）</label><input id="qBpHr" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="心率" placeholder="如 75"></div>
+        </div>
+        <div id="bpQuickMsg" class="bq-msg"></div>
+        <button class="bq-save" id="bpQuickSave">✅ 保存血压</button>
+        <button class="bq-more" id="bpQuickGoHealth">看历史记录与趋势 → 去健康档案</button>
+      </div>
+    </section>
+
     <section id="tab-guardian" style="display:none">
       <button class="guard-sos" id="guardSos" aria-label="SOS 求助，不舒服时点这里，立刻通知家人">🆘 SOS 求助<span class="g-sub">不舒服？点这里立刻通知家人</span></button>
       <div class="card">
@@ -3497,7 +3512,7 @@ body.simple-mode .more-item { font-size: .95em; }
     <button role="tab" data-tab="home" class="on" aria-selected="true"><span class="ic" aria-hidden="true">🏠</span>首页</button>
     <button role="tab" data-tab="chat" aria-selected="false"><span class="ic" aria-hidden="true">🤖</span>助手</button>
     <button role="tab" data-tab="meds" aria-selected="false"><span class="ic" aria-hidden="true">💊</span>用药</button>
-    <button role="tab" id="tabBp" aria-selected="false"><span class="ic" aria-hidden="true">🩸</span>血压</button>
+    <button role="tab" data-tab="bp" aria-selected="false"><span class="ic" aria-hidden="true">🩸</span>血压</button>
     <button role="tab" data-tab="health" aria-selected="false"><span class="ic" aria-hidden="true">🩺</span>档案</button>
     <button role="tab" data-tab="guardian" aria-selected="false"><span class="ic" aria-hidden="true">👨‍👩‍👧</span>守护</button>
     <button role="tab" data-tab="risk" class="tab-secondary" aria-selected="false"><span class="ic" aria-hidden="true">🛡️</span>风险</button>
@@ -3547,22 +3562,6 @@ body.simple-mode .more-item { font-size: .95em; }
   <div id="livePolite" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
   <!-- ============ 登录 / 注册 模态框（新版，适老化） ============ -->
-  <!-- 量血压速记卡：只填数保存；历史/趋势/统计全部在「档案」，两处不重复 -->
-  <div class="mask" id="bpQuick" style="display:none">
-    <div class="dialog bp-quick">
-      <button class="auth-x" id="bpQuickClose" aria-label="关闭">✕</button>
-      <h3 class="bq-h">🩸 量血压</h3>
-      <div class="bq-last" id="bpQuickLast">还没有血压记录</div>
-      <div class="bq-grid">
-        <div class="bq-cell"><label for="qBpSys">收缩压（高）</label><input id="qBpSys" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="收缩压" placeholder="如 135"></div>
-        <div class="bq-cell"><label for="qBpDia">舒张压（低）</label><input id="qBpDia" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="舒张压" placeholder="如 88"></div>
-        <div class="bq-cell"><label for="qBpHr">心率（选填）</label><input id="qBpHr" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="心率" placeholder="如 75"></div>
-      </div>
-      <div id="bpQuickMsg" class="bq-msg"></div>
-      <button class="bq-save" id="bpQuickSave">✅ 保存血压</button>
-      <button class="bq-more" id="bpQuickGoHealth">看历史记录与趋势 → 健康档案</button>
-    </div>
-  </div>
 
   <div class="mask" id="authModal" style="display:none">
     <div class="dialog auth-dialog" id="authDialogNew">
@@ -8034,7 +8033,7 @@ EMC.Care = (function () {
 (function () {
   'use strict';
   var E = EMC.Engine, V = EMC.Voice;
-  var TABS = ['home', 'chat', 'meds', 'health', 'guardian', 'risk', 'data'];
+  var TABS = ['home', 'chat', 'meds', 'bp', 'health', 'guardian', 'risk', 'data'];
   // 全局 store：根据登录态选择实现；登录/登出后切换并刷新 UI
   var store = (window.EMCAuth && EMCAuth.isLoggedIn()) ? EMCStore.ApiStore : EMCStore.LocalStore;
   var S = {
@@ -8464,12 +8463,9 @@ EMC.Care = (function () {
       });
       /* 守护页顶部 SOS：复用全站求助流程 */
       if ($id('guardSos')) $id('guardSos').addEventListener('click', function () { openSos(); });
-      /* 底栏「血压」：打开速记卡，只填数保存，不再整页跳到档案（与档案不重复） */
-      if ($id('tabBp')) $id('tabBp').addEventListener('click', function () { openBpQuick(); });
-      if ($id('bpQuickClose')) $id('bpQuickClose').addEventListener('click', closeBpQuick);
+      /* 血压独立页：保存 + 跳档案（页内入口） */
       if ($id('bpQuickSave')) $id('bpQuickSave').addEventListener('click', saveBpQuick);
-      if ($id('bpQuickGoHealth')) $id('bpQuickGoHealth').addEventListener('click', function () { closeBpQuick(); switchTab('health'); });
-      if ($id('bpQuick')) $id('bpQuick').addEventListener('click', function (e) { if (e.target === this) closeBpQuick(); });
+      if ($id('bpQuickGoHealth')) $id('bpQuickGoHealth').addEventListener('click', function () { switchTab('health'); });
       /* ← 返回：弹内部栈逐级回退 */
       var bkP = $id('kbBackPill');
       if (bkP) bkP.addEventListener('click', function () {
@@ -8860,20 +8856,11 @@ EMC.Care = (function () {
   /** 极简三件事的统一动作（首页与助手页共用同一实现）。 */
   function simpleAct(kind) {
     if (kind === 'med') { switchTab('meds'); return; }
-    if (kind === 'bp') { openBpQuick(); return; }
+    if (kind === 'bp') { switchTab('bp'); return; }
     if (kind === 'sos') { openSos(); return; }
   }
 
-  /* ===== 量血压速记卡：底栏「血压」与首页「量血压」共用；历史/趋势/统计仍在档案页 ===== */
-  function openBpQuick() {
-    var m = $id('bpQuick'); if (!m) return;
-    renderBpQuickLast();
-    var msg = $id('bpQuickMsg'); if (msg) msg.textContent = '';
-    m.style.display = 'flex';
-    try { V.interrupt(); } catch (e) {}
-    setTimeout(function () { var b = $id('qBpSys'); if (b) { try { b.focus(); } catch (e) {} } }, 120);
-  }
-  function closeBpQuick() { var m = $id('bpQuick'); if (m) m.style.display = 'none'; }
+  /* ===== 量血压独立页（底栏「血压」与首页「量血压」共用 tab-bp）：历史/趋势/统计仍在档案页 ===== */
   function renderBpQuickLast() {
     var el = $id('bpQuickLast'); if (!el) return;
     var last = null;
@@ -8898,7 +8885,7 @@ EMC.Care = (function () {
     var word = st === 'high' ? '有点偏高' : (st === 'low' ? '有点偏低' : '正常，很好');
     say('已保存 ✓ ' + sys + '/' + dia + '，' + word, true);
     try { V.speak('血压' + sys + '比' + dia + '，' + word + (st === 'high' ? '，建议告诉家人' : '')); } catch (e) {}
-    setTimeout(closeBpQuick, 1800);
+    var again = $id('qBpSys'); if (again) { try { again.focus(); } catch (e) {} }
   }
 
   function initSimpleMode() {
@@ -9006,6 +8993,7 @@ EMC.Care = (function () {
     if (tab === 'home') { renderOverview(); renderHome(); }
     if (tab === 'meds') { renderMeds(); renderHeatmap(); renderMedTimeline(); renderDiseaseGroups(); }
     if (tab === 'health') { renderHealth(); renderWeeklyReport(); renderBpAssoc(); renderRiskTrend(); }
+    if (tab === 'bp') { renderBpQuickLast(); setTimeout(function () { var b = $id('qBpSys'); if (b) { try { b.focus(); } catch (e) {} } }, 120); }
     if (tab === 'guardian') { renderGuardian(); renderCareTasks(); }
     if (tab === 'risk') renderRisk();
     if (tab === 'data') renderData();
@@ -9401,7 +9389,7 @@ EMC.Care = (function () {
     btn.addEventListener('click', function () { switchTab(tab); });
     node.querySelector('.bubble').appendChild(btn);
   }
-  function tabName(t) { return { home: '首页', meds: '用药管理', risk: '风险筛查', data: '我的数据', health: '健康档案', guardian: '家属守护', chat: '智能助手' }[t] || '相关页面'; }
+  function tabName(t) { return { home: '首页', meds: '用药管理', bp: '量血压', risk: '风险筛查', data: '我的数据', health: '健康档案', guardian: '家属守护', chat: '智能助手' }[t] || '相关页面'; }
 
   function medsForEngine() {
     return S.meds.map(function (m) { return { mid: m.mid, name: m.name, dose: m.dose, slots: m.slots, note: m.note, perTime: m.perTime, freqTimes: m.freqTimes, times: m.times, start: m.start, end: m.end, remain: (typeof m.remain === 'number' ? m.remain : null) }; });
@@ -13099,7 +13087,7 @@ EMC.Care = (function () {
     function anyLayerOpen() {
       if (isMoreOpen()) return true;
       if (layers.length) return true;
-      var ids = ['authModal', 'ucModal', 'resetModal', 'helpModal', 'bpQuick'];
+      var ids = ['authModal', 'ucModal', 'resetModal', 'helpModal'];
       for (var i = 0; i < ids.length; i++) {
         var el = $id(ids[i]);
         if (el && el.style.display !== 'none') return true;
@@ -13115,8 +13103,6 @@ EMC.Care = (function () {
       if (hm && hm.style.display !== 'none') { closeHelp(); return true; }
       /* 既有弹窗：复用 closeModals()，它本身已含resetModal 清理 */
       var ids = ['authModal', 'ucModal', 'resetModal'];
-      var bq0 = $id('bpQuick');
-      if (bq0 && bq0.style.display !== 'none') { closeBpQuick(); return true; }
       for (var i = 0; i < ids.length; i++) {
         var el = $id(ids[i]);
         if (el && el.style.display !== 'none') { closeModals(); return true; }
