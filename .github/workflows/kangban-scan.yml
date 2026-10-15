@@ -1,10 +1,10 @@
 name: Kangban missed-dose scan
 
-# 每 15 分钟调用一次函数里的漏服扫描
+# 每 5 分钟调用一次函数里的漏服扫描（漏服推送+一键确认）
 # 结果会写入本次运行的 Summary（方便远程排查）
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch: {}
 
 jobs:

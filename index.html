@@ -405,7 +405,7 @@
             '</div></div>' +
             '<div class="form-row"><label for="kbEmail">接收提醒的邮箱</label><input id="kbEmail" type="email" inputmode="email" placeholder="如 me@qq.com"></div>' +
             '<div class="form-row"><label for="kbWechat">企业微信群机器人 Webhook</label><input id="kbWechat" type="text" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."></div>' +
-            '<div class="form-row"><label for="kbWxToken">个人微信推送 Token（免费，推荐家属使用）</label><input id="kbWxToken" type="text" placeholder="微信搜公众号「PushPlus服务号」→关注→复制首页的token粘到这里"><div class="muted small" style="margin-top:4px">开通后，老人漏服时家属微信直接收到提醒，不用打开网页。</div></div>' +
+            '<div class="form-row"><label for="kbWxToken">个人微信推送 Token（免费，推荐家属使用）</label><input id="kbWxToken" type="text" placeholder="微信搜公众号「PushPlus服务号」→关注→复制首页的token粘到这里"><div class="muted small" style="margin-top:4px">开通后，老人漏服时家属微信直接收到提醒，不用打开网页；推送里带「一键确认已服用」链接，点一下就打卡。管理员已配统一推送，家人想各自都收到，各自关注公众号取 token 填入即可。</div></div>' +
             '<div class="form-row"><label for="kbPhone">接收短信的手机号</label><input id="kbPhone" type="tel" inputmode="numeric" placeholder="如 13800000000"></div>' +
             '<div class="form-row"><label for="kbFamilyEmail">家属邮箱（可选）</label><input id="kbFamilyEmail" type="email" inputmode="email" placeholder="如 son@qq.com"></div>' +
             '<div class="form-row"><label for="kbOverdue">漏服超过（分钟）</label><input id="kbOverdue" type="text" inputmode="numeric" placeholder="60"></div>' +
@@ -802,7 +802,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101502;
+      var KB_BUILD = 2026101503;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
