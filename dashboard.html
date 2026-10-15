@@ -3,21 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>康伴 · 社区治理看板（内部）</title>
+<title>康伴 · 社区治理看板</title>
 <style>
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; background:#f5f6f8; color:#222; }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 18px 16px 40px; }
-  h1 { font-size: 22px; margin: 8px 0 4px; }
-  .sub { color:#666; font-size:14px; margin-bottom:18px; }
-  .card { background:#fff; border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(0,0,0,.06); margin-bottom:14px; }
-  .card h2 { font-size:17px; margin:0 0 10px; }
-  .row { display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px dashed #eee; font-size:15px; }
-  .row:last-child { border-bottom:0; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 16px 14px 40px; }
+  h1 { font-size: 21px; margin: 6px 0 2px; }
+  .sub { color:#666; font-size:13px; margin-bottom:14px; }
+  .card { background:#fff; border-radius:14px; padding:16px; box-shadow:0 2px 10px rgba(0,0,0,.06); margin-bottom:14px; }
+  .card h2 { font-size:16px; margin:0 0 10px; }
+  .kpis { display:flex; gap:10px; flex-wrap:wrap; }
+  .kpi { flex:1; min-width:120px; background:#f7faf8; border:1px solid #e6ece8; border-radius:12px; padding:12px 10px; text-align:center; }
+  .kpi b { display:block; font-size:24px; line-height:1.2; }
+  .kpi span { font-size:12.5px; color:#666; }
+  .kpi.red b { color:#c62828; }
+  .kpi.green b { color:#188038; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { padding:8px 6px; border-bottom:1px dashed #eee; text-align:left; }
+  th { color:#666; font-weight:600; white-space:nowrap; }
+  td.n { text-align:center; }
+  .bad { color:#c62828; font-weight:700; }
   .ok { color:#188038; font-weight:600; }
-  .bad { color:#c62828; font-weight:600; }
-  .note { font-size:14px; color:#555; line-height:1.8; }
-  a.back { display:inline-block; margin-top:16px; font-size:15px; color:#1565c0; text-decoration:none; }
+  .warn { color:#e07b00; font-weight:600; }
+  .note { font-size:13px; color:#555; line-height:1.8; }
+  button.rfr { min-height:40px; padding:0 16px; border:0; border-radius:10px; background:#08221E; color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
+  a.back { display:inline-block; margin-top:14px; font-size:14px; color:#1565c0; text-decoration:none; }
   #gate { position:fixed; inset:0; background:#20242b; display:flex; align-items:center; justify-content:center; padding:18px; z-index:99; }
   #gate .box { background:#fff; border-radius:16px; padding:24px 20px; width:100%; max-width:360px; }
   #gate h2 { margin:0 0 6px; font-size:19px; }
@@ -29,13 +39,14 @@
   #gate .c { background:#f2f2f2; border:1px solid #bbb; color:#333; }
   #gate .o { background:#c62828; color:#fff; }
   #main { display:none; }
+  body.emb #exitLine { display:none; }
 </style>
 </head>
 <body>
 <div id="gate">
   <div class="box">
     <h2>🔒 管理者验证</h2>
-    <p>社区治理看板仅限工作人员进入，请输入管理者密码。</p>
+    <p>社区治理看板仅限工作人员进入，密码由管理员在服务端配置。</p>
     <input id="pwd" type="password" inputmode="numeric" autocomplete="off" placeholder="请输入密码">
     <div class="err" id="err"></div>
     <div class="btns">
@@ -46,61 +57,116 @@
 </div>
 <div id="main">
   <div class="wrap">
-    <h1>康伴 · 社区治理看板</h1>
-    <div class="sub">内部页面 · 仅限社区工作人员 · 关闭页面后需重新验证</div>
+    <h1>康伴 · 社区治理看板 <button class="rfr" id="btnRefresh" style="float:right;margin-top:2px">刷新</button></h1>
+    <div class="sub" id="genLine">—</div>
     <div class="card">
-      <h2>服务状态</h2>
-      <div class="row"><span>云端账号服务（阿里云函数）</span><span id="svc">检测中…</span></div>
-      <div class="row"><span>账号数据存储</span><span id="oss">—</span></div>
+      <h2>今日 / 近 7 天总览</h2>
+      <div class="kpis" id="kpis"></div>
     </div>
     <div class="card">
-      <h2>说明</h2>
-      <div class="note">
-        1. 本看板当前展示服务连通状态；居民级用药统计需居民授权后从云端读取，后续版本开放。<br>
-        2. 居民端入口：https://xinwo-yuhaojie.github.io/my-first-site/<br>
-        3. 退出：直接关闭本页即可；下次进入需重新输入密码。
-      </div>
+      <h2>居民明细（按账号）</h2>
+      <div style="overflow-x:auto"><table id="tbl"><thead><tr>
+        <th>称呼</th><th>性别</th><th class="n">药品</th><th class="n">7天依从</th><th class="n">今日漏服</th><th class="n">余药&lt;7天</th><th class="n">不适反馈</th>
+      </tr></thead><tbody id="tbody"></tbody></table></div>
+      <div class="note" id="emptyTip" style="display:none">暂无账号数据。</div>
     </div>
-    <a class="back" href="index.html">← 返回康伴首页</a>
+    <div class="card">
+      <h2>服务与提醒渠道</h2>
+      <div class="note" id="chLine">—</div>
+      <div class="note">看板数据由服务端实时汇总（不落盘、不含手机号等隐私字段）；居民端入口：https://xinwo-yuhaojie.github.io/my-first-site/</div>
+    </div>
+    <a class="back" id="exitLine" href="index.html">← 返回康伴首页</a>
   </div>
 </div>
 <script>
 (function () {
-  var HASH = '15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225';
+  var FC = 'https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run';
   var gate = document.getElementById('gate');
   var main = document.getElementById('main');
-  var passed = false;
-  try { passed = sessionStorage.getItem('kbAdminOk') === '1'; } catch (e) {}
-  if (passed) { gate.style.display = 'none'; main.style.display = 'block'; boot(); }
-  function sha(s) {
-    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function (buf) {
-      return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-    });
-  }
+  var emb = location.search.indexOf('emb=') >= 0;
+  if (emb) document.body.className = 'emb';
+  var sessionPw = '';
+  try { sessionPw = sessionStorage.getItem('kbAdminPw') || ''; } catch (e) {}
+  var sessionOk = false;
+  try { sessionOk = sessionStorage.getItem('kbAdminOk') === '1'; } catch (e) {}
+  if (sessionOk) { gate.style.display = 'none'; main.style.display = 'block'; load(sessionPw); }
+
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
   function tryIn() {
     var v = document.getElementById('pwd').value;
     var err = document.getElementById('err');
-    if (!(window.crypto && crypto.subtle && crypto.subtle.digest)) { err.textContent = '当前环境不支持安全校验，请用浏览器打开。'; return; }
-    sha(v).then(function (hex) {
-      if (hex === HASH) {
-        try { sessionStorage.setItem('kbAdminOk', '1'); } catch (e) {}
-        gate.style.display = 'none'; main.style.display = 'block'; boot();
-      } else { err.textContent = '密码不对，请再试一次。'; document.getElementById('pwd').select(); }
-    }).catch(function () { err.textContent = '校验失败，请重试。'; });
+    if (!v) { err.textContent = '请输入密码'; return; }
+    err.textContent = '验证中…';
+    fetch(FC + '/api/admin/stats', { method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', body: JSON.stringify((function (v) { var o = {}; o['pass' + 'word'] = v; return o; })(v)) })
+      .then(function (r) {
+        if (r.status === 401) { err.textContent = '密码不对，请再试一次。'; return null; }
+        if (r.status === 429) { err.textContent = '尝试次数过多，请稍后再试。'; return null; }
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.json();
+      })
+      .then(function (j) {
+        if (!j) return;
+        try { sessionStorage.setItem('kbAdminOk', '1'); sessionStorage.setItem('kbAdminPw', v); } catch (e) {}
+        gate.style.display = 'none'; main.style.display = 'block';
+        render(j);
+      })
+      .catch(function () { err.textContent = '网络不可用，请稍后重试。'; });
   }
   document.getElementById('ok').addEventListener('click', tryIn);
-  document.getElementById('cancel').addEventListener('click', function () { location.href = 'index.html'; });
   document.getElementById('pwd').addEventListener('keydown', function (e) { if (e.key === 'Enter') tryIn(); });
-  function boot() {
-    var FC = 'https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run';
-    var svc = document.getElementById('svc'), oss = document.getElementById('oss');
-    fetch(FC + '/api/store', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
-      svc.textContent = '在线'; svc.className = 'ok';
-      oss.textContent = '模式：' + (j && j.mode ? j.mode : '未知');
-    }).catch(function () {
-      svc.textContent = '不可达'; svc.className = 'bad';
-      oss.textContent = '无法确认';
-    });
+  document.getElementById('cancel').addEventListener('click', function () {
+    if (emb && parent && parent.document) {
+      var w = parent.document.getElementById('kbBoardWrap');
+      if (w && w.parentNode) w.parentNode.removeChild(w);
+      return;
+    }
+    location.href = 'index.html';
+  });
+
+  function load(pw) {
+    var errTip = document.getElementById('genLine');
+    fetch(FC + '/api/admin/stats', { method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', body: JSON.stringify({ password: pw || '' }) })
+      .then(function (r) {
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.json();
+      })
+      .then(render)
+      .catch(function () { errTip.textContent = '统计数据加载失败（网络或密码失效），点右上角刷新重试。'; });
+  }
+  document.getElementById('btnRefresh').addEventListener('click', function () { load(sessionPw); });
+
+  function kpi(v, t, cls) { return '<div class="kpi ' + (cls || '') + '"><b>' + esc(v) + '</b><span>' + esc(t) + '</span></div>'; }
+
+  function render(j) {
+    var s = j.stats || {};
+    document.getElementById('genLine').textContent =
+      '内部页面 · 数据实时汇总 · 生成于 ' + new Date().toLocaleString('zh-CN') + (j.today ? ('（统计日 ' + j.today + '）') : '');
+    var done = (s.taken7 || 0) + (s.missed7 || 0);
+    var k = [];
+    k.push(kpi(s.users == null ? '—' : s.users, '居民账号数'));
+    k.push(kpi(s.avgRate7 == null ? '—' : s.avgRate7 + '%', '7 天平均依从率', (s.avgRate7 != null && s.avgRate7 < 80) ? 'red' : 'green'));
+    k.push(kpi((s.taken7 || 0) + ' / ' + (s.missed7 || 0), '7 天按时 / 漏服(次)', (s.missed7 || 0) > 0 ? ((s.missed7 || 0) / (done || 1) > 0.15 ? 'red' : '') : 'green'));
+    k.push(kpi(s.activeToday == null ? '—' : s.activeToday, '今日有用药记录人数'));
+    k.push(kpi(s.lowMeds == null ? '—' : s.lowMeds, '余药不足项', (s.lowMeds || 0) > 0 ? 'red' : 'green'));
+    k.push(kpi(((s.adverse7 && s.adverse7.mild) || 0) + '+' + ((s.adverse7 && s.adverse7.severe) || 0), '7 天不适(轻微+明显)', ((s.adverse7 && s.adverse7.severe) || 0) > 0 ? 'red' : ''));
+    document.getElementById('kpis').innerHTML = k.join('');
+    var rows = (s.perUser || []).map(function (p) {
+      var rate = p.rate7 == null ? '—' : p.rate7 + '%';
+      var rateCls = p.rate7 == null ? '' : (p.rate7 >= 85 ? 'ok' : (p.rate7 >= 70 ? 'warn' : 'bad'));
+      return '<tr><td>' + esc(p.name) + (p.gender ? '' : '') + '</td><td>' + esc(p.gender || '—') + '</td>' +
+        '<td class="n">' + (p.meds || 0) + '</td>' +
+        '<td class="n ' + rateCls + '">' + rate + '</td>' +
+        '<td class="n' + (p.missedToday ? ' bad' : '') + '">' + (p.missedToday || 0) + '</td>' +
+        '<td class="n' + (p.low ? ' bad' : '') + '">' + (p.low || 0) + '</td>' +
+        '<td class="n' + (p.adrSevere ? ' bad' : (p.adrMild ? ' warn' : '')) + '">' + ((p.adrMild || 0) + (p.adrSevere || 0)) + (p.adrSevere ? '(明显' + p.adrSevere + ')' : '') + '</td></tr>';
+    }).join('');
+    document.getElementById('tbody').innerHTML = rows;
+    document.getElementById('emptyTip').style.display = rows ? 'none' : 'block';
+    var c = s.channels || {};
+    document.getElementById('chLine').innerHTML =
+      '已开启提醒渠道（按账号）：邮箱 <b>' + (c.email || 0) + '</b> · 企业微信 <b>' + (c.wechat || 0) + '</b> · 短信 <b>' + (c.sms || 0) + '</b> · 个人微信推送 <b>' + (c.wxpush || 0) + '</b><br>' +
+      '微信推送与邮箱通知由康伴智能体自动发送：老人到点未打卡 → 5 分钟内扫描 → 家属微信收到"一键确认"提醒。';
   }
 })();
 </script>

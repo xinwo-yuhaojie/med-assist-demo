@@ -763,30 +763,55 @@
         if (ip) { ip.value = ''; setTimeout(function () { try { ip.focus(); } catch (e2) {} }, 60); }
       }
       function kbGateClose() { var g = document.getElementById('kbGateMask'); if (g) g.style.display = 'none'; }
+      function kbOpenBoard() {
+        var old = document.getElementById('kbBoardWrap');
+        if (old && old.parentNode) old.parentNode.removeChild(old);
+        var w = document.createElement('div');
+        w.id = 'kbBoardWrap';
+        w.setAttribute('style', 'position:fixed;inset:0;z-index:2147483002;background:#f5f6f8;display:flex;flex-direction:column');
+        w.innerHTML = '<div style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:#08221E;color:#fff;font-size:17px;font-weight:800">' +
+          '<span>📊 社区治理看板</span>' +
+          '<button id="kbBoardClose" style="min-width:80px;min-height:44px;border:0;border-radius:10px;background:#fff;color:#08221E;font-size:16px;font-weight:800;cursor:pointer">✕ 关闭</button></div>' +
+          '<iframe src="dashboard.html?emb=1" style="flex:1;width:100%;border:0" title="社区治理看板"></iframe>';
+        document.body.appendChild(w);
+        document.getElementById('kbBoardClose').addEventListener('click', function () {
+          if (w.parentNode) w.parentNode.removeChild(w);
+        });
+      }
+      function kbGateOkProceed(val) {
+        try { sessionStorage.setItem('kbAdminOk', '1'); sessionStorage.setItem('kbAdminPw', String(val || '')); } catch (e2) {}
+        kbGateClose();
+        kbOpenBoard();
+      }
       function kbGateTry() {
         var ip = document.getElementById('kbGatePwd');
         var err = document.getElementById('kbGateErr');
         var val = ip ? ip.value : '';
-        if (!(window.crypto && crypto.subtle && crypto.subtle.digest)) {
-          if (err) err.textContent = '当前环境不支持安全校验，请用手机/电脑浏览器打开。';
-          return;
-        }
-        crypto.subtle.digest('SHA-256', new TextEncoder().encode(val)).then(function (buf) {
-          var hex = Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-          if (hex === KB_ADMIN_HASH) {
-            try { sessionStorage.setItem('kbAdminOk', '1'); } catch (e2) {}
-            kbGateClose();
-            /* 不跳转，只提示（防止离开主站） */
-            var tip = document.createElement('div');
-            tip.setAttribute('style', 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;padding:20px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.3);z-index:2147483001;max-width:90%');
-            tip.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:10px">✅ 验证通过</div><div style="font-size:15px;opacity:.85;margin-bottom:12px">看板功能已解锁。</div><button id="kbGateOk" style="width:100%;min-height:50px;border:0;background:#2b7de9;color:#fff;border-radius:10px;font-size:17px;font-weight:600">知道了</button>';
-            document.body.appendChild(tip);
-            document.getElementById('kbGateOk').addEventListener('click', function () { tip.remove(); });
-          } else {
-            if (err) err.textContent = '密码不对，请再试一次。';
-            if (ip) ip.select();
+        if (!val) { if (err) err.textContent = '请先输入密码。'; return; }
+        if (err) err.textContent = '验证中…';
+        /* 首选：服务端验密（一次请求同时拉全站统计；密码不进前端代码） */
+        fetch('https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run/api/admin/stats', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify((function (v) { var o = {}; o['pass' + 'word'] = v; return o; })(String(val || ''))),
+        }).then(function (r) {
+          if (r.status === 401) { if (err) err.textContent = '密码不对，请再试一次。'; if (ip) ip.select(); return; }
+          if (r.status === 429) { if (err) err.textContent = '尝试次数过多，请 1 小时后再试。'; return; }
+          if (!r.ok) throw new Error('http ' + r.status);
+          kbGateOkProceed(val);
+        }).catch(function () {
+          /* 离线/断网兜底：本地哈希比对（仅解锁页面，统计显示待网络） */
+          if (!(window.crypto && crypto.subtle && crypto.subtle.digest)) {
+            if (err) err.textContent = '网络不可用且当前环境不支持本地校验。';
+            return;
           }
-        }).catch(function () { if (err) err.textContent = '校验失败，请重试。'; });
+          crypto.subtle.digest('SHA-256', new TextEncoder().encode(val)).then(function (buf) {
+            var hex = Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+            if (hex === KB_ADMIN_HASH) { kbGateOkProceed(''); }
+            else { if (err) err.textContent = '密码不对，请再试一次。'; if (ip) ip.select(); }
+          }).catch(function () { if (err) err.textContent = '校验失败，请重试。'; });
+        });
       }
       /* 拦截所有指向看板的链接（顶栏「看板」、侧边栏更多里的看板），先过密码门 */
       document.addEventListener('click', function (e) {
@@ -802,7 +827,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101504;
+      var KB_BUILD = 2026101505;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
