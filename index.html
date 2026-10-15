@@ -802,7 +802,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101503;
+      var KB_BUILD = 2026101504;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -2762,6 +2762,25 @@ body.family-mode .home-hero { display: none !important; }
 body.family-mode .card-entries { display: none !important; }
 body.family-mode .quick-card { display: none !important; }
 body.family-mode .kb-home-sos { display: none !important; }
+/* ===== 用药计划卡双按钮行 ===== */
+.simple-plan-btns { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.simple-manage { flex: 1; min-width: 150px; min-height: 66px; border: 0; border-radius: var(--radius-lg); background: #2b7de9; color: #fff; font-size: 1.2em; font-weight: 800; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.simple-plan-btns .simple-addmed { width: auto; margin-top: 0; flex: 1; min-width: 150px; }
+.s-sub { display: block; font-size: .62em; font-weight: 600; opacity: .92; margin-top: 2px; }
+.simple-manage:active, .simple-addmed:active { transform: scale(.985); }
+/* ===== 老人模式再精致：更大字、更高按钮 ===== */
+body.simple-mode .simple-plan .card-title { font-size: 1.3em; }
+body.simple-mode .plan-item { padding: 14px 2px; }
+body.simple-mode .plan-time { font-size: 1.5em; }
+body.simple-mode .plan-name { font-size: 1.28em; }
+body.simple-mode .simple-plan .btn { min-height: 60px; font-size: 1.12em; border-radius: 14px; }
+body.simple-mode .simple-btn { min-height: 92px; }
+body.simple-mode #simplePlan { font-size: 1.05em; }
+/* ===== 各板块统一排版 ===== */
+.card { margin-bottom: 14px; }
+.quick-row { gap: 10px; }
+.quick-row .btn { flex: 1; min-width: 96px; min-height: 56px; }
+.home-ov { gap: 10px; }
 
 /* 极简模式：帮助类入口次要，降一档视觉权重但热区不变 */
 body.simple-mode .more-item { font-size: .95em; }
@@ -2905,7 +2924,10 @@ body.simple-mode .more-item { font-size: .95em; }
         <div class="card simple-plan">
           <div class="card-title">📋 今日用药计划 <span class="tag" id="simplePlanCount"></span></div>
           <div id="simplePlan"></div>
-          <button class="simple-addmed" id="simpleAddMed">＋ 添加药品</button>
+          <div class="simple-plan-btns">
+            <button class="simple-manage" id="simpleManage">💊 用药管理<span class="s-sub">今日清单 · 打卡 · 余药</span></button>
+            <button class="simple-addmed" id="simpleAddMed">＋ 添加药品<span class="s-sub">新开的药扫一下或填上</span></button>
+          </div>
         </div>
         <div class="simple-grid">
           <button class="simple-btn" id="simpleMed">
@@ -2950,7 +2972,7 @@ body.simple-mode .more-item { font-size: .95em; }
         <div class="mode-pick-title">选择使用方式（随时可切换）</div>
         <div class="mode-pick">
           <button class="simple-toggle" id="simpleToggleBtn">
-            <span class="s-ic" aria-hidden="true">👴</span>
+            <span class="s-ic" aria-hidden="true" data-gender-ic="1">👴</span>
             <span class="s-tx">老人模式<span class="s-sub">字大、按钮大：吃药、量血压、求助一点就中</span></span>
           </button>
           <button class="simple-toggle mode-family" id="familyToggleBtn">
@@ -3018,7 +3040,7 @@ body.simple-mode .more-item { font-size: .95em; }
            与顶栏「退出极简」互斥显示：普通态显示本卡片，极简态显示顶栏退出按钮。 -->
       <div class="card simple-toggle-card simple-toggle-chat">
         <button class="simple-toggle" id="simpleToggleBtn2">
-          <span class="s-ic" aria-hidden="true">🧓</span>
+          <span class="s-ic" aria-hidden="true" data-gender-ic="1">🧓</span>
           <span class="s-tx">老人模式<span class="s-sub">字大、按钮大：吃药、量血压、求助一点就中</span></span>
         </button>
       </div>
@@ -8240,6 +8262,10 @@ EMC.Care = (function () {
         switchTab('meds');
         setTimeout(function () { var b = $id('btnAddMed'); if (b) b.click(); }, 80);
       });
+      if ($id('simpleManage')) $id('simpleManage').addEventListener('click', function () {
+        switchTab('meds');
+        toast('用药管理：点每条药右边的按钮就能打卡');
+      });
 
       /* 离线横幅 */
       window.addEventListener('online', function () { syncOffline(); clearChatSkeleton(); toast('网络已恢复'); });
@@ -8483,6 +8509,14 @@ EMC.Care = (function () {
    * 【安全红线】顶栏常驻「退出极简」按钮，任何时候都能一键退回完整界面。
    * 持久化走既有 settings 白名单（simpleMode），游客态与登录态都生效。
    * ========================================================== */
+  /* 所有「老人」图标随性别切换：伯伯→👴老爷爷；奶奶/阿姨→👵老奶奶 */
+  function updateGenderIcons() {
+    var ic = (S.profile && S.profile.gender === '女') ? '👵' : '👴';
+    document.querySelectorAll('[data-gender-ic]').forEach(function (el) { el.textContent = ic; });
+    var fs = $id('famGoSimple');
+    if (fs) fs.textContent = ic + ' 切到老人模式';
+  }
+
   /* ===== 老人模式：今日用药计划（时间+药名+一键已服用/漏服） ===== */
   function renderSimplePlan() {
     var box = $id('simplePlan'); if (!box) return;
@@ -9269,6 +9303,7 @@ EMC.Care = (function () {
     var avH = $id('kbAvatarHome'), avS = $id('kbAvatarSimple');
     if (avH) avH.textContent = avEmoji;
     if (avS) avS.textContent = avEmoji;
+    try { updateGenderIcons(); } catch (e) {}
     try { renderSimplePlan(); } catch (e) {}
     if (document.body.classList.contains('family-mode')) { try { renderFamilyOverview(); } catch (e) {} }
 
