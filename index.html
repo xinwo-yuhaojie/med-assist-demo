@@ -827,7 +827,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101511;
+      var KB_BUILD = 2026101512;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -1850,6 +1850,8 @@ input[type="range"] {
 .reminder-full .rem-list div:last-child { border-bottom: 0; }
 .reminder-full .rem-footer { margin: 12px 0; font-size: .92em; font-weight: 700; color: var(--c-primary); background: var(--c-primary-soft); border-radius: var(--radius); padding: 10px 12px; }
 .reminder-full .rem-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+/* 提醒弹层里「用药管理」可点击直达用药管理页（站内跳转，不离开网站） */
+.reminder-full .rem-jump { display: inline-block; color: #1e7d4f; font-weight: 800; text-decoration: underline; cursor: pointer; padding: 8px 4px; -webkit-tap-highlight-color: rgba(30,125,79,.15); }
 .reminder-full .rem-actions .btn-lg { min-height: 60px; font-size: 1.15em; }
 /* 「稍后提醒」与「已服用」同规格，避免老人以为"次要"而找不到出口 */
 .reminder-full .rem-actions .btn-lg.rem-snooze { background: var(--c-accent); border-color: var(--c-accent); }
@@ -2832,6 +2834,9 @@ body.simple-mode .plan-time { font-size: 1.5em; }
 body.simple-mode .plan-name { font-size: 1.28em; }
 body.simple-mode .simple-plan .btn { min-height: 60px; font-size: 1.12em; border-radius: 14px; }
 body.simple-mode .simple-btn { min-height: 92px; }
+/* 老人模式专属大按钮：用药管理（普通态隐藏，避免与底部标签栏重复） */
+.sg-manage { display: none !important; }
+body.simple-mode .sg-manage { display: flex !important; grid-column: 1 / -1; background: #e9f6ee; border: 2px solid #1e7d4f; }
 body.simple-mode #simplePlan { font-size: 1.05em; }
 /* ===== 各板块统一排版 ===== */
 .card { margin-bottom: 14px; }
@@ -2998,6 +3003,10 @@ body.simple-mode .more-item { font-size: .95em; }
           <button class="simple-btn s-orange" id="simpleSos">
             <span class="s-ic" aria-hidden="true">🆘</span>
             <span class="s-tx">求助<span class="s-sub">不舒服，立刻通知家人</span></span>
+          </button>
+          <button class="simple-btn sg-manage" data-simple-act="med" aria-label="用药管理，今日清单打卡余药">
+            <span class="s-ic" aria-hidden="true">💊</span>
+            <span class="s-tx">用药管理<span class="s-sub">今日清单 · 打卡 · 余药</span></span>
           </button>
         </div>
         <!-- 极简态的第二个退出入口：就放在三件事正下方，老人用完顺手就能退回 -->
@@ -11166,7 +11175,7 @@ EMC.Care = (function () {
       // D-12 需求 1 / S-13：明确「稍后提醒」出口，点击后 10 分钟内不再重复弹同一时段
       '<button class="btn-lg rem-snooze" id="dlgSnooze">⏰ 稍后提醒（' + SNOOZE_MINUTES + ' 分钟后）</button>' +
       '<button class="btn-lg gray" id="dlgLater">稍后再说</button></div>' +
-      '<div class="small muted" style="margin-top:10px">服完后请到「用药管理」打卡，系统会帮您记录。</div>' +
+      '<div class="small muted" style="margin-top:10px">服完后请到<span class="rem-jump" id="remJumpMeds">「用药管理」打卡</span>，系统会帮您记录。</div>' +
       '<div class="rem-hint">不方便现在服用？点「稍后提醒」，' + SNOOZE_MINUTES + ' 分钟后会再次提醒您。' +
       '也可以按键盘 <b>Esc</b> 键关闭本提醒。</div></div>';
     document.body.appendChild(mask);
@@ -11218,6 +11227,12 @@ EMC.Care = (function () {
     }
 
     var takenBusy = false;
+    var remJump = mask.querySelector('#remJumpMeds');
+    if (remJump) remJump.addEventListener('click', function () {
+      close();
+      switchTab('meds');
+      toast('用药管理：点每条药右边的按钮就能打卡');
+    });
     mask.querySelector('#dlgTaken').addEventListener('click', function () {
       if (takenBusy) return; takenBusy = true;   /* 一次点击即生效，防重复提交 */
       var tb = this;
