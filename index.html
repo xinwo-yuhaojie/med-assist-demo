@@ -391,7 +391,9 @@
       window.__kbLoadNotify = kbLoadNotify;
 
       if (!document.getElementById('kbNotifyCard')) {
-        var anchor = document.getElementById('notifyChannel');
+        /* v24：notifyChannel 下拉已移除（真实发送方式统一在提醒设置里配置），
+           锚点改用「立即真实通报家属」按钮所在的卡片，保证提醒设置卡仍能注入 */
+        var anchor = document.getElementById('btnNotifyFamily') || document.getElementById('btnWeeklyFamily');
         var card = anchor ? anchor.closest('.card') : null;
         if (card && card.parentNode) {
           var c = document.createElement('div');
@@ -2900,6 +2902,85 @@ body.simple-mode .more-item { font-size: .95em; }
 .help-body li { margin: 3px 0; }
 
 /* ==========================================================
+ * v24：图示操作手册（⚡入口）
+ * 设计：手机示意框（SVG 简笔）+ 一步一句 + 大热区；
+ *       窄屏自动改为「图在上、字在下」单列，老人不用左右找。
+ * ========================================================== */
+.guide-dialog { max-width: 540px; max-height: 90vh; overflow-y: auto; position: relative; }
+.guide-close {
+  position: absolute; top: 12px; right: 12px; z-index: 2;
+  min-width: var(--tap); min-height: var(--tap); padding: 8px 14px;
+  border-radius: 999px; border: 2px solid var(--c-border);
+  background: var(--c-bg-elev); color: var(--c-text-sub);
+  font-size: .9em; font-weight: 800; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+}
+.guide-close:active { transform: scale(.96); }
+.guide-title { margin: 0 0 4px; font-size: var(--fs-title); color: var(--c-primary); padding-right: 70px; }
+.guide-tabs { display: flex; gap: 10px; margin: 10px 0 10px; }
+.guide-tab {
+  flex: 1; min-height: 54px; border: 2px solid var(--c-border); border-radius: var(--radius);
+  background: var(--c-bg-elev); color: var(--c-text-sub);
+  font-size: 1.02em; font-weight: 800; cursor: pointer;
+}
+.guide-tab.on { background: var(--grad-primary); border-color: var(--c-primary); color: #fff; }
+.guide-warm {
+  background: var(--c-accent-soft); border: 1px dashed var(--c-accent); border-radius: var(--radius);
+  padding: 10px 12px; font-size: .92em; line-height: 1.8; color: var(--c-accent-deep, #C4651F);
+  margin-bottom: 12px; font-weight: 600;
+}
+.guide-step { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px dashed var(--c-border); align-items: flex-start; }
+.guide-step:last-child { border-bottom: 0; }
+.guide-step .gs-mk { flex: 0 0 148px; }
+.guide-step .gs-tx { flex: 1 1 auto; min-width: 0; }
+.guide-step .gs-t { font-size: 1.08em; font-weight: 800; margin: 0 0 6px; color: var(--c-text); }
+.guide-step .gs-d { font-size: 1em; line-height: 1.85; color: var(--c-text); margin: 0; }
+.guide-step .gs-d b { color: var(--c-primary); }
+/* 手机示意框 SVG（简笔 UI，非真实截图，老人看布局就懂） */
+.mk { width: 100%; height: auto; display: block; }
+.mk-fr { fill: #D9D3C7; }
+.mk-sc { fill: #FFFFFF; stroke: #E4DDD0; stroke-width: 1; }
+.mk-top { fill: #1F7A6B; }
+.mk-topt { fill: #fff; font-size: 13px; font-weight: 700; }
+.mk-card { fill: #F5F1E8; stroke: #E4DDD0; }
+.mk-btn { fill: #1F7A6B; }
+.mk-btn-t { fill: #fff; font-size: 14px; font-weight: 700; text-anchor: middle; }
+.mk-ok { fill: #2E8B57; }
+.mk-ok-t { fill: #fff; font-size: 14px; font-weight: 700; text-anchor: middle; }
+.mk-or { fill: #E07A2F; }
+.mk-or-t { fill: #fff; font-size: 13px; font-weight: 700; text-anchor: middle; }
+.mk-tab { fill: #FFFFFF; stroke: #E4DDD0; }
+.mk-tab-t { fill: #4A5561; font-size: 9px; text-anchor: middle; }
+.mk-dlg { fill: #FFFFFF; stroke: #C62828; stroke-width: 2; }
+.mk-dlg-t { fill: #C62828; font-size: 14px; font-weight: 800; text-anchor: middle; }
+.mk-line { fill: #E4DDD0; }
+.mk-item { fill: #F5F1E8; stroke: #E4DDD0; }
+.mk-item-t { fill: #1A1A1A; font-size: 11px; }
+.mk-sos { fill: #C62828; }
+.mk-hl { fill: none; stroke: #E07A2F; stroke-width: 3; stroke-dasharray: 7 5; }
+.mk-arrow { fill: none; stroke: #E07A2F; stroke-width: 3; stroke-linecap: round; }
+.mk-note { fill: #C4651F; font-size: 11px; font-weight: 800; text-anchor: middle; }
+.mk-in { fill: #FFFFFF; stroke: #9AA0A6; stroke-width: 2; }
+.mk-in-t { fill: #1A1A1A; font-size: 12px; font-weight: 700; text-anchor: middle; }
+.mk-bub-a { fill: #E3F1EE; stroke: #1F7A6B; }
+.mk-bub-u { fill: #FBE9DA; stroke: #E07A2F; }
+.mk-bub-t { fill: #1A1A1A; font-size: 10px; }
+.mk-mic { fill: #1F7A6B; }
+.mk-mic-t { fill: #fff; font-size: 16px; text-anchor: middle; }
+.mk-row { fill: #F5F1E8; stroke: #E4DDD0; }
+.mk-row-t { fill: #1A1A1A; font-size: 10px; }
+.mk-on { fill: #2E8B57; }
+.mk-on-t { fill: #fff; font-size: 10px; font-weight: 700; text-anchor: middle; }
+.mk-paper { fill: #FFFFFF; stroke: #E4DDD0; stroke-width: 2; }
+.mk-pt { fill: #4A5561; font-size: 9px; }
+/* 窄屏：图在上、字在下，单列阅读 */
+@media (max-width: 460px) {
+  .guide-step { flex-direction: column; align-items: center; text-align: left; }
+  .guide-step .gs-mk { flex: none; width: 168px; }
+  .guide-step .gs-tx { width: 100%; }
+}
+
+/* ==========================================================
  * v22 P1-14：回答「逐段朗读」按钮
  * 【为什么要做】老人拿到一段长回答时，往往只想重听其中一句
  *   （比如「这个药能不能和另一个一起吃」）。原来只有整条重读，
@@ -3437,15 +3518,10 @@ body.simple-mode .more-item { font-size: .95em; }
         </div>
         <button class="btn sm" id="btnAddContact">＋ 添加联系人</button>
         <div class="form-row" style="margin-top:12px">
-          <label>📣 通报方式（可插拔，云端可配置真实推送）</label>
-          <select id="notifyChannel">
-            <option value="sms">短信</option>
-            <option value="call">电话</option>
-            <option value="app">App 推送</option>
-            <option value="wechat">微信</option>
-          </select>
+          <label>📣 真实发送方式在「提醒设置」里配置</label>
+          <div class="muted small" style="margin-bottom:4px">勾选渠道（短信 / 邮件 / 微信推送）并填手机号或邮箱、保存后，点下面的按钮就是真实发到家人手机。</div>
         </div>
-        <button class="btn orange sm" id="btnNotifyFamily" style="margin-top:4px">📣 立即通报家属联系人</button>
+        <button class="btn orange sm" id="btnNotifyFamily" style="margin-top:4px">📣 立即真实通报家属</button>
         <button class="btn ghost sm" id="btnFamilyBrief" style="margin-top:4px">📝 一键生成家属简报</button>
         <button class="btn ghost sm" id="btnWeeklyFamily" style="margin-top:4px">📤 本周小结发给家属（真实发送）</button>
         <button class="btn ghost sm" id="btnDemoNotify" style="margin-top:4px">📣 发送演示通报（不真实推送）</button>
@@ -3460,7 +3536,7 @@ body.simple-mode .more-item { font-size: .95em; }
           <span class="notify-count" id="notifyCount"></span>
         </div>
         <div id="guardianNotify"></div>
-        <button class="btn ghost sm" id="btnGuardianCheck" style="margin-top:10px">检查并通知家属（演示）</button>
+        <button class="btn ghost sm" id="btnGuardianCheck" style="margin-top:10px">检查并记录家属通知</button>
       </div>
 
       <div class="card">
@@ -3569,6 +3645,7 @@ body.simple-mode .more-item { font-size: .95em; }
   <button id="kbHomePill" type="button" aria-label="回首页">⌂ 回首页</button>
   <button id="kbQuickFab" type="button" aria-label="快捷功能">⚡</button>
   <div id="kbQuickPanel" role="menu" aria-label="快捷跳转">
+    <button data-q="guide">📖 操作手册</button>
     <button data-q="chat">🤖 问智能体</button>
     <button data-q="meds">💊 去打卡</button>
     <button data-q="addmed">＋ 添加药品</button>
@@ -3577,6 +3654,20 @@ body.simple-mode .more-item { font-size: .95em; }
     <button data-q="guardian">👨‍‍👧 家属守护</button>
     <button data-q="risk">⚠️ 风险筛查</button>
     <button data-q="data">📊 本周小结</button>
+  </div>
+  <!-- v24：图示操作手册（⚡入口；老人/家属双页签，图文对照） -->
+  <div id="kbGuideModal" class="mask" style="display:none">
+    <div class="dialog guide-dialog" role="dialog" aria-modal="true" aria-label="操作手册">
+      <button type="button" class="guide-close" id="kbGuideClose" aria-label="关闭手册">✕ 关闭</button>
+      <h3 class="guide-title">📖 操作手册</h3>
+      <div class="guide-tabs" role="tablist">
+        <button type="button" class="guide-tab on" data-gt="elder" role="tab" aria-selected="true">👴 给老人看</button>
+        <button type="button" class="guide-tab" data-gt="family" role="tab" aria-selected="false">👨‍👩‍👧 给家属看</button>
+      </div>
+      <div class="guide-warm">慢慢来，不着急。用两次就熟了，忘了就点右上角⚡看这本小手册。</div>
+      <div class="guide-body" id="guideElder"></div>
+      <div class="guide-body" id="guideFamily" style="display:none"></div>
+    </div>
   </div>
   <div id="kbMissedBar" role="alert" style="display:none"></div>
 
@@ -7890,7 +7981,7 @@ window.EMCStore = (function () {
       },
       notify: function (opt) {
         return EMCAuth.api('/api/notify', { method: 'POST', body: opt })
-          .then(function (r) { return { sent: r.sent || 0, log: r.log || [] }; });
+          .then(function (r) { return { sent: r.sent || 0, log: r.log || [], result: r.result || [] }; });
       },
       summary: function (days) {
         return EMCAuth.api('/api/summary?days=' + (days || 7)).then(function (r) {
@@ -8241,6 +8332,7 @@ EMC.Care = (function () {
     });
     bind();
     bindMorePanel();   // v22 P1-12：低频入口聚合面板 + 帮助弹窗
+    bindKbGuide();     // v24：图示操作手册（⚡入口，老人/家属双页签）
     BackGuard.init();  // v22 P1-16：pushState 哨兵 + popstate 返回键兜底
     initThemeBtn();   // D-08 / S-08：游客态显示模式切换入口
     initSimpleMode(); // v21 P2-5：极简模式开关 + 三件事入口 + 退出极简
@@ -8518,7 +8610,9 @@ EMC.Care = (function () {
         b.addEventListener('click', function () {
           var q = b.getAttribute('data-q');
           $id('kbQuickPanel').style.display = 'none';
-          if (q === 'addmed') {
+          if (q === 'guide') {
+            openKbGuide();
+          } else if (q === 'addmed') {
             switchTab('meds');
             setTimeout(function () { var x = $id('btnAddMed'); if (x) x.click(); }, 80);
           } else if (q === 'adr') {
@@ -10665,7 +10759,7 @@ EMC.Care = (function () {
     return '<div class="stat"><div class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</div><div class="k">' + k + '</div></div>';
   }
 
-  /* 漏服 / 未确认通知（自动，写入通知日志；云端由显式通报推送家属） */
+  /* 漏服 / 未确认通知（本地记录 + 提示；已登录用户的真实推送由服务端每5分钟巡检完成） */
   function guardKeyToday(kind) {
     var key = E.fmtDate(new Date());
     return (S.guardian.notifications || []).some(function (n) {
@@ -10674,35 +10768,108 @@ EMC.Care = (function () {
   }
   async function guardianAutoCheck(force) {
     var key = E.fmtDate(new Date());
-    var missed = S.records.filter(function (r) { return r.date === key && r.status === 'missed'; });
-    var pending = S.records.filter(function (r) { return r.date === key && r.status === 'pending'; });
+    var missed = S.records.filter(function (r) { return r.date === key && r.status === 'missed'; }).length;
+    var pending = S.records.filter(function (r) { return r.date === key && r.status === 'pending'; }).length;
     var hh = new Date().getHours();
+    var cloud = EMCAuth.isLoggedIn();
     if (force || (missed.length && !guardKeyToday('missed'))) {
       S.guardian.notifications = await store.addNotification({ kind: 'missed', text: '老人于 ' + key + ' 漏服 ' + missed.length + ' 项药品' });
-      toast('已记录漏服并通知家属（演示）：漏服 ' + missed.length + ' 项');
+      toast(cloud ? ('已记录漏服 ' + missed.length + ' 项，家人会收到提醒') : ('已记录漏服 ' + missed.length + ' 项（登录账号后家人会收到真实提醒）'));
       renderGuardian();
     }
     if ((force && pending.length) || (hh >= 22 && pending.length && !guardKeyToday('pending'))) {
       S.guardian.notifications = await store.addNotification({ kind: 'pending', text: '老人于 ' + key + ' 仍有 ' + pending.length + ' 项待服未确认' });
-      toast('已通知家属（演示）：仍有 ' + pending.length + ' 项待服');
+      toast(cloud ? ('已记录待服 ' + pending.length + ' 项，家人会收到提醒') : ('已记录待服 ' + pending.length + ' 项（登录账号后家人会收到真实提醒）'));
       renderGuardian();
     }
   }
 
-  /* 📣 通报家庭联系人（真实推送可插拔） */
+  /* 📣 通报家庭联系人（v24：从"演示模式"升级为真实推送）
+   * 真实链路：前端 → FC /api/notify → dispatch() → 短信/邮件/企业微信/PushPlus → 家人手机
+   * 发送前逐项检查前置条件（缺一项都会真实发失败，必须引导而非假装成功）：
+   *   ① 已登录云端账号（游客无账号，服务端不认识这家人）
+   *   ② 已填家属联系人电话（短信渠道）
+   *   ③ 「提醒设置」勾选了渠道且填了对应信息（手机号/邮箱/Webhook/Token）
+   *   ④ 服务端已配好短信/推送密钥（FC 环境变量，由管理员配置；失败时如实回报原因） */
   async function notifyFamilyExplicit() {
     if (!S.guardian.contacts.length) { alert('请先在上方添加家属联系人'); return; }
+
+    /* ① 未登录 → 真实发送需要云端账号（游客态服务端没有这位家人的数据） */
+    if (!EMCAuth.isLoggedIn()) {
+      kbAskDialog('要先登录才能真实发送', '通报家属是真实发到家人手机上的，需要先用云端账号登录。游客体验模式下只能本机记录。', '去登录', function () { openLogin(); });
+      return;
+    }
+
+    /* ②③ 渠道就绪检查：优先用云端最新 notifySet（避免本地缓存过期） */
+    var ns = (S.profile && S.profile.notifySet) || {};
+    try {
+      var me = await EMCAuth.api('/api/me');
+      if (me && me.user && me.user.notifySet) { ns = me.user.notifySet; S.profile.notifySet = ns; }
+    } catch (e) { /* 用本地缓存 */ }
+    var ch = ns.channels || {};
+    var contacts = S.guardian.contacts || [];
+    var hasPhone = contacts.some(function (c) { return c.phone; });
+    var hasEmail = contacts.some(function (c) { return c.email; }) || !!(ns.familyEmail || ns.email);
+    var ready = (ch.sms && hasPhone) || (ch.email && hasEmail) || (ch.wechat && ns.wechatWebhook) || (ch.wxpush && ns.wxpushToken);
+    if (!ready) {
+      kbAskDialog('还差一步：告诉它往哪发', '要真实发到家人手机，需要先设置：\n① 回到本页「提醒设置」，勾选短信 / 邮件 / 微信推送\n② 填对应的手机号或邮箱\n③ 点「保存提醒设置」\n④ 再点一次「立即通报」', '去设置', function () {
+        switchTab('guardian');
+        setTimeout(function () {
+          var el = $id('kbNotifyCard');
+          if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 250);
+      });
+      return;
+    }
+
+    /* ④ 真实发送 */
     var key = E.fmtDate(new Date());
     var missed = S.records.filter(function (r) { return r.date === key && r.status === 'missed'; }).length;
     var res = E.screen(medsForEngine());
-    var channel = ($id('notifyChannel') && $id('notifyChannel').value) || 'sms';
-    var text = '【康伴用药提醒】' + key + '：老人今日漏服 ' + missed + ' 项，当前风险等级 ' + res.level +
-      '。请关注老人用药情况。' + (EMCAuth.isLoggedIn() ? '' : '（本机演示，未连接云端）');
-    var r = await store.notify({ channel: channel, kind: missed ? 'missed' : 'weekly', text: text });
-    S.guardian.notifications = r.log;
-    renderGuardian();
-      toast('已向 ' + r.sent + ' 位家属联系人生成通报（演示模式，未真实外发）');
+    var text = '【康伴用药提醒】' + key + '：老人今日漏服 ' + missed + ' 项，当前风险等级 ' + res.level + '。请关注老人用药情况。';
+    toast('正在真实发送给家属…');
+    var r;
+    try {
+      r = await store.notify({ channel: 'all', kind: missed ? 'missed' : 'weekly', subject: '【康伴】老人用药提醒', text: text });
+    } catch (e) {
+      toast('发送失败：网络异常，请稍后再试');
+      return;
     }
+    S.guardian.notifications = r.log || [];
+    renderGuardian();
+    /* 如实反馈：成功报成功，失败说人话并指路 */
+    if (r.sent > 0) {
+      var det = (r.result || []).filter(function (x) { return x.indexOf(':ok') >= 0; }).length;
+      toast('已真实发送 ✅ 成功 ' + r.sent + ' 个渠道（明细见通知日志）');
+      V.speak('已经告诉您的家人了，别担心，他们在想办法帮您。');
+    } else {
+      var why = (r.result || [])[0] || '';
+      toast('没有发送成功：' + (why ? why.slice(0, 60) : '请检查提醒设置里的渠道和号码') + '。可让家人帮忙看看');
+      V.speak('没有发送成功。请让家人帮您检查一下通知设置，或者直接给家人打电话。');
+    }
+  }
+
+  /* v24：统一的双选弹窗（标题/说明/确认按钮/取消），替代 alert，大按钮、可读屏 */
+  function kbAskDialog(title, body, okText, onOk) {
+    V.stop();
+    var mask = document.createElement('div'); mask.className = 'mask';
+    mask.innerHTML = '<div class="dialog" role="dialog" aria-modal="true" aria-label="' + esc(title) + '">' +
+      '<h3>' + esc(title) + '</h3>' +
+      '<div style="white-space:pre-wrap;line-height:1.9;font-size:19px;margin:10px 0 16px">' + esc(body) + '</div>' +
+      '<div class="btn-row"><button class="btn" id="kbAskOk">' + esc(okText || '确定') + '</button>' +
+      '<button class="btn gray" id="kbAskNo">再想想</button></div></div>';
+    document.body.appendChild(mask);
+    mask.querySelector('#kbAskOk').addEventListener('click', function () {
+      if (document.body.contains(mask)) document.body.removeChild(mask);
+      if (onOk) onOk();
+    });
+    mask.querySelector('#kbAskNo').addEventListener('click', function () {
+      if (document.body.contains(mask)) document.body.removeChild(mask);
+    });
+    mask.addEventListener('click', function (e) { if (e.target === mask && document.body.contains(mask)) document.body.removeChild(mask); });
+    var f = mask.querySelector('#kbAskOk');
+    if (f) { try { f.focus(); } catch (e) {} }
+  }
 
     /* 📝 一键生成家属简报（v6 §19）：汇总近 7 天用药 / 健康 / 风险，供家属远程了解；可一键通报 */
     function generateFamilyBrief() {
@@ -12878,6 +13045,160 @@ EMC.Care = (function () {
     return !!(p && p.style.display !== 'none');
   }
 
+  /* ---------- v24：图示操作手册（老人向：图 + 一步一句） ---------- */
+  /* 手机示意框用 SVG 简笔绘制（不依赖截图，永不过期） */
+  function kbMock(kind) {
+    var s = '<svg class="mk" viewBox="0 0 230 400" role="img" aria-label="示意图">' +
+      '<rect class="mk-fr" x="6" y="4" width="218" height="392" rx="24"/>' +
+      '<rect class="mk-sc" x="12" y="10" width="206" height="380" rx="19"/>' +
+      '<rect class="mk-top" x="12" y="10" width="206" height="32"/>' +
+      '<text class="mk-topt" x="24" y="31">康伴</text>';
+    var hl = '';
+    if (kind === 'home') {
+      s += '<rect class="mk-btn" x="26" y="66" width="178" height="50" rx="14"/><text class="mk-btn-t" x="115" y="96">💊 吃药提醒</text>' +
+        '<rect class="mk-btn" x="26" y="126" width="178" height="50" rx="14"/><text class="mk-btn-t" x="115" y="156">🩺 量血压</text>' +
+        '<rect class="mk-btn" x="26" y="186" width="178" height="50" rx="14"/><text class="mk-btn-t" x="115" y="216">🆘 一键求助</text>' +
+        '<rect class="mk-card" x="26" y="250" width="178" height="66" rx="10"/>' +
+        '<rect class="mk-tab" x="12" y="344" width="206" height="46"/>' +
+        '<text class="mk-tab-t" x="40" y="371">首页</text><text class="mk-tab-t" x="84" y="371">助手</text><text class="mk-tab-t" x="128" y="371">用药</text><text class="mk-tab-t" x="172" y="371">健康</text><text class="mk-tab-t" x="212" y="371">守护</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="91" r="44"/><text class="mk-note" x="115" y="44">首页大字按钮</text>';
+    } else if (kind === 'remind') {
+      s += '<rect class="mk-dlg" x="26" y="56" width="178" height="252" rx="16"/>' +
+        '<text class="mk-dlg-t" x="115" y="88">⏰ 该吃药啦</text>' +
+        '<rect class="mk-line" x="42" y="102" width="146" height="11" rx="5"/>' +
+        '<rect class="mk-line" x="42" y="120" width="104" height="11" rx="5"/>' +
+        '<rect class="mk-ok" x="42" y="150" width="146" height="46" rx="12"/><text class="mk-ok-t" x="115" y="178">✅ 已服用</text>' +
+        '<rect class="mk-or" x="42" y="206" width="146" height="46" rx="12"/><text class="mk-or-t" x="115" y="234">⏰ 稍后提醒</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="173" r="42"/><text class="mk-note" x="115" y="42">点绿色大按钮</text>';
+    } else if (kind === 'checkin') {
+      s += '<rect class="mk-item" x="26" y="60" width="178" height="60" rx="10"/><text class="mk-item-t" x="38" y="84">降压药 早</text><text class="mk-item-t" x="38" y="100">1 片</text>' +
+        '<rect class="mk-ok" x="140" y="76" width="56" height="28" rx="14"/><text class="mk-ok-t" x="168" y="94">已服用</text>' +
+        '<rect class="mk-item" x="26" y="132" width="178" height="60" rx="10"/><text class="mk-item-t" x="38" y="156">二甲双胍 早</text><text class="mk-item-t" x="38" y="172">1 片</text>' +
+        '<rect class="mk-or" x="140" y="148" width="56" height="28" rx="14"/><text class="mk-or-t" x="168" y="166">已服用</text>' +
+        '<rect class="mk-item" x="26" y="204" width="178" height="60" rx="10"/><text class="mk-item-t" x="38" y="228">阿司匹林 早</text><text class="mk-item-t" x="38" y="244">1 片</text>' +
+        '<rect class="mk-or" x="140" y="220" width="56" height="28" rx="14"/><text class="mk-or-t" x="168" y="238">已服用</text>';
+      hl = '<circle class="mk-hl" cx="168" cy="162" r="34"/><text class="mk-note" x="115" y="46">每种药右边都有</text>';
+    } else if (kind === 'bp') {
+      s += '<text class="mk-item-t" x="30" y="76" font-weight="700">高压</text><text class="mk-item-t" x="30" y="140" font-weight="700">低压</text>' +
+        '<rect class="mk-in" x="30" y="86" width="76" height="44" rx="10"/><text class="mk-in-t" x="68" y="114">135</text>' +
+        '<rect class="mk-in" x="30" y="150" width="76" height="44" rx="10"/><text class="mk-in-t" x="68" y="178">85</text>' +
+        '<rect class="mk-card" x="118" y="86" width="82" height="108" rx="10"/>' +
+        '<rect class="mk-ok" x="30" y="216" width="170" height="48" rx="14"/><text class="mk-ok-t" x="115" y="245">保存</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="240" r="44"/><text class="mk-note" x="115" y="50">填完点保存</text>';
+    } else if (kind === 'sos') {
+      s += '<rect class="mk-card" x="26" y="60" width="178" height="120" rx="12"/>' +
+        '<circle class="mk-sos" cx="115" cy="200" r="40"/>' +
+        '<text x="115" y="209" fill="#fff" font-size="15" font-weight="800" text-anchor="middle">SOS</text>' +
+        '<rect class="mk-item" x="26" y="256" width="178" height="46" rx="10"/><text class="mk-item-t" x="38" y="284">儿子 138****1234</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="200" r="52"/><text class="mk-note" x="115" y="46">红色圆按钮</text>';
+    } else if (kind === 'chat') {
+      s += '<rect class="mk-bub-a" x="26" y="60" width="130" height="46" rx="12"/><text class="mk-bub-t" x="36" y="88">今天该吃降压药</text>' +
+        '<rect class="mk-bub-u" x="74" y="118" width="130" height="40" rx="12"/><text class="mk-bub-t" x="84" y="143">我记错了怎么办</text>' +
+        '<rect class="mk-card" x="26" y="172" width="178" height="52" rx="12"/>' +
+        '<rect class="mk-in" x="26" y="240" width="130" height="48" rx="24"/>' +
+        '<circle class="mk-mic" cx="186" cy="264" r="24"/><text class="mk-mic-t" x="186" y="272">🎤</text>';
+      hl = '<circle class="mk-hl" cx="186" cy="264" r="34"/><text class="mk-note" x="115" y="46">按住话筒说话</text>';
+    } else if (kind === 'login') {
+      s += '<rect class="mk-dlg" x="26" y="60" width="178" height="240" rx="16"/>' +
+        '<text class="mk-item-t" x="40" y="90" font-weight="800">登录云端账号</text>' +
+        '<rect class="mk-in" x="40" y="104" width="150" height="40" rx="10"/><text class="mk-item-t" x="50" y="129">账号</text>' +
+        '<rect class="mk-in" x="40" y="154" width="150" height="40" rx="10"/><text class="mk-item-t" x="50" y="179">密码</text>' +
+        '<rect class="mk-ok" x="40" y="210" width="150" height="44" rx="12"/><text class="mk-ok-t" x="115" y="238">登 录</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="232" r="40"/><text class="mk-note" x="115" y="46">用老人同一个账号</text>';
+    } else if (kind === 'settings') {
+      s += '<rect class="mk-item" x="26" y="60" width="178" height="44" rx="10"/><text class="mk-item-t" x="38" y="88">📣 提醒设置</text>' +
+        '<rect class="mk-row" x="26" y="114" width="178" height="40" rx="10"/><text class="mk-row-t" x="38" y="139">☑ 短信</text>' +
+        '<rect class="mk-row" x="26" y="160" width="178" height="40" rx="10"/><text class="mk-row-t" x="38" y="185">☑ 邮件</text>' +
+        '<rect class="mk-row" x="26" y="206" width="178" height="40" rx="10"/><text class="mk-row-t" x="38" y="231">☑ 微信推送</text>' +
+        '<rect class="mk-in" x="26" y="256" width="178" height="40" rx="10"/><text class="mk-in-t" x="115" y="281">13800000000</text>' +
+        '<rect class="mk-ok" x="26" y="306" width="178" height="40" rx="12"/><text class="mk-ok-t" x="115" y="331">保存</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="326" r="36"/><text class="mk-note" x="115" y="46">勾选后记得保存</text>';
+    } else if (kind === 'push') {
+      s += '<rect class="mk-item" x="26" y="66" width="178" height="88" rx="12"/>' +
+        '<text class="mk-item-t" x="38" y="92" font-weight="800">【康伴】老人用药提醒</text>' +
+        '<text class="mk-item-t" x="38" y="110">降压药 早上还没吃</text>' +
+        '<text class="mk-item-t" x="38" y="128" font-size="9">点链接一键确认已服用 →</text>' +
+        '<rect class="mk-ok" x="52" y="176" width="126" height="42" rx="21"/><text class="mk-ok-t" x="115" y="203">一键确认</text>' +
+        '<rect class="mk-card" x="26" y="238" width="178" height="52" rx="12"/>';
+      hl = '<circle class="mk-hl" cx="115" cy="197" r="40"/><text class="mk-note" x="115" y="48">微信里直接点</text>';
+    } else if (kind === 'assist') {
+      s += '<rect class="mk-item" x="26" y="66" width="178" height="56" rx="10"/><text class="mk-item-t" x="38" y="90">家属协助模式</text><text class="mk-row-t" x="38" y="108">代录代打卡会标注来源</text><circle class="mk-on" cx="186" cy="94" r="12"/>' +
+        '<rect class="mk-item" x="26" y="134" width="178" height="56" rx="10"/><text class="mk-item-t" x="38" y="158">代录药品</text><text class="mk-row-t" x="38" y="176">标记：由家属代录</text>' +
+        '<rect class="mk-item" x="26" y="202" width="178" height="56" rx="10"/><text class="mk-item-t" x="38" y="226">代打卡</text><text class="mk-row-t" x="38" y="244">先核实再点</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="94" r="40"/><text class="mk-note" x="115" y="48">先打开这个开关</text>';
+    } else if (kind === 'weekly') {
+      s += '<rect class="mk-paper" x="30" y="56" width="170" height="250" rx="10"/>' +
+        '<text class="mk-pt" x="42" y="80" font-weight="800" font-size="11">本周用药小结</text>' +
+        '<rect class="mk-line" x="42" y="92" width="120" height="9" rx="4"/>' +
+        '<rect class="mk-line" x="42" y="110" width="146" height="9" rx="4"/>' +
+        '<rect class="mk-line" x="42" y="128" width="100" height="9" rx="4"/>' +
+        '<rect class="mk-line" x="42" y="146" width="136" height="9" rx="4"/>' +
+        '<rect class="mk-line" x="42" y="164" width="112" height="9" rx="4"/>' +
+        '<rect class="mk-ok" x="42" y="230" width="146" height="42" rx="12"/><text class="mk-ok-t" x="115" y="256">发给家属</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="251" r="40"/><text class="mk-note" x="115" y="44">一键真实发送</text>';
+    }
+    return s + hl + '</svg>';
+  }
+
+  var GUIDE_ELDER = [
+    { mk: 'home', t: '1. 首页就三件大事', d: '大按钮只有三个：<b>吃药、量血压、求助</b>。想干什么点一下，不用到处找。' },
+    { mk: 'remind', t: '2. 到点它会叫您', d: '到时间屏幕弹出大窗口，还会<b>说话提醒您</b>。吃完了，点绿色「✅ 已服用」就行。' },
+    { mk: 'checkin', t: '3. 忘了打卡，这样补', d: '点底部「用药管理」，每种药右边都有按钮，点一下「已服用」就补上了，<b>不挨骂，补上就好</b>。' },
+    { mk: 'bp', t: '4. 量血压很简单', d: '首页点「量血压」，填<b>高压、低压</b>两个数，点保存。我会念给您听正不正常。' },
+    { mk: 'sos', t: '5. 不舒服，一键求助', d: '点红色「SOS」，或点右上角⚡里的「报告不舒服」，<b>家人马上就能知道</b>。' },
+    { mk: 'chat', t: '6. 有问题，问它就行', d: '点底部「智能助手」，<b>按住话筒直接说话</b>，不用打字。它答完会念给您听。' }
+  ];
+  var GUIDE_FAMILY = [
+    { mk: 'login', t: '1. 用同一个账号登录', d: '家属在任何设备打开网页，<b>用老人账号登录</b>，老人的用药数据实时同步，换设备不丢。' },
+    { mk: 'settings', t: '2. 设置通知方式', d: '家属守护 → 提醒设置：<b>勾选渠道</b>（短信/邮件/微信推送），填手机号或邮箱，保存。' },
+    { mk: 'push', t: '3. 漏服自动告诉您', d: '系统<b>每 5 分钟自动检查</b>，漏服就推送到您手机；点消息里的链接可一键确认已吃。' },
+    { mk: 'assist', t: '4. 可以代录代打卡', d: '家属守护 → 开启「家属协助模式」，代操作会标注「由家属代录」，<b>老人一眼看出是谁改的</b>。' },
+    { mk: 'weekly', t: '5. 每周一份小结', d: '点「本周小结发给家属」：依从率、漏服、余药、不适反馈，<b>一封信说清楚</b>。' }
+  ];
+
+  function kbGuideHtml(steps) {
+    return steps.map(function (st) {
+      return '<div class="guide-step">' +
+        '<div class="gs-mk">' + kbMock(st.mk) + '</div>' +
+        '<div class="gs-tx"><p class="gs-t">' + st.t + '</p><p class="gs-d">' + st.d + '</p></div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function openKbGuide() {
+    var m = $id('kbGuideModal');
+    if (!m) return;
+    var e = $id('guideElder'), f = $id('guideFamily');
+    if (e && !e.getAttribute('data-done')) {
+      e.innerHTML = kbGuideHtml(GUIDE_ELDER);
+      if (f) f.innerHTML = kbGuideHtml(GUIDE_FAMILY);
+      e.setAttribute('data-done', '1');
+    }
+    m.style.display = 'flex';
+    announce('已打开操作手册');
+    try { V.speak('操作手册打开了。您跟着图一步一步看就行，忘了随时点右上角闪电查看。'); } catch (err) {}
+  }
+  function closeKbGuide() {
+    var m = $id('kbGuideModal');
+    if (m) m.style.display = 'none';
+  }
+  function bindKbGuide() {
+    var c = $id('kbGuideClose');
+    if (c) c.addEventListener('click', closeKbGuide);
+    var m = $id('kbGuideModal');
+    if (m) m.addEventListener('click', function (e) { if (e.target === m) closeKbGuide(); });
+    document.querySelectorAll('.guide-tab').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.guide-tab').forEach(function (x) { x.classList.remove('on'); x.setAttribute('aria-selected', 'false'); });
+        b.classList.add('on'); b.setAttribute('aria-selected', 'true');
+        var fam = b.getAttribute('data-gt') === 'family';
+        var e2 = $id('guideElder'), f2 = $id('guideFamily');
+        if (e2) e2.style.display = fam ? 'none' : '';
+        if (f2) f2.style.display = fam ? '' : 'none';
+      });
+    });
+  }
+
   /** 帮助与说明正文（老人向：一段一句、短行、大字） */
   var HELP_HTML = '' +
     '<h4>这个软件能做什么</h4>' +
@@ -12904,6 +13225,16 @@ EMC.Care = (function () {
   function openHelp() {
     var body = $id('helpBody');
     if (body && !body.innerHTML) body.innerHTML = HELP_HTML;
+    /* v24：帮助弹窗里加一个「图示操作手册」大按钮（老人更看得进图） */
+    if (body && !$id('helpToGuide')) {
+      var gb = document.createElement('button');
+      gb.type = 'button'; gb.id = 'helpToGuide';
+      gb.className = 'btn orange btn-lg';
+      gb.style.marginTop = '12px';
+      gb.textContent = '📖 看图示操作手册（推荐）';
+      gb.addEventListener('click', function () { closeHelp(); openKbGuide(); });
+      body.appendChild(gb);
+    }
     var m = $id('helpModal');
     if (!m) return;
     m.style.display = 'flex';
@@ -12946,6 +13277,9 @@ EMC.Care = (function () {
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape' && e.key !== 'Esc' && e.keyCode !== 27) return;
       if (isMoreOpen()) { closeMore(); e.stopPropagation(); return; }
+      /* v24：图示操作手册也纳入 ESC 关闭（优先级高于帮助弹窗，因为它从帮助/⚡都能开） */
+      var gm = $id('kbGuideModal');
+      if (gm && gm.style.display !== 'none') { closeKbGuide(); e.stopPropagation(); return; }
       var hm = $id('helpModal');
       if (hm && hm.style.display !== 'none') { closeHelp(); e.stopPropagation(); }
     }, true);
