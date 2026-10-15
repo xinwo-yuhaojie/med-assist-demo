@@ -827,7 +827,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101512;
+      var KB_BUILD = 2026101513;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -2813,9 +2813,12 @@ body.simple-mode .simple-grid { grid-template-columns: 1fr 1fr; }
 body.simple-mode .home-hero { display: none !important; }
 body.simple-mode #tab-home > .card { display: none !important; }
 body.simple-mode .kb-home-sos { display: none !important; }
-body.simple-mode .tabbar button[data-tab="meds"],
 body.simple-mode .tabbar button[data-tab="risk"],
 body.simple-mode .tabbar button[data-tab="data"] { display: none !important; }
+/* 守护页顶部显眼 SOS 大按钮 */
+.guard-sos { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 100%; min-height: 84px; margin: 0 0 14px; border: 0; border-radius: 18px; background: linear-gradient(135deg, #e53935, #c62828); color: #fff; font-size: 24px; font-weight: 800; cursor: pointer; box-shadow: 0 6px 18px rgba(217, 72, 43, .38); }
+.guard-sos .g-sub { font-size: 14.5px; font-weight: 700; opacity: .92; }
+.guard-sos:active { transform: scale(.985); }
 /* ===== 家属模式：聚焦监督数据，隐藏老人自用区 ===== */
 body.family-mode .home-hero { display: none !important; }
 body.family-mode .card-entries { display: none !important; }
@@ -3083,23 +3086,7 @@ body.simple-mode .more-item { font-size: .95em; }
 
     <!-- ============ 智能助手 ============ -->
     <section id="tab-chat" style="display:none">
-      <!-- v21 P2-5：极简模式下助手页也收敛为三件事（隐藏子智能体列表与对话回顾） -->
-      <div class="simple-only">
-        <div class="simple-grid" style="margin-top:12px">
-          <button class="simple-btn" data-simple-act="med">
-            <span class="s-ic" aria-hidden="true">💊</span>
-            <span class="s-tx">吃药提醒<span class="s-sub">今天该吃什么药</span></span>
-          </button>
-          <button class="simple-btn s-ghost" data-simple-act="bp">
-            <span class="s-ic" aria-hidden="true">🩸</span>
-            <span class="s-tx">量血压<span class="s-sub">记一个数</span></span>
-          </button>
-          <button class="simple-btn s-orange" data-simple-act="sos">
-            <span class="s-ic" aria-hidden="true">🆘</span>
-            <span class="s-tx">求助<span class="s-sub">通知家人</span></span>
-          </button>
-        </div>
-      </div>
+      <!-- v21 P2-5：极简模式下助手页收敛为纯对话窗口（吃药提醒/量血压/求助已移到底栏与守护页） -->
       <!-- v21 P2-5：极简模式「进入」入口（大卡片，老人一眼看到、一点就中）。
            游客态也可用：顶栏「登录/注册」只打开登录弹窗，到不了用户中心，
            所以首页/助手页各放一个显式大按钮，是真正无门槛的入口。
@@ -3369,6 +3356,7 @@ body.simple-mode .more-item { font-size: .95em; }
 
     <!-- ============ 家属守护 ============ -->
     <section id="tab-guardian" style="display:none">
+      <button class="guard-sos" id="guardSos" aria-label="SOS 求助，不舒服时点这里，立刻通知家人">🆘 SOS 求助<span class="g-sub">不舒服？点这里立刻通知家人</span></button>
       <div class="card">
         <div class="card-title">👨‍👩‍👧 老人信息</div>
         <div class="grid2">
@@ -3496,6 +3484,7 @@ body.simple-mode .more-item { font-size: .95em; }
     <button role="tab" data-tab="home" class="on" aria-selected="true"><span class="ic" aria-hidden="true">🏠</span>首页</button>
     <button role="tab" data-tab="chat" aria-selected="false"><span class="ic" aria-hidden="true">🤖</span>助手</button>
     <button role="tab" data-tab="meds" aria-selected="false"><span class="ic" aria-hidden="true">💊</span>用药</button>
+    <button role="tab" id="tabBp" aria-selected="false"><span class="ic" aria-hidden="true">🩸</span>血压</button>
     <button role="tab" data-tab="health" aria-selected="false"><span class="ic" aria-hidden="true">🩺</span>档案</button>
     <button role="tab" data-tab="guardian" aria-selected="false"><span class="ic" aria-hidden="true">👨‍👩‍👧</span>守护</button>
     <button role="tab" data-tab="risk" class="tab-secondary" aria-selected="false"><span class="ic" aria-hidden="true">🛡️</span>风险</button>
@@ -8442,6 +8431,14 @@ EMC.Care = (function () {
       if ($id('simpleManage')) $id('simpleManage').addEventListener('click', function () {
         switchTab('meds');
         toast('用药管理：点每条药右边的按钮就能打卡');
+      });
+      /* 守护页顶部 SOS：复用全站求助流程 */
+      if ($id('guardSos')) $id('guardSos').addEventListener('click', function () { openSos(); });
+      /* 底栏「血压」：直达健康档案并定位到血压输入框 */
+      if ($id('tabBp')) $id('tabBp').addEventListener('click', function () {
+        switchTab('health');
+        setTimeout(function () { var b = $id('bpSys'); if (b) { try { b.focus(); } catch (e) {} } }, 150);
+        toast('量血压：高压、低压各填一个数就能记录');
       });
       /* ← 返回：弹内部栈逐级回退 */
       var bkP = $id('kbBackPill');
