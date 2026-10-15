@@ -829,7 +829,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101516;
+      var KB_BUILD = 2026101517;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -5821,12 +5821,12 @@ EMC.Engine = (function () {
     return out;
   }
 
-  /* ---------- 6.9 药物手册知识库（kb.js 懒加载，EMC.DRUGKB 1494条） ---------- */
-  /* 不阻塞首屏：页面加载后异步拉取手册数据 */
+  /* ---------- 6.9 药物手册知识库（kb.js 懒加载，EMC.DRUGKB 1590条：新手册1390条为主+旧版补遗200条） ---------- */
+  /* 不阻塞首屏：页面加载后异步拉取手册数据；?v=KB_BUILD 避免老浏览器缓存旧版 */
   setTimeout(function () {
     try {
       var sk = document.createElement('script');
-      sk.src = 'kb.js'; sk.async = true;
+      sk.src = 'kb.js?v=' + (window.KB_BUILD || 1); sk.async = true;
       document.head.appendChild(sk);
     } catch (e) {}
   }, 2500);
