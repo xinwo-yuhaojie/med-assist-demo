@@ -63,6 +63,11 @@
       <h2>今日 / 近 7 天总览</h2>
       <div class="kpis" id="kpis"></div>
     </div>
+    <div class="card" id="siteCard" style="display:none">
+      <h2>📈 本站使用数据（含游客）</h2>
+      <div class="kpis" id="siteKpis"></div>
+      <div class="note" id="siteNote"></div>
+    </div>
     <div class="card">
       <h2>居民明细（按账号）</h2>
       <div style="overflow-x:auto"><table id="tbl"><thead><tr>
@@ -151,6 +156,30 @@
     k.push(kpi(s.lowMeds == null ? '—' : s.lowMeds, '余药不足项', (s.lowMeds || 0) > 0 ? 'red' : 'green'));
     k.push(kpi(((s.adverse7 && s.adverse7.mild) || 0) + '+' + ((s.adverse7 && s.adverse7.severe) || 0), '7 天不适(轻微+明显)', ((s.adverse7 && s.adverse7.severe) || 0) > 0 ? 'red' : ''));
     document.getElementById('kpis').innerHTML = k.join('');
+    /* 站点使用数据（含游客） */
+    try {
+      var siteDays = (j.site && j.site.days) || {};
+      var td2 = siteDays[j.today] || { ev: {}, uv: 0 };
+      var tot = {}, activeDays = 0;
+      Object.keys(siteDays).forEach(function (dk) {
+        activeDays++;
+        var evv = siteDays[dk].ev || {};
+        Object.keys(evv).forEach(function (ek) { tot[ek] = (tot[ek] || 0) + evv[ek]; });
+      });
+      var sk = [];
+      sk.push(kpi(td2.uv || 0, '今日访问人数(含游客)', (td2.uv || 0) > 0 ? 'green' : ''));
+      sk.push(kpi(td2.ev && td2.ev.visit || 0, '今日打开次数'));
+      sk.push(kpi((td2.ev && td2.ev.login || 0) + ' / ' + (td2.ev && td2.ev.guest || 0), '今日登录 / 游客'));
+      sk.push(kpi(tot.chat || 0, '7天对话次数'));
+      sk.push(kpi(tot.checkin || 0, '7天打卡次数'));
+      sk.push(kpi(tot.addmed || 0, '7天添加药品'));
+      sk.push(kpi(tot.adr || 0, '7天不适报告'));
+      sk.push(kpi(tot.weekly || 0, '7天周报发送'));
+      document.getElementById('siteKpis').innerHTML = sk.join('');
+      document.getElementById('siteNote').textContent =
+        '统计口径：人数按设备指纹去重（不存 IP 原值）；近 7 天有访问天数 ' + activeDays + ' 天，总打开 ' + (tot.visit || 0) + ' 次。游客浏览也会记录，防止被白嫖测试无感知。';
+      document.getElementById('siteCard').style.display = 'block';
+    } catch (e) {}
     var rows = (s.perUser || []).map(function (p) {
       var rate = p.rate7 == null ? '—' : p.rate7 + '%';
       var rateCls = p.rate7 == null ? '' : (p.rate7 >= 85 ? 'ok' : (p.rate7 >= 70 ? 'warn' : 'bad'));

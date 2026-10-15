@@ -827,7 +827,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101509;
+      var KB_BUILD = 2026101510;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -7541,11 +7541,11 @@ window.EMCStore = (function () {
           if (nowTaken && !wasTaken) med.remain = Math.max(0, med.remain - qty);
           else if (!nowTaken && wasTaken) med.remain = med.remain + qty;
         }
-        existing.status = rec.status; existing.time = nowTime();
+        existing.status = rec.status; existing.time = (rec.status === 'pending' && rec.time) ? rec.time : nowTime();
         /* v13：代打卡标记随记录持久化，撤销时同步清除标记，避免残留旧来源 */
         existing.byFamily = rec.byFamily === true;
       } else {
-        c.records.push({ id: id, date: rec.date, mid: rec.mid, slot: rec.slot, status: rec.status, time: nowTime(), byFamily: rec.byFamily === true });
+        c.records.push({ id: id, date: rec.date, mid: rec.mid, slot: rec.slot, status: rec.status, time: (rec.status === 'pending' && rec.time) ? rec.time : nowTime(), byFamily: rec.byFamily === true });
         if (rec.status === 'taken' && med) med.remain = Math.max(0, med.remain - qty);
       }
       saveRecords(); if (med) saveMeds();
@@ -8095,6 +8095,7 @@ EMC.Care = (function () {
     if (EMCAuth.beginAuthTransition) EMCAuth.beginAuthTransition();
     try {
       await loadAllInner();
+      try { ensureTodayRecords(); } catch (e) {}
     } finally {
       if (EMCAuth.endAuthTransition) EMCAuth.endAuthTransition();
     }
@@ -8191,6 +8192,7 @@ EMC.Care = (function () {
     switchTab('home');          // 默认进入首页（仅渲染当前 tab，避免整页重绘）
     renderAccount();
     greeting();
+    try { kbTrack('visit'); kbTrack(EMCAuth.isLoggedIn() ? 'login' : 'guest'); } catch (e) {}
     /* v13：慢病档案下拉、慢病勾选区、家属协助模式初始态 */
     renderMedDiseaseSelect();
     renderChronic();
@@ -8593,6 +8595,7 @@ EMC.Care = (function () {
     EMCAuth.api('/api/notify/weekly', { method: 'POST', body: {} }).then(function (r) {
       if (r && r.ok) {
         toast('已发送：' + ((r.sent || []).filter(Boolean).join('、') || '见通知日志'));
+        try { kbTrack('weekly'); } catch (e) {}
         V.speak('本周小结已经发给您的家人了。');
       } else {
         toast('发送失败：' + ((r && (r.error || r.message)) || '请先在通知设置里开启邮箱并填写邮箱'));
@@ -8723,7 +8726,9 @@ EMC.Care = (function () {
       var d = E.drugOf(r.mid); var nm = (r.name || (d ? d.name : r.mid));
       var st = r.status === 'taken' ? '<span style="color:#2e7d32;font-weight:800;font-size:1.05em">✔ 已服用</span>'
         : r.status === 'missed' ? '<span class="warn-red">✘ 今天没吃</span><button class="btn sm gray" data-sp-taken="' + r.id + '">现在补上</button>'
-        : '<button class="btn sm" style="background:#2e7d32;color:#fff" data-sp-taken="' + r.id + '">✅ 已服用</button><button class="btn sm gray" data-sp-missed="' + r.id + '">没吃</button>';
+        : (!duePassed(r)
+          ? '<span class="pill pending" style="opacity:.7">⏳ ' + esc(r.time || '') + ' 后可打卡</span>'
+          : '<button class="btn sm" style="background:#2e7d32;color:#fff" data-sp-taken="' + r.id + '">✅ 已服用</button><button class="btn sm gray" data-sp-missed="' + r.id + '">没吃</button>');
       var mm2 = S.meds.filter(function (x) { return x.mid === r.mid; })[0];
       var ph2 = mm2 && typeof mm2.photo === 'string' && mm2.photo.indexOf('data:image/') === 0 ? '<img class="plan-photo" src="' + mm2.photo + '" alt="药盒照片">' : '';
       return '<div class="plan-item"><span class="plan-time">' + esc(r.time || '—') + '</span>' + ph2 + '<span class="plan-name">' + esc(nm) + '</span>' + st + '</div>';
@@ -9240,6 +9245,7 @@ EMC.Care = (function () {
     var text = (input.value || '').trim();
     if (!text) return;
     if (chatBusy) { toast('正在为您查，请稍等'); return; }   // 防重复点击
+    try { kbTrack('chat'); } catch (e) {}
     chatBusy = true;
     var composer = $id('composer');
     if (composer) composer.classList.add('is-busy');          // 禁用发送键
@@ -9853,13 +9859,22 @@ EMC.Care = (function () {
   /* 统一处理打卡状态并同步余量（经 store）
    * act：taken / missed / pending；fromReminder：是否来自到点提醒弹窗（避免重复弹反馈卡） */
   async function doCheckin(r, act, fromReminder, byFamily) {
+    /* 到点闸门：没到时间的顿不能打卡、不能标漏服 */
+    if (r.status === 'pending' && (act === 'taken' || act === 'missed') && !duePassed(r)) {
+      var dh = dueHour(r); var dhh = Math.floor(dh); var dmi = Math.round((dh - dhh) * 60);
+      var whenStr = r.time || (dhh + ':' + (dmi < 10 ? '0' : '') + dmi);
+      toast('这一顿还没到时间，' + whenStr + ' 后再来打卡');
+      try { V.speak('这一顿还没到时间，等到' + whenStr + '再来打卡'); } catch (e) {}
+      return;
+    }
     /* v13 P1-2：代打卡标记。显式传 true 或当前处于家属协助模式，都算代录 */
     var isProxy = (byFamily === true) || familyAssist;
-    r.status = act; r.time = new Date().toTimeString().slice(0, 5); // 乐观更新，保证即时反馈
+    r.status = act; if (act !== 'pending') r.time = new Date().toTimeString().slice(0, 5); // 乐观更新；撤销保留原应到时间
     r.byFamily = isProxy;
     var res = await store.addCheckin({ date: r.date, mid: r.mid, slot: r.slot, status: act, byFamily: isProxy });
     try { delete remindCounts[r.date + r.slot]; } catch (e) {}   /* 打过卡就重置该时段提醒计数 */
     S.records = res.records;
+    if (act === 'taken' || act === 'missed') kbTrack('checkin');
     if (res.med) {
       var idx = S.meds.findIndex(function (m) { return m.mid === res.med.mid; });
       if (idx >= 0) S.meds[idx] = res.med;
@@ -9960,6 +9975,7 @@ EMC.Care = (function () {
   function statusHtml(r) {
     if (r.status === 'taken') return '<span class="pill taken">已服用</span><button class="btn gray sm" data-act="pending" data-id="' + r.id + '" style="margin-top:6px">撤销</button>';
     if (r.status === 'missed') return '<span class="pill missed">已漏服</span><button class="btn gray sm" data-act="pending" data-id="' + r.id + '" style="margin-top:6px">撤销</button>';
+    if (!duePassed(r)) return '<span class="pill pending" style="opacity:.7">⏳ ' + esc(r.time || '') + ' 后可打卡</span>';
     return '<button class="btn sm" data-act="taken" data-id="' + r.id + '">已服用</button>' +
       '<button class="btn gray sm" data-act="missed" data-id="' + r.id + '">漏服了</button>';
   }
@@ -10168,6 +10184,7 @@ EMC.Care = (function () {
     $id('medPanel').style.display = 'none';
     S.records = await store.getRecords(14);
     renderAll(); switchTab('meds');
+    try { await ensureTodayRecords(); kbTrack('addmed'); } catch (e) {}
     V.speak(wasEdit ? '药品已更新' : '药品已添加，我会按时提醒您服用');
   }
   async function deleteMed(id) {
@@ -10944,6 +10961,7 @@ EMC.Care = (function () {
     showAdrSheet();
   }
   function showAdrSheet() {
+    try { kbTrack('adr'); } catch (e) {}
     var addr = addressText();
     var mask = document.createElement('div');
     mask.className = 'reminder-full adr-mask';
@@ -10997,6 +11015,46 @@ EMC.Care = (function () {
     document.getElementById('adrMild').addEventListener('click', function () { askSymptom(false); });
     document.getElementById('adrSevere').addEventListener('click', function () { askSymptom(true); });
     V.speak((addr === '您' ? '现在' : addr + '，现在') + '问您一个小问题：今天吃药以后，身体有没有不舒服？');
+  }
+
+  /* ===== 到点闸门：没到时间不能打卡 ===== */
+  function dueHour(r) {
+    var m2 = String(r.time || '').match(/^([0-9]{1,2}):([0-9]{2})$/);
+    if (m2) { var h = Number(m2[1]) + Number(m2[2]) / 60; if (h >= 0 && h < 24) return h; }
+    var med = S.meds.filter(function (x) { return x.mid === r.mid; })[0];
+    var m3 = String((med && med.times && med.times[r.slot]) || '').match(/^([0-9]{1,2}):([0-9]{2})$/);
+    if (m3) { var h3 = Number(m3[1]) + Number(m3[2]) / 60; if (h3 >= 0 && h3 < 24) return h3; }
+    var sl = EMC.slotOf(r.slot);
+    return (sl && typeof sl.hour === 'number') ? sl.hour : 0;
+  }
+  function duePassed(r) { var n = new Date(); return (n.getHours() + n.getMinutes() / 60) >= dueHour(r); }
+  /* 今日用药任务自动同步：按药品清单（疗程内）补生成今天缺失的待打卡项 */
+  async function ensureTodayRecords() {
+    try {
+      var key = E.fmtDate(new Date());
+      var SLOT_TIME = { morning: '08:00', noon: '12:30', evening: '18:30', bedtime: '21:30' };
+      var have = {};
+      S.records.forEach(function (r) { have[r.date + '_' + r.mid + '_' + r.slot] = 1; });
+      var missing = [];
+      S.meds.forEach(function (m) {
+        if (m.start && key < String(m.start).slice(0, 10)) return;
+        if (m.end && key > String(m.end).slice(0, 10)) return;
+        (m.slots || []).forEach(function (s) {
+          if (!have[key + '_' + m.mid + '_' + s]) missing.push({ mid: m.mid, slot: s, time: (m.times && m.times[s]) || SLOT_TIME[s] || '' });
+        });
+      });
+      if (!missing.length) return;
+      for (var i = 0; i < missing.length; i++) {
+        var q = missing[i];
+        var res = await store.addCheckin({ date: key, mid: q.mid, slot: q.slot, status: 'pending', time: q.time });
+        S.records = res.records;
+      }
+      try { renderMeds(); renderHome(); renderOverview(); } catch (e) {}
+    } catch (e) {}
+  }
+  /* 站点使用打点（管理者页面统计；游客也计；失败静默不影响功能） */
+  function kbTrack(evt) {
+    try { fetch('/api/track', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ evt: evt }), cache: 'no-store' }).catch(function () {}); } catch (e) {}
   }
 
   function checkReminder() {
