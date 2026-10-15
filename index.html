@@ -504,10 +504,10 @@
           '@media (max-width:1023px){.chat-scroll{height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important;border:0!important;box-shadow:none!important;background:transparent!important;padding:0 2px!important}}',
           '@media (max-width:1023px){#toLatest{display:none!important}}',
           '@media (max-width:1023px){#tab-chat .composer{position:sticky;bottom:calc(72px + env(safe-area-inset-bottom,0px));background:var(--c-bg,#f5f6f8);padding:8px 0;z-index:31;margin-top:12px}}',
-          '.auth-tab-on{flex:1;min-height:56px;border-radius:16px;border:3px solid #2e7d32!important;background:#e8f5e9!important;color:#2e7d32!important;font-size:20px;font-weight:800;cursor:pointer;}',
-          '.auth-tab-off{flex:1;min-height:56px;border-radius:16px;border:3px solid #ddd!important;background:#fff!important;color:#666!important;font-size:20px;font-weight:800;cursor:pointer;}',
-          '.auth-gender-on{flex:1;min-height:58px;border-radius:16px;border:3px solid #2e7d32!important;background:#e8f5e9!important;color:#2e7d32!important;font-size:18px;font-weight:800;cursor:pointer;}',
-          '.auth-gender-off{flex:1;min-height:58px;border-radius:16px;border:3px solid #ccc!important;background:#fff!important;color:#666!important;font-size:18px;font-weight:800;cursor:pointer;}',
+          '.auth-tab-on{flex:1;min-height:52px;border-radius:18px;border:2px solid #1e7d4f!important;background:#e9f6ee!important;color:#1e7d4f!important;font-size:19px;font-weight:800;cursor:pointer;}',
+          '.auth-tab-off{flex:1;min-height:52px;border-radius:18px;border:2px solid #d9d9d9!important;background:#fff!important;color:#111!important;font-size:19px;font-weight:800;cursor:pointer;}',
+          '.auth-gender-on{flex:1;min-height:54px;border-radius:14px;border:2px solid #1e7d4f!important;background:#e9f6ee!important;color:#1e7d4f!important;font-size:18px;font-weight:800;cursor:pointer;}',
+          '.auth-gender-off{flex:1;min-height:54px;border-radius:14px;border:2px solid #ddd!important;background:#fff!important;color:#111!important;font-size:18px;font-weight:800;cursor:pointer;}',
           /* 排版优化：顶栏副标题手机隐藏防换行拥挤；底栏按钮文字不换行不重叠 */
           '@media (max-width:1023px){.topbar .logo .sub{display:none!important}.topbar .logo{font-size:1.02em;line-height:1.25}.tabbar button{white-space:nowrap;letter-spacing:0;padding:6px 1px}}',
           '#kbHomePill{display:none;position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:10px;z-index:120;min-height:46px;padding:11px 18px;border:0;border-radius:24px;background:#08221E;color:#fff;font-size:16px;font-weight:800;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer}',
@@ -827,7 +827,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101510;
+      var KB_BUILD = 2026101511;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -2768,6 +2768,25 @@ body.family-mode .simple-toggle-card { display: none !important; }
 .warn-card .warn-btns button { flex: 1; min-height: 48px; border-radius: 12px; font-size: 1.02em; font-weight: 700; cursor: pointer; }
 .warn-cancel { border: 2px solid #ccc; background: #fff; color: #555; }
 .warn-ok { border: 0; background: #2b7de9; color: #fff; }
+/* ===== 登录/注册弹窗（按参考图重绘） ===== */
+.auth-dialog{border-radius:22px;max-width:420px;width:94%;background:#fff;position:relative;padding:26px 22px 20px;box-shadow:0 12px 40px rgba(0,0,0,.28)}
+.auth-h{margin:0 0 16px;font-size:27px;font-weight:800;color:#1e7d4f;letter-spacing:.5px;text-align:left}
+.auth-tabs2{display:flex;gap:12px;margin-bottom:20px}
+.auth-tabs2 button{flex:1;min-height:52px;border-radius:18px;font-size:19px;font-weight:800;cursor:pointer;background:#fff;color:#111;border:2px solid #d9d9d9}
+.auth-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.auth-field label{font-size:17px;font-weight:800;color:#111;margin:0}
+.auth-field input{width:100%;box-sizing:border-box;min-height:54px;border:2px solid #ddd;border-radius:14px;padding:0 14px;font-size:18px;background:#fff}
+.auth-field input::placeholder{color:#9aa0a6}
+.auth-g2{display:flex;gap:10px}
+.auth-btns{display:flex;gap:12px;margin-top:18px}
+.auth-btns .auth-ok{flex:1;min-height:58px;border-radius:14px;background:#2e8b57;color:#fff;font-size:21px;font-weight:800;border:0;cursor:pointer}
+.auth-btns .auth-no{flex:1;min-height:58px;border-radius:14px;background:#fff;color:#111;font-size:21px;font-weight:800;border:2px solid #ddd;cursor:pointer}
+.auth-fg{margin-top:8px;text-align:right}
+.auth-fg span{color:#1976d2;cursor:pointer;font-size:16px;font-weight:700}
+.auth-gb{width:100%;min-height:56px;margin-top:14px;border:2px solid #1e7d4f;border-radius:14px;background:#fff;color:#1e7d4f;font-size:18px;font-weight:800;cursor:pointer}
+.auth-ft{margin-top:12px;color:#666;font-size:14.5px;line-height:1.7;text-align:center}
+.auth-x{position:absolute;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:1px solid #e5e5e5;background:#fafafa;color:#999;font-size:18px;font-weight:800;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center}
+#authMsg{margin-top:10px;min-height:22px;color:#d32f2f;font-size:15px;font-weight:600}
 /* ===== 返回键 / 快捷球 / 漏服提示条 ===== */
 #kbBackPill{display:none;position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:10px;z-index:120;min-height:46px;padding:11px 16px;border:0;border-radius:24px;background:#2b7de9;color:#fff;font-size:16px;font-weight:800;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer}
 #kbQuickFab{display:none;position:fixed;right:12px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:119;width:54px;height:54px;border-radius:50%;border:0;background:#f0a020;color:#fff;font-size:24px;box-shadow:0 6px 18px rgba(0,0,0,.32);cursor:pointer}
@@ -3518,71 +3537,56 @@ body.simple-mode .more-item { font-size: .95em; }
 
   <!-- ============ 登录 / 注册 模态框（新版，适老化） ============ -->
   <div class="mask" id="authModal" style="display:none">
-    <div class="dialog auth-dialog" id="authDialogNew" style="border-radius:24px;max-width:420px;width:94%;background:#fff;position:relative;padding:28px 22px 26px;box-shadow:0 12px 40px rgba(0,0,0,.3);">
-      <!-- 右上角大 X 关闭键 -->
-      <button id="authCloseX" style="position:absolute;top:14px;right:14px;width:44px;height:44px;border-radius:50%;border:2px solid #ddd;background:#fff;color:#333;font-size:26px;line-height:1;font-weight:800;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center;">×</button>
-      <!-- 大标题 -->
-      <h2 id="authTitle" style="margin:0 0 18px;font-size:30px;font-weight:800;color:#2e7d32;letter-spacing:.5px;text-align:left;">登录云端账号</h2>
-      <!-- 登录/注册切换大按钮 -->
-      <div class="auth-tabs-new" style="display:flex;gap:10px;margin-bottom:20px;">
-        <button id="authTabLogin" class="auth-tab-on" style="flex:1;min-height:56px;border-radius:16px;border:3px solid #2e7d32;background:#e8f5e9;color:#2e7d32;font-size:20px;font-weight:800;cursor:pointer;">登录</button>
-        <button id="authTabReg" class="auth-tab-off" style="flex:1;min-height:56px;border-radius:16px;border:3px solid #ddd;background:#fff;color:#666;font-size:20px;font-weight:800;cursor:pointer;">注册</button>
+    <div class="dialog auth-dialog" id="authDialogNew">
+      <button id="authCloseX" class="auth-x" aria-label="关闭">×</button>
+      <h2 id="authTitle" class="auth-h">登录云端账号</h2>
+      <div class="auth-tabs2">
+        <button id="authTabLogin" class="auth-tab-on">登录</button>
+        <button id="authTabReg" class="auth-tab-off">注册</button>
       </div>
-      <!-- 表单区域 -->
-      <div style="display:flex;flex-direction:column;gap:14px;">
-        <div class="form-row-new" style="display:flex;flex-direction:column;gap:6px;">
-          <label for="authUser" style="font-size:19px;font-weight:700;color:#222;margin:0;">账号（手机号 / 用户名）</label>
-          <input id="authUser" type="text" autocomplete="username" aria-label="账号，支持手机号或用户名" placeholder="如 13800000000 或 张桂芳" style="min-height:58px;border:3px solid #ccc;border-radius:16px;padding:0 16px;font-size:18px;box-sizing:border-box;width:100%;">
-        </div>
-        <div class="form-row-new" id="authNameRow" style="display:none;flex-direction:column;gap:6px;">
-          <label for="authName" style="font-size:19px;font-weight:700;color:#222;margin:0;">昵称</label>
-          <input id="authName" type="text" autocomplete="nickname" aria-label="昵称" placeholder="如 张桂芳" style="min-height:58px;border:3px solid #ccc;border-radius:16px;padding:0 16px;font-size:18px;box-sizing:border-box;width:100%;">
-        </div>
-        <div class="form-row-new" id="authPhoneRow" style="display:none;flex-direction:column;gap:6px;">
-          <label for="authPhone" style="font-size:19px;font-weight:700;color:#222;margin:0;">手机号（必填）</label>
-          <input id="authPhone" type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="tel" aria-label="手机号" placeholder="如 13800138000" style="min-height:58px;border:3px solid #ccc;border-radius:16px;padding:0 16px;font-size:18px;box-sizing:border-box;width:100%;">
-        </div>
-        <div class="form-row-new" id="authEmailRow" style="display:none;flex-direction:column;gap:6px;">
-          <label for="authEmail" style="font-size:19px;font-weight:700;color:#222;margin:0;">邮箱（选填）</label>
-          <input id="authEmail" type="email" inputmode="email" autocomplete="email" aria-label="邮箱" placeholder="如 a@b.com" style="min-height:58px;border:3px solid #ccc;border-radius:16px;padding:0 16px;font-size:18px;box-sizing:border-box;width:100%;">
-        </div>
-        <div class="form-row-new" id="authAgeRow" style="display:none;flex-direction:column;gap:6px;">
-          <label for="authAge" style="font-size:19px;font-weight:700;color:#222;margin:0;">年龄</label>
-          <input id="authAge" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="年龄" placeholder="如 78" style="min-height:58px;border:3px solid #ccc;border-radius:16px;padding:0 16px;font-size:18px;box-sizing:border-box;width:100%;">
-        </div>
-        <div class="form-row-new" id="authGenderRow" style="display:none;flex-direction:column;gap:8px;">
-          <label style="font-size:19px;font-weight:700;color:#222;margin:0;">性别（必选）</label>
-          <div style="display:flex;gap:10px" role="radiogroup" aria-label="性别">
-            <button type="button" id="authGenderM" class="auth-gender-off" style="flex:1;min-height:58px;border-radius:16px;border:3px solid #ccc;background:#fff;color:#666;font-size:18px;font-weight:800;cursor:pointer;">男</button>
-            <button type="button" id="authGenderF" class="auth-gender-off" style="flex:1;min-height:58px;border-radius:16px;border:3px solid #ccc;background:#fff;color:#666;font-size:18px;font-weight:800;cursor:pointer;">女</button>
-          </div>
-        </div>
-        <div class="form-row-new" style="display:flex;flex-direction:column;gap:6px;">
-          <label for="authPwd" style="font-size:19px;font-weight:700;color:#222;margin:0;">密码（至少 6 位）</label>
-          <input id="authPwd" type="password" autocomplete="current-password" aria-label="密码" placeholder="请输入密码" style="min-height:58px;border:3px solid #ccc;border-radius:16px;padding:0 16px;font-size:18px;box-sizing:border-box;width:100%;">
-        </div>
-        <div class="form-row-new" id="authPwd2Row" style="display:none;flex-direction:column;gap:6px;">
-          <label for="authPwd2" style="font-size:19px;font-weight:700;color:#222;margin:0;">再次输入密码</label>
-          <input id="authPwd2" type="password" autocomplete="new-password" aria-label="再次输入密码" placeholder="请再次输入密码" style="min-height:58px;border:3px solid #ccc;border-radius:16px;padding:0 16px;font-size:18px;box-sizing:border-box;width:100%;">
+      <div class="auth-field">
+        <label for="authUser">账号（手机号 / 用户名）</label>
+        <input id="authUser" type="text" autocomplete="username" aria-label="账号，支持手机号或用户名" placeholder="如 13800000000 或 张桂芳">
+      </div>
+      <div class="auth-field" id="authNameRow" style="display:none">
+        <label for="authName">昵称</label>
+        <input id="authName" type="text" autocomplete="nickname" aria-label="昵称" placeholder="如 张桂芳">
+      </div>
+      <div class="auth-field" id="authPhoneRow" style="display:none">
+        <label for="authPhone">手机号（必填）</label>
+        <input id="authPhone" type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="tel" aria-label="手机号" placeholder="如 13800138000">
+      </div>
+      <div class="auth-field" id="authEmailRow" style="display:none">
+        <label for="authEmail">邮箱（选填）</label>
+        <input id="authEmail" type="email" inputmode="email" autocomplete="email" aria-label="邮箱" placeholder="如 a@b.com">
+      </div>
+      <div class="auth-field" id="authAgeRow" style="display:none">
+        <label for="authAge">年龄</label>
+        <input id="authAge" type="text" inputmode="decimal" pattern="[0-9]*" autocomplete="off" aria-label="年龄" placeholder="如 78">
+      </div>
+      <div class="auth-field" id="authGenderRow" style="display:none">
+        <label>性别（必选）</label>
+        <div class="auth-g2" role="radiogroup" aria-label="性别">
+          <button type="button" id="authGenderM" class="auth-gender-off" aria-pressed="false">男</button>
+          <button type="button" id="authGenderF" class="auth-gender-off" aria-pressed="false">女</button>
         </div>
       </div>
-      <!-- 消息提示 -->
-      <div id="authMsg" class="auth-msg" style="margin-top:12px;min-height:22px;color:#d32f2f;font-size:15px;font-weight:600;"></div>
-      <!-- 登录/取消按钮 -->
-      <div style="display:flex;gap:12px;margin-top:18px;">
-        <button class="btn" id="authSubmit" style="flex:1;min-height:62px;border-radius:18px;background:#2e7d32;color:#fff;font-size:22px;font-weight:800;border:0;cursor:pointer;">登录</button>
-        <button class="btn gray" id="authCancel" style="flex:1;min-height:62px;border-radius:18px;background:#fff;color:#666;font-size:22px;font-weight:800;border:3px solid #ddd;cursor:pointer;">取消</button>
+      <div class="auth-field">
+        <label for="authPwd">密码（至少 6 位）</label>
+        <input id="authPwd" type="password" autocomplete="current-password" aria-label="密码" placeholder="请输入密码">
       </div>
-      <!-- 忘记密码 -->
-      <div id="authForgotRow" style="margin-top:10px;text-align:right;">
-        <span id="authForgot" style="color:#1976d2;cursor:pointer;font-size:17px;font-weight:700;text-decoration:underline;">忘记密码？</span>
+      <div class="auth-field" id="authPwd2Row" style="display:none">
+        <label for="authPwd2">再次输入密码</label>
+        <input id="authPwd2" type="password" autocomplete="new-password" aria-label="再次输入密码" placeholder="请再次输入密码">
       </div>
-      <!-- 游客体验大按钮 -->
-      <button id="authGuest" style="width:100%;min-height:60px;border-radius:16px;border:3px solid #2e7d32;background:#fff;color:#2e7d32;font-size:19px;font-weight:800;cursor:pointer;margin-top:18px;">先以游客身份体验（数据仅存本机）</button>
-      <!-- 底部说明 -->
-      <div style="margin-top:14px;color:#666;font-size:15px;line-height:1.5;text-align:center;">
-        家人可用同一账号密码登录，远程查看老人用药 / 健康 / 风险记录。
+      <div id="authMsg" class="auth-msg"></div>
+      <div class="auth-btns">
+        <button id="authSubmit" class="auth-ok">登录</button>
+        <button id="authCancel" class="auth-no">取消</button>
       </div>
+      <div id="authForgotRow" class="auth-fg"><span id="authForgot">忘记密码？</span></div>
+      <button id="authGuest" class="auth-gb">先以游客身份体验（数据仅存本机）</button>
+      <div class="auth-ft">家人可用同一账号密码登录，远程查看老人用药 / 健康 / 风险记录。</div>
     </div>
   </div>
 
@@ -11385,12 +11389,12 @@ EMC.Care = (function () {
     } else {
       regBtn.classList.add('auth-tab-on'); loginBtn.classList.add('auth-tab-off');
     }
-    $id('authNameRow').style.display = (mode === 'reg') ? 'block' : 'none';
-    $id('authPhoneRow').style.display = (mode === 'reg') ? 'block' : 'none';
-    $id('authEmailRow').style.display = (mode === 'reg') ? 'block' : 'none';
-    $id('authAgeRow').style.display = (mode === 'reg') ? 'block' : 'none';
-    $id('authGenderRow').style.display = (mode === 'reg') ? 'block' : 'none';
-    $id('authPwd2Row').style.display = (mode === 'reg') ? 'block' : 'none';
+    $id('authNameRow').style.display = (mode === 'reg') ? 'flex' : 'none';
+    $id('authPhoneRow').style.display = (mode === 'reg') ? 'flex' : 'none';
+    $id('authEmailRow').style.display = (mode === 'reg') ? 'flex' : 'none';
+    $id('authAgeRow').style.display = (mode === 'reg') ? 'flex' : 'none';
+    $id('authGenderRow').style.display = (mode === 'reg') ? 'flex' : 'none';
+    $id('authPwd2Row').style.display = (mode === 'reg') ? 'flex' : 'none';
     $id('authForgotRow').style.display = (mode === 'login') ? 'block' : 'none';
     $id('authSubmit').textContent = (mode === 'reg') ? '注册并进入' : '登录';
     $id('authTitle').textContent = (mode === 'reg') ? '注册云端账号' : '登录云端账号';
