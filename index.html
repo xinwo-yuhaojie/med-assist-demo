@@ -347,7 +347,9 @@
         row.innerHTML = '<button type="button" class="btn gray sm" id="kbExport">导出备份</button>' +
           '<button type="button" class="btn gray sm" id="kbImport">导入备份</button>' +
           '<span class="muted small">数据只存在本机，建议定期导出</span>';
-        m.appendChild(row);
+        /* 关键修复：备份行放进弹窗卡片内部（旧版塞在 .mask 里当第二个 flex 子项，
+           把登录卡片挤成半宽、文字竖排） */
+        (document.getElementById('authDialogNew') || m).appendChild(row);
         document.getElementById('kbExport').addEventListener('click', doExport);
         document.getElementById('kbImport').addEventListener('click', doImport);
       }
@@ -827,7 +829,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101513;
+      var KB_BUILD = 2026101514;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -9354,6 +9356,12 @@ EMC.Care = (function () {
    * ========================================================== */
   var recCtrl = null;
   var asrUsingLocal = false;
+  /* v23：ASR 结果/提示可定向——聊天话筒默认进 handleVoiceInput，搜药话筒定向进 applyVoiceDrug，
+     两路共用同一套引擎路由（Qwen/本地优先、浏览器兑底），微信内核也能用 */
+  var asrSink = null;
+  var asrTipEl = null;
+  function asrDone(text) { var f = asrSink || handleVoiceInput; asrSink = null; asrTipEl = null; f(text); }
+  function asrClear() { asrSink = null; asrTipEl = null; }
 
   function asrMicOn(on) {
     var mic = $id('btnMic'), wave = $id('micWave');
@@ -9361,7 +9369,7 @@ EMC.Care = (function () {
     if (on) { mic.classList.add('rec'); if (wave) wave.classList.add('on'); }
     else { mic.classList.remove('rec'); if (wave) wave.classList.remove('on'); }
   }
-  function asrTip(text) { var tip = $id('asrTip'); if (tip) tip.textContent = text; }
+  function asrTip(text) { var tip = asrTipEl || $id('asrTip'); if (tip) tip.textContent = text; }
   function asrErrText(err) {
     if (err === 'not-allowed') return '需要允许使用麦克风权限才能语音';
     if (err === 'no-mic') return '没有找到可用的麦克风，请检查设备或直接用文字输入';
@@ -9396,15 +9404,15 @@ EMC.Care = (function () {
       },
       onError: function (err) {
         asrMicOn(false); recCtrl = null;
-        asrTip(asrErrText(err));
+        asrTip(asrErrText(err)); asrClear();
       },
       onEnd: function (finalText) {
         asrMicOn(false); recCtrl = null;
         if (finalText && finalText.trim()) {
           asrTip('识别完成，正在处理…');
-          handleVoiceInput(finalText.trim());   // v8.1：先确认再写库
+          asrDone(finalText.trim());   // v8.1：先确认再写库
         } else {
-          asrTip('没听清，请再点话筒说一次，或直接打字。');
+          asrTip('没听清，请再点话筒说一次，或直接打字。'); asrClear();
         }
       }
     });
@@ -9428,9 +9436,9 @@ EMC.Care = (function () {
         asrMicOn(false); recCtrl = null; asrUsingLocal = false;
         if (text && text.trim()) {
           asrTip('识别完成（本地模型，未联网），正在处理…');
-          handleVoiceInput(text.trim());
+          asrDone(text.trim());
         } else {
-          asrTip('没听清，请再点话筒说一次，或直接打字。');
+          asrTip('没听清，请再点话筒说一次，或直接打字。'); asrClear();
         }
       },
       onError: function (err) {
@@ -9438,15 +9446,18 @@ EMC.Care = (function () {
         asrTip(asrErrText(err));
         // 这些错误回退也没用（权限/不支持/引擎配置错/明确告知原因），只提示不重试
         var noFallback = { 'not-allowed': 1, 'unsupported': 1, 'engine-invalid': 1, 'too-large': 1, 'local-timeout': 1, 'empty': 1 };
-        if (noFallback[err]) return;
+        if (noFallback[err]) { asrClear(); return; }
         // 其余（服务不可用、网络故障、未知失败）→ 无感回退浏览器识别，保证老人一定能用
         startBrowserAsr(true);
       }
     });
   }
 
-  /* 统一入口：按设置里的「识别引擎」分路，本地不可用自动回退 */
-  function startAsr() {
+  /* 统一入口：按设置里的「识别引擎」分路，本地不可用自动回退。
+     sink(tipEl)：可选——结果去向函数 + 提示去向元素（搜药话筒用）；事件对象会被自动忽略 */
+  function startAsr(sink, tipEl) {
+    asrSink = (typeof sink === 'function') ? sink : null;
+    asrTipEl = (tipEl && tipEl.nodeType === 1) ? tipEl : null;
     var engine = S.settings.asrEngine || 'browser';
 
     // 再次点击 → 停止当前聆听/录音
@@ -12608,32 +12619,13 @@ EMC.Care = (function () {
   /* ==========================================================
    * P2-2 语音录入药品
    * ========================================================== */
-  /** 点药名输入框旁的话筒：说药名或「我吃降压药」→ 自动选中并预填常规时段与病种 */
+  /** 点药名输入框旁的话筒：说药名或「我吃降压药」→ 自动选中并预填常规时段与病种。
+   * v23：不再走裸 V.listen（微信内核无浏览器识别会永远没结果），
+   * 改为与聊天话筒完全同一条链路：Qwen/本地识别优先、自动回退、再点一次停止。 */
   function startMedVoice() {
     var tip = $id('medVoiceTip');
-    if (S.medAsrHandle) {                       // 再点一次 = 停止聆听
-      try { S.medAsrHandle.stop(); } catch (e) { /* ignore */ }
-      S.medAsrHandle = null;
-      if (tip) tip.textContent = '已停止聆听';
-      return;
-    }
-    if (typeof V.asrSupported !== 'function' || !V.asrSupported()) {
-      if (tip) tip.textContent = '当前浏览器不支持语音识别，请直接输入药名';
-      toast('当前浏览器不支持语音识别，请直接输入药名');
-      return;
-    }
-    if (tip) tip.textContent = '🎤 正在聆听，请说出药名，例如「我吃降压药」…';
-    S.medAsrHandle = V.listen({
-      onResult: function (text) { applyVoiceDrug(text); },
-      onEnd: function () { S.medAsrHandle = null; },
-      onError: function (err) {
-        S.medAsrHandle = null;
-        if (tip) tip.textContent = (err === 'unsupported')
-          ? '当前浏览器不支持语音识别，请直接输入药名'
-          : '没听清，请再说一次，或直接输入药名';
-      },
-      onState: function () { /* 状态条由全局播报状态条负责，此处不需要 */ }
-    });
+    if (!tip) return;
+    startAsr(function (text) { applyVoiceDrug(text); }, tip);
   }
 
   /** 把语音识别出来的文本落成「已选药品」并预填表单 */
