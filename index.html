@@ -827,7 +827,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101505;
+      var KB_BUILD = 2026101506;
       window.__kbVersionProbe = true;
       setTimeout(function () {
         try {
@@ -2760,9 +2760,9 @@ body.family-mode .simple-toggle-card { display: none !important; }
 .simple-addmed { width: 100%; min-height: 60px; margin-top: 12px; border: 0; border-radius: var(--radius-lg); background: #2e7d32; color: #fff; font-size: 1.25em; font-weight: 800; cursor: pointer; }
 /* 药物相互作用警告：小号居中弹窗，带 ✕ 关闭 */
 .warn-mask { position: fixed; inset: 0; z-index: 128; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 20px; }
-.warn-card { position: relative; background: #fff; color: #222; border-radius: 16px; max-width: 340px; width: 100%; padding: 20px 18px 16px; box-shadow: 0 10px 34px rgba(0,0,0,.3); }
-.warn-card .warn-title { color: #d32f2f; font-size: 1.18em; font-weight: 800; text-align: center; margin-bottom: 10px; }
-.warn-card .warn-body { font-size: .98em; line-height: 1.7; max-height: 38vh; overflow-y: auto; }
+.warn-card { position: relative; background: #fff; color: #222; border-radius: 14px; max-width: 300px; width: 92%; padding: 16px 14px 12px; box-shadow: 0 10px 34px rgba(0,0,0,.3); }
+.warn-card .warn-title { color: #d32f2f; font-size: 1.05em; font-weight: 800; text-align: center; margin-bottom: 8px; }
+.warn-card .warn-body { font-size: .92em; line-height: 1.65; max-height: 32vh; overflow-y: auto; }
 .warn-card .warn-close { position: absolute; top: 6px; right: 6px; width: 38px; height: 38px; border: 0; background: transparent; font-size: 20px; color: #888; cursor: pointer; }
 .warn-card .warn-btns { display: flex; gap: 10px; margin-top: 14px; }
 .warn-card .warn-btns button { flex: 1; min-height: 48px; border-radius: 12px; font-size: 1.02em; font-weight: 700; cursor: pointer; }
@@ -5038,6 +5038,24 @@ EMC.Engine = (function () {
       };
     }
 
+    /* 药物手册知识库兜底：问题里提到手册收录的药，直接抽取条目作答（离线也能答） */
+    try {
+      var kbe = kbScanText(text);
+      if (kbe.length) {
+        var e0 = kbe[0];
+        var kans = e0.n + (e0.c ? '（' + e0.c + '）' : '') + '。';
+        if (e0.u) kans += '用法：' + e0.u + '。';
+        if (e0.a && e0.a.length) kans += '常见不良反应：' + e0.a.join('；') + '。';
+        if (e0.d && e0.d.length) kans += '特别注意配伍：' + e0.d.slice(0, 2).join('；') + '。';
+        kans += '以上来自药物用药手册，具体请以医生和药师意见为准。';
+        return {
+          text: kans,
+          intentLabel: '药物手册答疑',
+          steps: ['意图识别：知识问答', '内置库未命中', '药物手册命中：' + e0.n]
+        };
+      }
+    } catch (ekb) {}
+
     return {
       text: '这个问题我还没有完全把握。您可以换一种说法试试，例如：\n\n· "忘记吃药了怎么办"\n· "这两种药能一起吃吗"\n· "血压正常了能停药吗"\n· "这个药一天吃几次"\n· "我漏服了会有什么风险"\n\n涉及具体剂量调整的问题，建议联系社区医生或药师。',
       steps: ['意图识别：知识问答', '知识库未命中', '返回引导式候选问题']
@@ -5746,6 +5764,90 @@ EMC.Engine = (function () {
     return out;
   }
 
+  /* ---------- 6.9 药物手册知识库（kb.js 懒加载，EMC.DRUGKB 1494条） ---------- */
+  /* 不阻塞首屏：页面加载后异步拉取手册数据 */
+  setTimeout(function () {
+    try {
+      var sk = document.createElement('script');
+      sk.src = 'kb.js'; sk.async = true;
+      document.head.appendChild(sk);
+    } catch (e) {}
+  }, 2500);
+
+  function kbFindDrug(name) {
+    var KB = window.EMC && EMC.DRUGKB;
+    if (!KB || !name) return null;
+    var n = String(name).toLowerCase().trim();
+    if (!n) return null;
+    if (KB.idx[n] != null) return KB.drugs[KB.idx[n]];
+    var b = n.replace(/[（(].*?[)）]/g, '').replace(/(缓释片|肠溶片|片|胶囊|颗粒|口服液|注射液|滴丸|丸|散|膏|贴|栓|糖浆)$/, '').trim();
+    if (b.length >= 2 && KB.idx[b] != null) return KB.drugs[KB.idx[b]];
+    if (b.length >= 3) {
+      var keys = Object.keys(KB.idx);
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (k.length >= 3 && (k.indexOf(b) === 0 || b.indexOf(k) === 0)) return KB.drugs[KB.idx[k]];
+      }
+    }
+    return null;
+  }
+  function kbScanText(text) {
+    var KB = window.EMC && EMC.DRUGKB;
+    if (!KB) return [];
+    var t = String(text || '').toLowerCase();
+    if (!t) return [];
+    var out = [], seen = {};
+    var keys = Object.keys(KB.idx);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (k.length < 3) continue;
+      if (t.indexOf(k) >= 0) {
+        var id = KB.idx[k];
+        if (!seen[id]) { seen[id] = 1; out.push(KB.drugs[id]); if (out.length >= 3) break; }
+      }
+    }
+    return out;
+  }
+  function kbDigest(list) {
+    if (!list || !list.length) return '';
+    var L = [];
+    list.forEach(function (e) {
+      var s = e.n + (e.c ? '（' + e.c + '）' : '');
+      if (e.u) s += '；用法：' + e.u;
+      if (e.x) s += '；禁忌：' + e.x;
+      if (e.a && e.a.length) s += '；不良反应：' + e.a.join('；');
+      if (e.d && e.d.length) s += '；配伍禁忌：' + e.d.slice(0, 3).join(' ｜ ');
+      if (e.f && e.f.length) s += '；食物相互作用：' + e.f.slice(0, 2).join(' ｜ ');
+      L.push(s.slice(0, 280));
+    });
+    return L.join('\n');
+  }
+  /* 手册配伍禁忌双向核对：新药记录↔已有药名 互相扫描 */
+  function kbConflicts(newName, meds) {
+    var KB = window.EMC && EMC.DRUGKB;
+    if (!KB || !newName) return [];
+    function base(nm) { return String(nm || '').replace(/[（(].*?[)）]/g, '').trim().toLowerCase(); }
+    var out = [], seen = {};
+    var others = (meds || []).map(function (m) { return m.name || ''; }).filter(function (x) { return x && base(x) !== base(newName); });
+    function scan(entryA, bName) {
+      if (!entryA || !entryA.d) return;
+      var bKey = base(bName);
+      if (bKey.length < 3) return;
+      entryA.d.forEach(function (line) {
+        if (String(line).toLowerCase().indexOf(bKey) >= 0) {
+          var title = entryA.n + ' × ' + bName;
+          if (!seen[title]) {
+            seen[title] = 1;
+            out.push({ level: /致命|严重|出血|横纹肌|呼吸抑制|禁忌|警惕/.test(line) ? 'high' : 'medium', title: title, detail: line, advice: line });
+          }
+        }
+      });
+    }
+    var eNew = kbFindDrug(newName);
+    others.forEach(function (on) { scan(eNew, on); scan(kbFindDrug(on), newName); });
+    return out.slice(0, 4);
+  }
+
   /* ---------- 7. 主流程：路由 ---------- */
   var INTENT_LABEL = {
     reminder: '用药提醒助手', knowledge: '慢病知识答疑助手', risk: '用药风险筛查助手',
@@ -5933,7 +6035,17 @@ EMC.Engine = (function () {
     try {
       llmLastError = null;
       if (!(EMC.Voice && typeof EMC.Voice.aiChat === 'function')) return null;
-      var messages = [{ role: 'system', content: buildLlmSystem(ctx) }];
+      var kbSys = '';
+      try {
+        var kbHits = kbScanText(text);
+        ((ctx && ctx.meds) || []).forEach(function (m) {
+          var e = kbFindDrug(m.name || m.mid);
+          if (e && kbHits.indexOf(e) < 0 && kbHits.length < 3) kbHits.push(e);
+        });
+        var kbDg = kbDigest(kbHits);
+        if (kbDg) kbSys = '\n\n【药物手册摘录（权威资料，回答涉及这些药时以此为准，用老人听得懂的话转述）】\n' + kbDg;
+      } catch (ekb) {}
+      var messages = [{ role: 'system', content: buildLlmSystem(ctx) + kbSys }];
       var hist = (ctx && ctx.history) ? ctx.history.slice(-6) : [];
       hist.forEach(function (h) {
         if (h && h.role && h.text) messages.push({ role: (h.role === 'agent' ? 'assistant' : 'user'), content: String(h.text) });
@@ -9834,17 +9946,22 @@ EMC.Care = (function () {
     if (!S.picked) { alert('请先搜索并选择药品'); return; }
     var scr = null;
     try { if (!editingMedId) scr = E.screenAdd(S.meds, S.picked.id); } catch (e) {}
-    if (scr && scr.count && (scr.high || scr.medium)) {
-      showWarnDialog(scr, function (proceed) { if (proceed) saveMedCore(); });
+    var kbC = [];
+    try { if (!editingMedId) kbC = kbConflicts(S.picked.name, S.meds); } catch (e) {}
+    if ((scr && scr.count && (scr.high || scr.medium)) || kbC.length) {
+      showWarnDialog(scr || { findings: [] }, kbC, function (proceed) { if (proceed) saveMedCore(); });
       return;
     }
     saveMedCore();
   }
-  function showWarnDialog(scr, cb) {
+  function showWarnDialog(scr, kbC, cb) {
     var old = document.querySelector('.warn-mask'); if (old && old.parentNode) old.parentNode.removeChild(old);
     var fs = (scr.findings || []).slice().sort(function (a, b) { return (b.level === 'high' ? 1 : 0) - (a.level === 'high' ? 1 : 0); }).slice(0, 3);
     var lines = fs.map(function (f) {
       return '<div style="margin-bottom:8px"><span class="warn-red">⚠ ' + esc(f.title || '') + '</span><br>' + esc(f.advice || f.detail || '') + '</div>';
+    }).join('');
+    lines += (kbC || []).slice(0, 3).map(function (f) {
+      return '<div style="margin-bottom:8px"><span class="warn-red">📖 ' + esc(f.title || '') + '</span><br>' + esc(f.advice || f.detail || '') + '</div>';
     }).join('');
     var mask = document.createElement('div');
     mask.className = 'warn-mask';
@@ -10521,6 +10638,14 @@ EMC.Care = (function () {
       return;
     }
     var r = E.screenAdd(S.meds, d.id);
+    /* 叠加药物手册配伍禁忌（1494条） */
+    try {
+      var kbx = kbConflicts(d.name, S.meds);
+      if (kbx.length) {
+        r = r || { count: 0, high: 0, medium: 0, findings: [] };
+        kbx.forEach(function (x) { r.count++; if (x.level === 'high') r.high++; else r.medium++; r.findings.push(x); });
+      }
+    } catch (e) {}
     var tone = r.count ? (r.high ? 'danger' : (r.medium ? 'warn' : 'info')) : 'ok';
     var head = r.count
       ? ('⚠️ 与您的现有用药存在 ' + r.count + ' 项冲突提示（高风险 ' + r.high + ' / 中风险 ' + r.medium + '）')
