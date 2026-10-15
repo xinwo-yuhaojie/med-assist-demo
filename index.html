@@ -8847,6 +8847,13 @@ EMC.Care = (function () {
     var v = (typeof on === 'boolean') ? on : !isSimpleMode();
     S.settings.simpleMode = v;
     applySimpleMode(v);
+    /* 适老化（申报书承诺"字大按钮大"）：进入老人模式时自动切换到大字档；
+       退出时不改动用户已有选择，避免"退出反而变小字"的意外 */
+    if (v && S.settings.fs < 3) {
+      S.settings.fs = 3;
+      applyFs(3);
+      announce('已为您切换到大字档');
+    }
     try { store.setSettings(S.settings); } catch (e) {}
     announce(v ? '已进入极简模式，只保留吃药、量血压和求助' : '已退出极简模式，恢复完整界面');
     toast(v ? '已进入极简模式' : '已退出极简模式');
@@ -8884,7 +8891,9 @@ EMC.Care = (function () {
     var st = E.bpStatus(sys, dia);
     var word = st === 'high' ? '有点偏高' : (st === 'low' ? '有点偏低' : '正常，很好');
     say('已保存 ✓ ' + sys + '/' + dia + '，' + word, true);
-    try { V.speak('血压' + sys + '比' + dia + '，' + word + (st === 'high' ? '，建议告诉家人' : '')); } catch (e) {}
+    /* 适老化：用「高压/低压」斜杠格式，经 humanizeForTts 读作"高压135，低压88"，
+       避免旧写法被 TTS 读成"血压135比88"老人听不懂 */
+    try { V.speak('血压 ' + sys + '/' + dia + ' 毫米汞柱，' + word + (st === 'high' ? '，建议告诉家人' : '')); } catch (e) {}
     var again = $id('qBpSys'); if (again) { try { again.focus(); } catch (e) {} }
   }
 
@@ -11377,6 +11386,8 @@ EMC.Care = (function () {
       '<div class="btn-row" style="margin-top:14px"><a class="btn" href="tel:120" style="text-decoration:none">📞 拨打 120</a>' +
       '<button class="btn gray" id="sosClose">关闭</button></div></div>';
     document.body.appendChild(mask);
+    /* 适老化：SOS 场景老人可能看不清屏幕，打开即语音引导（先打断可能正在循环的服药提醒） */
+    try { V.interrupt(); V.speak('已打开紧急求助。情况危急请马上拨打一百二十。下面有家属联系人，点一下就能打电话。'); } catch (e) {}
     mask.querySelector('#sosClose').addEventListener('click', function () { document.body.removeChild(mask); });
     mask.addEventListener('click', function (e) { if (e.target === mask) document.body.removeChild(mask); });
   }
