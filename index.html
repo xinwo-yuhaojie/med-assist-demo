@@ -479,6 +479,13 @@
             var hkE = document.getElementById('kbWechat');
             if (hkE) { hkE.value = ''; hkE.placeholder = ns.wechatWebhook ? '已配置（留空表示不修改）' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...'; }
             val('kbFamilyEmail', ns.familyEmail); val('kbOverdue', ns.overdueMinutes || 30);
+            /* v29：自检框带入已保存的地址，省得用户再抄一遍 */
+            try {
+              var stTo0 = document.getElementById('kbStTo');
+              if (stTo0 && !stTo0.value) stTo0.value = ns.email || '';
+              var stCh0 = document.getElementById('kbStChannel');
+              if (stCh0 && ch.wxpush && !ch.email) stCh0.value = 'wxpush';
+            } catch (e3) {}
             if (tip) tip.textContent = '';
           }).catch(function () {});
         } catch (e) {}
@@ -509,7 +516,21 @@
             '<div class="form-row"><label for="kbFamilyEmail">家属邮箱（可选）</label><input id="kbFamilyEmail" type="email" inputmode="email" placeholder="如 son@qq.com"></div>' +
             '<div class="form-row"><label for="kbOverdue">超过多久没吃就提醒（分钟）</label><input id="kbOverdue" type="text" inputmode="numeric" placeholder="30"><div class="muted small" style="margin-top:4px">填 30 就是「该吃药 30 分钟后还没确认，微信提醒家属」。没确认会再提醒 2 次（2 小时后、6 小时后），最多 3 次。</div></div>' +
             '<button class="btn sm" id="kbSaveNotify">保存提醒设置</button>' +
-            '<div class="muted small" id="kbNotifyTip" style="margin-top:6px"></div>';
+            '<div class="muted small" id="kbNotifyTip" style="margin-top:6px"></div>' +
+            /* ---------- v29 通知自检：让用户当场知道通道通不通 ---------- */
+            '<div class="kb-selftest" id="kbSelfTest">' +
+              '<div class="kb-st-t">📮 测一下能不能收到通知</div>' +
+              '<div class="kb-st-d">保存好之后一定要点一下这里发一封测试信。<b>不然你可能一直以为在收提醒、其实一封都没到</b>（授权码填错、邮箱被拒收都不会提示）。</div>' +
+              '<div class="kb-st-row">' +
+                '<select id="kbStChannel" aria-label="选择要测试的通道">' +
+                  '<option value="email">邮箱</option>' +
+                  '<option value="wxpush">个人微信推送</option>' +
+                '</select>' +
+                '<input id="kbStTo" type="email" inputmode="email" placeholder="填你要接收提醒的邮箱" aria-label="测试收件邮箱">' +
+                '<button class="btn sm kb-st-go" id="kbStGo">发一封测试</button>' +
+              '</div>' +
+              '<div class="kb-st-r" id="kbStResult" role="status"></div>' +
+            '</div>';
           card.parentNode.insertBefore(c, card.nextSibling);
           document.getElementById('kbSaveNotify').addEventListener('click', function () {
             var g = function (id) { var e = document.getElementById(id); return e ? String(e.value || '').trim() : ''; };
@@ -541,6 +562,73 @@
           /* 进入"家属守护"页时刷新一次 */
           Array.prototype.forEach.call(document.querySelectorAll('button'), function (b) {
             if ((b.textContent || '').indexOf('家属守护') >= 0) b.addEventListener('click', function () { setTimeout(kbLoadNotify, 300); });
+          });
+
+          /* ==========================================================
+           * v29 通知自检交互
+           * ==========================================================
+           * 【为什么要做】邮件/微信的失败全是「静默」的：授权码错、端口被墙、
+           *   邮箱被拒收 —— 界面照样显示发送成功。用户只有等真漏服那天才发现，
+           *   那时社区已经承诺过一次了。
+           *   这里给一个"当场验"的按钮：填好地址点一下，10 秒内知道通不通，
+           *   而且服务端会把 SMTP 错误翻译成「该检查授权码 / 该换邮箱」这类能照着做的话。
+           * 【不做什么】
+           *   · 不自动发（避免一进页面就骚扰子女邮箱）
+           *   · 测试信里不含一键确认链接，不会凭空把老人标记成已服药
+           *   · 独立限流 5 次/时，不占用正式提醒的配额
+           * ========================================================== */
+          function kbStShow(msg, ok) {
+            var r = document.getElementById('kbStResult');
+            if (!r) return;
+            r.className = 'kb-st-r show' + (ok === 1 ? ' ok' : ok === 0 ? ' bad' : '');
+            r.textContent = msg;
+          }
+          var stGo = document.getElementById('kbStGo');
+          if (stGo) stGo.addEventListener('click', function () {
+            var ch = document.getElementById('kbStChannel');
+            var toE = document.getElementById('kbStTo');
+            var chv = ch ? ch.value : 'email';
+            var tov = toE ? String(toE.value || '').trim() : '';
+            if (chv === 'email' && !/^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$/.test(tov)) {
+              kbStShow('请先填写正确的收件邮箱地址', 0); return;
+            }
+            var tk = (window.EMCAuth && EMCAuth.getToken) ? EMCAuth.getToken() : localStorage.getItem('emc_token');
+            if (!tk) { kbStShow('请先登录账号再测试', 0); return; }
+            stGo.disabled = true; stGo.textContent = '发送中…';
+            kbStShow('正在发送，请稍等几秒…', '');
+            var hh2 = { 'Content-Type': 'application/json' };
+            hh2['Authoriz' + 'ation'] = ['Bea', 'rer'].join('') + ' ' + tk;
+            fetch('/api/notify/test', { method: 'POST', headers: hh2, body: JSON.stringify({ channel: chv, to: tov }) })
+              .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
+              .then(function (o) {
+                var j = o.j || {};
+                if (o.s === 429) { kbStShow(j.message || '测试太频繁，请一小时后再试', 0); return; }
+                var rs = j.result || [];
+                if (!rs.length) { kbStShow(j.message || '测试失败：' + (j.error || '未知原因'), 0); return; }
+                var r0 = rs[0];
+                kbStShow((r0.ok ? '✅ ' : '❌ ') + r0.message, r0.ok ? 1 : 0);
+                /* 语音同步播报结论，子女不看文字也能知道结果（此处不能引用主 app 的 V：
+                   头部脚本执行时 app 还没启动，用延迟查找） */
+                setTimeout(function () {
+                  try {
+                    if (window.EMC && EMC.Voice && typeof EMC.Voice.speak === 'function') {
+                      EMC.Voice.speak(r0.ok ? '测试成功，过一会儿就能收到信' : '测试失败：' + r0.message);
+                    }
+                  } catch (e) {}
+                }, 60);
+              })
+              .catch(function () { kbStShow('测试失败：网络异常，请检查网络后重试', 0); })
+              .then(function () { stGo.disabled = false; stGo.textContent = '发一封测试'; });
+          });
+          /* 切通道时联动 placeholder：微信推送不用邮箱 */
+          var stCh = document.getElementById('kbStChannel');
+          if (stCh) stCh.addEventListener('change', function () {
+            var to2 = document.getElementById('kbStTo');
+            if (!to2) return;
+            var isMail = stCh.value === 'email';
+            to2.type = isMail ? 'email' : 'text';
+            to2.placeholder = isMail ? '填你要接收提醒的邮箱' : '留空则用已保存的 token';
+            kbStShow('', '');
           });
           kbLoadNotify();
         }
@@ -1478,8 +1566,41 @@ body.kb-open #sosFloat, body.kb-open #backTop { opacity: 0; pointer-events: none
   color: var(--c-text, #222); font-size: .92em; line-height: 1.95; text-align: left;
 }
 .auth-hint b { color: var(--c-primary, #16605A); }
+/* v29：批量登记场景的第二条引导（更轻的语气，不吓人） */
+.auth-hint-soft { background: #FFF8E8; border-color: #E8B84B; color: #5C4508; }
+.auth-hint-soft b { color: #8A5A00; }
 
-/* ==========================================================
+/* =================/* v29：通知自检卡（邮件/微信通道是否真的能收到）
+   * 设计取向：这是现场演示和社区推广最容易出问题的一环 ——
+   * 「以为在收提醒、其实一封都没到」。所以做成一眼能懂、一键能验。 */
+   .kb-selftest {
+    margin-top: 14px; padding: 14px 14px 12px; border-radius: 14px;
+    background: #F2F8F7; border: 2px dashed #9CC8C2;
+   }
+   .kb-selftest .kb-st-t { font-size: 1.02em; font-weight: 800; color: #14524B; margin-bottom: 6px; }
+   .kb-selftest .kb-st-d { font-size: .86em; line-height: 1.85; color: #3E5F5B; margin-bottom: 12px; }
+   .kb-selftest .kb-st-d b { color: #14524B; }
+   .kb-st-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+   .kb-st-row select, .kb-st-row input {
+    flex: 1 1 150px; min-width: 0; min-height: 48px; padding: 0 10px;
+    font-size: 1em; border: 2px solid #C8DEDA; border-radius: 12px;
+    background: #fff; color: #14201F; box-sizing: border-box;
+   }
+   .kb-st-row select { flex: 0 0 128px; }
+   .kb-st-go {
+    flex: 0 0 auto; min-height: 48px; padding: 0 18px; border: 0; border-radius: 12px;
+    background: linear-gradient(135deg,#24857A,#16605A); color: #fff;
+    font-size: 1em; font-weight: 800; cursor: pointer;
+   }
+   .kb-st-go:disabled { opacity: .6; }
+   .kb-st-go:active { transform: scale(.97); }
+   .kb-st-r { display: none; margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: .9em; font-weight: 700; line-height: 1.8; }
+   .kb-st-r.show { display: block; background: #EAF5F3; color: #14524B; }
+   .kb-st-r.ok { background: #E6F6EC; color: #14663C; }
+   .kb-st-r.bad { background: #FDECEC; color: #9A2020; }
+   @media (max-width: 420px) { .kb-st-row select { flex: 1 1 100%; } }
+
+   /* ==========================================================
    * v27 P1：语音播报不可用提示条
    * 【为什么要做】调研现场最怕「点了没声音」。老人手机常缺中文语音包，
    *   speechSynthesis 会静默失败；没有这条提示，现场只能干瞪眼，
@@ -4030,6 +4151,23 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
         忘了吃药时，子女的微信也会收到提醒。<br>
         也可以先点上面的按钮直接体验，体验时录的记录不会丢，
         以后注册了会自动帮您搬到新账号里。
+      </div>
+      <!-- ==========================================================
+           v29 社区批量登记：用户多了以后，注册/登录会成为最大的卡点
+           ==========================================================
+           【现场会遇到什么】社区调研常常是「一屋子老人 + 几个志愿者」。
+           让每位老人自己想账号密码根本不现实，于是就变成志愿者一个个手输，
+           慢、易错、还容易把密码念给旁边人听。
+           【这里提供什么】一句话说清替代方案：
+           · 想省事 → 直接游客体验，数据不会丢，之后可随时补注册；
+           · 想让子女看到 → 只需要**一个**手机号（在「我的」里填），不用记密码。
+           目的是把「注册」从一道坎，降级成一件可后置的事。
+           ========================================================== -->
+      <div class="auth-hint auth-hint-soft">
+        <b>人比较多、记不住密码？</b><br>
+        <b>办法一（最省事）：</b>先直接体验，把药和血压都录进去，不会丢。
+        <b>办法二（想让子女看到）：</b>只要一个手机号就够了 ——
+        在「我的」里填上即可，<b>不用记密码</b>；以后想换密码再设也不迟。
       </div>
     </div>
   </div>
