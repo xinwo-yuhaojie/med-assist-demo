@@ -42,7 +42,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101701;</script>
+<script>window.KB_BUILD=2026101702;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1059,7 +1059,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101701;
+      var KB_BUILD = 2026101702;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -3138,8 +3138,32 @@ body.family-mode .simple-toggle-card { display: none !important; }
 /* ===== 返回键 / 快捷球 / 漏服提示条 ===== */
 #kbBackPill{display:none;position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:10px;z-index:120;min-height:46px;padding:11px 16px;border:0;border-radius:24px;background:#2b7de9;color:#fff;font-size:16px;font-weight:800;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer}
 #kbQuickFab{display:none;position:fixed;right:12px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:119;width:54px;height:54px;border-radius:50%;border:0;background:#f0a020;color:#fff;font-size:24px;box-shadow:0 6px 18px rgba(0,0,0,.32);cursor:pointer}
-#kbQuickPanel{display:none;position:fixed;right:12px;bottom:calc(158px + env(safe-area-inset-bottom,0px));z-index:119;background:#fff;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.28);padding:8px;width:184px}
-#kbQuickPanel button{display:block;width:100%;min-height:48px;border:0;background:none;font-size:16px;font-weight:700;text-align:left;padding:0 10px;border-radius:10px;cursor:pointer;color:#222}
+/* v35 修复：矮屏手机上 ⚡ 面板「最上面几项看不见」
+   根因：面板 bottom:158px 定位，但内有 12 项 x 48px ≈ 590px 高。
+   老人机常见 360x640 / 320x568，扣掉底边距只剩 410~480px < 590px，
+   面板顶部被顶到视口外；而 overflow 默认可见，不会自动滚，用户也发现不了。
+   修法：max-height 约束在「视口高 - 底边距 - 顶栏留白」内，超出内部滚动；
+   overscroll-behavior:contain 防止滚到头时把整页也带着滚；宽度 184->210px。 */
+#kbQuickPanel{
+  display:none; position:fixed; right:10px;
+  bottom:calc(158px + env(safe-area-inset-bottom,0px));
+  z-index:119; background:#fff; border-radius:16px;
+  box-shadow:0 10px 34px rgba(0,0,0,.3); padding:8px;
+  width:210px; max-width:calc(100vw - 20px);
+  /* 顶栏是 position:static（会随页滚动），真正的边界是视口上下。
+     底边距 158px 是给底部 tabbar + ⚡ 球留的；顶部只留安全区 + 12px 呼吸位，
+     不再假设顶栏固定高度 —— 窄屏下顶栏会换行到 165px，
+     若按顶栏高度预留，矮屏上 max-height 会被压得过小反而更看不清。 */
+  max-height:calc(100vh - 158px - 12px - env(safe-area-inset-bottom,0px) - env(safe-area-inset-top,0px));
+  overflow-y:auto; -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+}
+#kbQuickPanel::-webkit-scrollbar{width:5px}
+#kbQuickPanel::-webkit-scrollbar-thumb{background:#c9d4d1;border-radius:9px}
+#kbQuickPanel button{display:flex;align-items:center;gap:8px;width:100%;
+  min-height:46px;border:0;background:none;font-size:16px;font-weight:700;
+  text-align:left;padding:0 10px;border-radius:10px;cursor:pointer;color:#222;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #kbQuickPanel button:active{background:#f0f4ff}
 #kbMissedBar{display:none;position:fixed;left:8px;right:8px;top:calc(62px + env(safe-area-inset-top,0px));z-index:118;background:#fdecea;border:2px solid #d32f2f;color:#7a1f1f;border-radius:12px;padding:10px 12px;font-size:15px;line-height:1.6;box-shadow:0 6px 20px rgba(0,0,0,.2)}
 #kbMissedBar b{color:#d32f2f}
