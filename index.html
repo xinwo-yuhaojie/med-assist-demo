@@ -3259,6 +3259,16 @@ body.simple-mode .more-item { font-size: .95em; }
 .mk-on { fill: #2E8B57; }
 .mk-on-t { fill: #fff; font-size: 10px; font-weight: 700; text-anchor: middle; }
 .mk-paper { fill: #FFFFFF; stroke: #E4DDD0; stroke-width: 2; }
+/* v31 家属端新增示意图用到的类：数据点、警示块、安全块 */
+.mk-dot { fill: #1F7A6B; }
+.mk-warn { fill: #FDF3E3; stroke: #E0A33E; }
+.mk-warn-t { fill: #8A5A00; font-size: 11px; font-weight: 800; }
+.mk-safe { fill: #EAF6EF; stroke: #2E8B57; }
+.mk-safe-t { fill: #1E6B41; font-size: 11px; font-weight: 800; }
+.mk-danger { fill: #FDEBEA; stroke: #C62828; }
+.mk-danger-t { fill: #B71C1C; font-size: 11px; font-weight: 800; }
+/* 小字变体（示意图里说明性文字用） */
+.mk-row-t.sm, .mk-item-t.sm { font-size: 9px; }
 .mk-pt { fill: #4A5561; font-size: 9px; }
 /* 窄屏：图在上、字在下，单列阅读 */
 @media (max-width: 460px) {
@@ -9413,7 +9423,9 @@ EMC.Care = (function () {
       }
       closeModals();
       renderAccount();
-      renderAll();
+      /* v31：登录/登出后数据源整体换了（游客态 ↔ 云端），必须强制全量重绘，
+         否则切到某个页会看到上一份数据的残留面板。 */
+      renderAll(true);
       renderOverview();
       applySimpleMode(S.settings.simpleMode === true);   // v21 P2-5：登录态切换账号后按各自设置生效
       if (EMCAuth.isLoggedIn()) {
@@ -9429,7 +9441,7 @@ EMC.Care = (function () {
       }
     } catch (err) {
       console.error('[EMC] afterAuth 异常：', err);
-      try { renderAccount(); renderAll(); } catch (e2) { console.error('[EMC] 渲染兜底失败：', e2); }
+      try { renderAccount(); renderAll(true); } catch (e2) { console.error('[EMC] 渲染兜底失败：', e2); }
       toast('数据载入出错，已尽量恢复，请稍后重试');
     } finally {
       /* 解除过渡态；若期间确实发生 401 且令牌已被清空，此处统一补一次登出处理 */
@@ -10250,7 +10262,96 @@ EMC.Care = (function () {
     if (tab === 'chat') { renderOverview(); renderStarters(); renderChatHistory(); renderSymptomCard(); }
     window.scrollTo(0, 0);
   }
-  function renderAll() { renderOverview(); renderHome(); renderChronic(); renderMeds(); renderHeatmap(); renderMedTimeline(); renderDiseaseGroups(); renderHealth(); renderWeeklyReport(); renderBpAssoc(); renderRiskTrend(); renderGuardian(); renderCareTasks(); renderRisk(); renderData(); renderStarters(); renderChatHistory(); renderSymptomCard(); }
+  /* ==========================================================
+   * v31 渲染性能：全量重绘 → 按需渲染 + 同帧合并
+   * ==========================================================
+   * 【原来为什么卡】renderAll() 一次调用 18 个渲染函数，把用药时间轴、
+   *   热力图、疾病分组、血压关联、风险趋势、周报、聊天记录**全部重建**。
+   *   而它被调用的地方有 8 处 —— 加上 switchTab 的按需渲染，
+   *   一次打卡可能触发两三轮全量重建。老人用的多是千元机（内存 2~3G），
+   *   DOM 节点上千后再全部销毁重建，表现为：点一下要等一下、滑动会顿、
+   *   页面滚动位置被重置回顶部。
+   *
+   * 【现在怎么做】
+   *   ① renderAll() 保留语义（数据变了要全量同步），但**只重绘当前页 + 概览**；
+   *      切到某页时 switchTab 本来就会渲染那一页，不会漏。
+   *   ② 用 requestAnimationFrame 合并：同一帧内被多次请求的重绘只跑一次。
+   *      「加药 → 存盘 → toast → Bus.emit → 切页」这一串原本会触发好几轮渲染，
+   *      合并后只跑一轮。
+   *   ③ 给 renderAll 留一个 force 参数，登录/登出/注册这类
+   *      「所有面板的数据都换了」的场景仍然强制全量，保证正确性优先。
+   * ========================================================== */
+  /* 当前页需要额外渲染哪些面板（与 switchTab 的规则保持一致） */
+  var TAB_EXTRA = {
+    home: ['renderHome'],
+    chat: ['renderStarters', 'renderChatHistory', 'renderSymptomCard'],
+    meds: ['renderMeds', 'renderHeatmap', 'renderMedTimeline', 'renderDiseaseGroups'],
+    health: ['renderHealth', 'renderWeeklyReport', 'renderBpAssoc', 'renderRiskTrend'],
+    bp: ['renderBpQuickLast'],
+    guardian: ['renderGuardian', 'renderCareTasks'],
+    risk: ['renderRisk'],
+    data: ['renderData'],
+  };
+  /* 名字 → 函数 的直接引用表。
+     【为什么不用 new Function(动态查找)】
+       ① 这些函数声明在 IIFE 内部，不在全局，动态按名字取**根本取不到**；
+       ② eval / new Function 在严格 CSP 下会被直接拦截，等于自己埋雷。
+     函数声明会提升，因此可以在 IIFE 内安全地建这张表。 */
+  var RENDER_FN = {
+    renderOverview: function () { renderOverview(); },
+    renderHome: function () { renderHome(); },
+    renderChronic: function () { renderChronic(); },
+    renderMeds: function () { renderMeds(); },
+    renderHeatmap: function () { renderHeatmap(); },
+    renderMedTimeline: function () { renderMedTimeline(); },
+    renderDiseaseGroups: function () { renderDiseaseGroups(); },
+    renderHealth: function () { renderHealth(); },
+    renderWeeklyReport: function () { renderWeeklyReport(); },
+    renderBpAssoc: function () { renderBpAssoc(); },
+    renderRiskTrend: function () { renderRiskTrend(); },
+    renderGuardian: function () { renderGuardian(); },
+    renderCareTasks: function () { renderCareTasks(); },
+    renderRisk: function () { renderRisk(); },
+    renderData: function () { renderData(); },
+    renderStarters: function () { renderStarters(); },
+    renderChatHistory: function () { renderChatHistory(); },
+    renderSymptomCard: function () { renderSymptomCard(); },
+    renderBpQuickLast: function () { renderBpQuickLast(); },
+  };
+  var renderPending = false, renderForceNext = false;
+  function renderAll(force) {
+    if (force) renderForceNext = true;
+    if (renderPending) return;              /* 本帧已排队，等它跑就行 */
+    renderPending = true;
+    var done = false;
+    var run = function () {
+      if (done) return;
+      done = true; renderPending = false;
+      var must = renderForceNext;
+      renderForceNext = false;
+      try {
+        if (must) {
+          /* 强制全量：登录/登出/注册后数据源整体更换，这时不能省 */
+          renderOverview(); renderHome(); renderChronic(); renderMeds(); renderHeatmap();
+          renderMedTimeline(); renderDiseaseGroups(); renderHealth(); renderWeeklyReport();
+          renderBpAssoc(); renderRiskTrend(); renderGuardian(); renderCareTasks();
+          renderRisk(); renderData(); renderStarters(); renderChatHistory(); renderSymptomCard();
+          return;
+        }
+        /* 按需：只重建当前页 + 概览，切页时 switchTab 本来就会补上那一页 */
+        RENDER_FN.renderOverview();
+        var list = TAB_EXTRA[S.tab] || [];
+        for (var i = 0; i < list.length; i++) {
+          var fn = RENDER_FN[list[i]];
+          if (fn) { try { fn(); } catch (e) {} }
+        }
+      } catch (e) { console.warn('[EMC] 渲染出错', e); }
+    };
+    /* rAF 在后台标签页会被节流，补一个 setTimeout 兜底，避免切回来时界面是空的 */
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    else setTimeout(run, 16);
+    setTimeout(run, 240);
+  }
 
   /* ---------- v7 F3：对话空态快捷提问 ----------
    * 无用户发言时展示 4-6 个高频提问 chips，点击直接触发 engine.chat；
@@ -11945,7 +12046,7 @@ EMC.Care = (function () {
     document.querySelectorAll('#medSlots input').forEach(function (b) { b.checked = false; b.parentNode.classList.remove('on'); });
     $id('medPanel').style.display = 'none';
     S.records = await store.getRecords(14);
-    renderAll(); switchTab('meds');
+    renderAll(true); switchTab('meds');
     try { await ensureTodayRecords(); kbTrack('addmed'); } catch (e) {}
     try { Bus.emit('meds', { id: wasEdit ? editingMedId : S.picked }); } catch (e) {}   /* v24：药品变更 → 驾驶舱/态势条联动 */
   try { kbAnnounce('meds'); } catch (e2) {}   /* v28：通知其它标签页 */
@@ -11954,7 +12055,7 @@ EMC.Care = (function () {
   async function deleteMed(id) {
     S.meds = await store.deleteMed(id);
     S.records = await store.getRecords(14);
-    renderAll();
+    renderAll(true);
     try { Bus.emit('meds', { id: id, deleted: true }); } catch (e) {}
     try { kbAnnounce('meds'); } catch (e2) {}
   }
@@ -13125,7 +13226,7 @@ EMC.Care = (function () {
         }
         S.records = await store.getRecords(14);
         S.meds = await store.getMeds();
-        renderAll();
+        renderAll(true);
         close();
         V.speak('已记录，做得很好');
       })();
@@ -13595,11 +13696,28 @@ EMC.Care = (function () {
   /* 把一轮对话写入记忆并刷新时间线（异常静默，绝不影响主流程） */
   function pushChatTurn(role, text) {
     try {
-      CHAT_HISTORY.push({ role: role, text: String(text || ''), ts: Date.now() });
+      var m = { role: role, text: String(text || ''), ts: Date.now() };
+      CHAT_HISTORY.push(m);
       if (CHAT_HISTORY.length > 60) CHAT_HISTORY = CHAT_HISTORY.slice(-60);
       saveChatHistory();
-      renderChatHistory();
-    } catch (e) {}
+      /* v31：增量追加而不是整表重绘（见 appendChatRow 的说明） */
+      appendChatRow(m);
+    } catch (e) { try { renderChatHistory(); } catch (e2) {} }
+  }
+  /* 单条历史消息的 HTML（全量渲染与增量追加共用一份，避免两处写重复逻辑） */
+  function chatRowHtml(m) {
+    var t = new Date(m.ts || Date.now());
+    var hh = ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2);
+    var full = String(m.text || '');
+    var txt = full.replace(/\n/g, ' ');
+    if (txt.length > 40) txt = txt.slice(0, 40) + '…';
+    /* v22 P1-14：data-full-text 存完整原文（列表里只显示 40 字摘要），
+       朗读时读全文；esc 同时转义引号，避免属性值被截断。 */
+    return '<div class="ch-row ' + (m.role === 'user' ? 'u' : 'a') + '"' +
+      (m.role === 'user' ? '' : ' data-full-text="' + esc(full).replace(/"/g, '&quot;') + '"') + '>' +
+      '<span class="ch-time">' + hh + '</span>' +
+      '<span class="ch-role">' + (m.role === 'user' ? '我' : '助手') + '</span>' +
+      '<span class="ch-text">' + esc(txt) + '</span></div>';
   }
   function renderChatHistory() {
     var box = $id('chatHistory');
@@ -13608,22 +13726,31 @@ EMC.Care = (function () {
       box.innerHTML = '<div class="muted small">还没有对话记录。试着在下方问点什么，我会记得我们聊过的内容，方便您多轮追问。</div>';
       return;
     }
-    box.innerHTML = CHAT_HISTORY.slice(-30).map(function (m) {
-      var t = new Date(m.ts || Date.now());
-      var hh = ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2);
-      var full = String(m.text || '');
-      var txt = full.replace(/\n/g, ' ');
-      if (txt.length > 40) txt = txt.slice(0, 40) + '…';
-      /* v22 P1-14：data-full-text 存完整原文（列表里只显示 40 字摘要），
-         朗读时读全文；esc 同时转义引号，避免属性值被截断。 */
-      return '<div class="ch-row ' + (m.role === 'user' ? 'u' : 'a') + '"' +
-        (m.role === 'user' ? '' : ' data-full-text="' + esc(full).replace(/"/g, '&quot;') + '"') + '>' +
-        '<span class="ch-time">' + hh + '</span>' +
-        '<span class="ch-role">' + (m.role === 'user' ? '我' : '助手') + '</span>' +
-        '<span class="ch-text">' + esc(txt) + '</span></div>';
-    }).join('');
+    box.innerHTML = CHAT_HISTORY.slice(-30).map(chatRowHtml).join('');
     /* v22 P1-14：为助手回答行挂上朗读按钮 */
     bindHistorySpeak();
+  }
+  /* v31 增量追加：只在末尾插入新的一条，不重建整张列表。
+     【为什么】pushChatTurn 每发一句话就调 renderChatHistory，
+     把已有 30 条全部销毁重建 —— 老人手机上这一步就要 100~300ms，
+     表现就是「发完消息界面卡一下、滚动位置跳」。
+     只 insertAdjacentHTML 追加一个节点，代价与列表长度无关。
+     超过 30 条时把最旧的裁掉，保持和全量渲染一致的展示上限。 */
+  function appendChatRow(m) {
+    var box = $id('chatHistory');
+    if (!box) { renderChatHistory(); return; }
+    /* 空态占位要先换掉 */
+    if (!CHAT_HISTORY.length) { renderChatHistory(); return; }
+    if (box.children.length && box.children.length === 1 && box.firstElementChild &&
+        box.firstElementChild.className.indexOf('muted') >= 0) {
+      box.innerHTML = '';
+    }
+    try { box.insertAdjacentHTML('beforeend', chatRowHtml(m)); }
+    catch (e) { renderChatHistory(); return; }
+    /* 超出上限时裁掉最旧的一条 */
+    while (box.children.length > 30) { box.removeChild(box.firstElementChild); }
+    bindHistorySpeak();
+    try { MobileUX.scrollChatToBottom(true); } catch (e2) {}
   }
 
   /* ---------- v8 T02 症状自查入口卡 ---------- */
@@ -14119,7 +14246,7 @@ EMC.Care = (function () {
       disease: diseaseKey || guessDisease(dr) || '', byFamily: familyAssist
     });
     S.records = await store.getRecords(14);
-    renderAll();
+    renderAll(true);
     toast('已添加 ' + dr.name + '（' + slotsText(slots) + '）' + (familyAssist ? '，已标记' + BY_FAMILY_TAG : ''));
     V.speak('已添加' + dr.name + '，建议' + slotsText(slots) + '服用，您可以在用药管理里修改');
   }
@@ -14326,7 +14453,7 @@ EMC.Care = (function () {
     }
     S.records = await store.getRecords(14);
     cancelImport(false);
-    renderAll();
+    renderAll(true);
     switchTab('meds');
     toast('已写入 ' + added + ' 种药品，请核对用法用量');
     V.speak('已导入' + added + '种药品，请核对用法用量，有不对的地方可以在药品档案里修改');
@@ -14770,23 +14897,175 @@ EMC.Care = (function () {
         '<rect class="mk-ok" x="42" y="230" width="146" height="42" rx="12"/><text class="mk-ok-t" x="115" y="256">发给家属</text>';
       hl = '<circle class="mk-hl" cx="115" cy="251" r="40"/><text class="mk-note" x="115" y="44">一键真实发送</text>';
     }
+    /* v31 家属端新增：PushPlus 取 token 三步图（家属端最高频的求助）
+       注意：这里只能写 else if，不能写 } else if ——
+       上一行 14782 的 } 已经闭合了 weekly 分支，再多一个 } 会提前结束 kbMock 函数。 */
+    else if (kind === 'token') {
+      s += '<rect class="mk-item" x="26" y="56" width="178" height="52" rx="12"/>' +
+        '<text class="mk-item-t" x="38" y="78" font-weight="800">① 微信搜</text>' +
+        '<text class="mk-row-t" x="38" y="98">「PushPlus服务号」并关注</text>' +
+        '<circle class="mk-on" cx="188" cy="82" r="12"/>' +
+        '<rect class="mk-item" x="26" y="120" width="178" height="52" rx="12"/>' +
+        '<text class="mk-item-t" x="38" y="142" font-weight="800">② 复制 token</text>' +
+        '<text class="mk-row-t" x="38" y="162">打开公众号首页，那串字母数字</text>' +
+        '<rect class="mk-item" x="26" y="184" width="178" height="52" rx="12"/>' +
+        '<text class="mk-item-t" x="38" y="206" font-weight="800">③ 粘贴进来</text>' +
+        '<text class="mk-row-t" x="38" y="226">多人用英文逗号 , 分隔</text>' +
+        '<rect class="mk-in" x="26" y="248" width="178" height="40" rx="10"/>' +
+        '<text class="mk-in-t" x="115" y="273">a1b2c3d4e5f6...</text>' +
+        '<rect class="mk-ok" x="26" y="300" width="178" height="44" rx="12"/><text class="mk-ok-t" x="115" y="328">保存提醒设置</text>';
+      hl = '<circle class="mk-hl" cx="188" cy="82" r="34"/><text class="mk-note" x="115" y="44">先关注公众号</text>';
+    } else if (kind === 'selftest') {
+      /* v31：通知自检 —— 家属最容易忽略、但一旦不通就等于白配的关键一步 */
+      s += '<rect class="mk-item" x="26" y="58" width="178" height="34" rx="10"/>' +
+        '<text class="mk-row-t" x="38" y="80">🔔 提醒设置</text>' +
+        '<rect class="mk-dlg" x="26" y="102" width="178" height="132" rx="12" stroke-dasharray="5 4"/>' +
+        '<text class="mk-item-t" x="38" y="126" font-weight="800">📮 测一下能不能收到</text>' +
+        '<rect class="mk-row" x="36" y="136" width="76" height="30" rx="8"/><text class="mk-row-t" x="74" y="156">邮箱</text>' +
+        '<rect class="mk-in" x="120" y="136" width="74" height="30" rx="8"/><text class="mk-in-t" x="157" y="156">me@qq.com</text>' +
+        '<rect class="mk-ok" x="36" y="176" width="158" height="36" rx="10"/><text class="mk-ok-t" x="115" y="199">发一封测试</text>' +
+        '<rect class="mk-card" x="26" y="246" width="178" height="52" rx="12"/>' +
+        '<text class="mk-ok-t" x="115" y="267" font-size="9">✅ 通道正常</text>' +
+        '<text class="mk-row-t" x="115" y="288" font-size="8">去收件箱（含垃圾箱）看看</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="194" r="42"/><text class="mk-note" x="115" y="46">一定要点一次</text>';
+    } else if (kind === 'mail') {
+      /* v31：邮件提醒长什么样（子女视角） */
+      s += '<rect class="mk-card" x="20" y="52" width="190" height="244" rx="12"/>' +
+        '<rect class="mk-row" x="20" y="52" width="190" height="34" rx="12"/>' +
+        '<text class="mk-pt" x="32" y="74">📮 康伴 · 用药提醒</text>' +
+        '<text class="mk-item-t" x="32" y="106" font-weight="800">张阿姨的「降压药」</text>' +
+        '<text class="mk-row-t" x="32" y="126">今天早上应在 08:00 服用</text>' +
+        '<text class="mk-row-t" x="32" y="144">现在已过 35 分钟，还没确认</text>' +
+        '<rect class="mk-ok" x="32" y="158" width="166" height="46" rx="12"/>' +
+        '<text class="mk-ok-t" x="115" y="186">✅ 确认已经吃了</text>' +
+        '<text class="mk-row-t" x="32" y="224" font-size="8">建议：打电话问一声，或上门确认</text>' +
+        '<rect class="mk-line" x="32" y="240" width="150" height="8" rx="4"/>' +
+        '<rect class="mk-line" x="32" y="258" width="120" height="8" rx="4"/>';
+      hl = '<circle class="mk-hl" cx="115" cy="181" r="44"/><text class="mk-note" x="115" y="38">点一下就记上</text>';
+    } else if (kind === 'contacts') {
+      /* v31：绑定紧急联系人（SOS 时会打给谁） */
+      s += '<rect class="mk-item" x="26" y="58" width="178" height="40" rx="10"/>' +
+        '<text class="mk-item-t" x="38" y="84">👨‍👩‍👧 紧急联系人</text>' +
+        '<rect class="mk-row" x="26" y="106" width="178" height="46" rx="10"/>' +
+        '<text class="mk-item-t" x="38" y="126">儿子 张伟</text><text class="mk-row-t" x="38" y="144">138****1234 · 儿子</text>' +
+        '<rect class="mk-row" x="26" y="160" width="178" height="46" rx="10"/>' +
+        '<text class="mk-item-t" x="38" y="180">女儿 张敏</text><text class="mk-row-t" x="38" y="198">139****5678 · 女儿</text>' +
+        '<rect class="mk-ok" x="26" y="216" width="178" height="44" rx="12"/>' +
+        '<text class="mk-ok-t" x="115" y="244">＋ 再加一位</text>' +
+        '<rect class="mk-card" x="26" y="270" width="178" height="58" rx="12"/>' +
+        '<text class="mk-row-t" x="38" y="292">顺序很重要：老人按第一位的</text>' +
+        '<text class="mk-row-t" x="38" y="312">电话拨打，越靠前越优先</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="182" r="40"/><text class="mk-note" x="115" y="46">填对关系便于识别</text>';
+    } else if (kind === 'data') {
+      /* v31：远程看数据（家属最关心「老人这周到底怎么样」） */
+      s += '<rect class="mk-row" x="26" y="58" width="84" height="52" rx="10"/>' +
+        '<text class="mk-in-t" x="68" y="80" font-size="13">86%</text><text class="mk-row-t" x="68" y="100" font-size="8">7天依从</text>' +
+        '<rect class="mk-row" x="120" y="58" width="84" height="52" rx="10"/>' +
+        '<text class="mk-in-t" x="162" y="80" font-size="13">2</text><text class="mk-row-t" x="162" y="100" font-size="8">余药告急</text>' +
+        '<rect class="mk-card" x="26" y="122" width="178" height="112" rx="12"/>' +
+        '<text class="mk-pt" x="38" y="142" font-weight="800">近 7 天血压</text>' +
+        '<rect class="mk-line" x="38" y="156" width="152" height="7" rx="3"/>' +
+        '<circle class="mk-dot" cx="66" cy="180" r="6"/><circle class="mk-dot" cx="100" cy="196" r="6"/>' +
+        '<circle class="mk-dot" cx="134" cy="174" r="6"/><circle class="mk-dot" cx="168" cy="190" r="6"/>' +
+        '<rect class="mk-ok" x="26" y="246" width="178" height="44" rx="12"/>' +
+        '<text class="mk-ok-t" x="115" y="274">看完整趋势</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="269" r="40"/><text class="mk-note" x="115" y="46">点开看明细</text>';
+    } else if (kind === 'call') {
+      /* v31：什么时候该打电话（判断标准，家属端最需要）
+         用黄/红两块把"轻"和"重"在视觉上直接分开 —— 家属在通勤路上扫一眼
+         就能判断，不至于把"该上门"当成"打个电话问问"而拖延。 */
+      s += '<rect class="mk-warn" x="26" y="54" width="178" height="112" rx="12"/>' +
+        '<text class="mk-warn-t" x="38" y="76">🟡 可以先打个电话</text>' +
+        '<text class="mk-row-t" x="38" y="102">· 漏服 1 次，老人能接电话</text>' +
+        '<text class="mk-row-t" x="38" y="124">· 血压轻度偏高</text>' +
+        '<text class="mk-row-t" x="38" y="146">· 一天里偶有几次没打卡</text>' +
+        '<rect class="mk-danger" x="26" y="176" width="178" height="134" rx="12"/>' +
+        '<text class="mk-danger-t" x="38" y="198">🔴 应当天就去看</text>' +
+        '<text class="mk-row-t" x="38" y="224">· 漏服 ≥ 2 次，且打不通电话</text>' +
+        '<text class="mk-row-t" x="38" y="246">· 报告了「明显不适」</text>' +
+        '<text class="mk-row-t" x="38" y="268">· 血压 / 血糖明显异常</text>' +
+        '<text class="mk-row-t" x="38" y="290">· 一整天完全没有记录</text>' +
+        '<rect class="mk-safe" x="26" y="320" width="178" height="46" rx="12"/>' +
+        '<text class="mk-safe-t" x="115" y="340" font-size="9">拿不准的时候，上门看看</text>' +
+        '<text class="mk-row-t" x="115" y="358" font-size="8">比在电话里纠结更快</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="243" r="44"/><text class="mk-note" x="115" y="44">红色的要当真</text>';
+    } else if (kind === 'fix') {
+      /* v31：收不到提醒的排查流程 */
+      s += '<rect class="mk-card" x="26" y="54" width="178" height="46" rx="10"/>' +
+        '<text class="mk-item-t" x="38" y="76" font-weight="800">① 点「测一下能不能收到」</text>' +
+        '<text class="mk-row-t" x="38" y="94" font-size="8">多数问题这一步就暴露了</text>' +
+        '<rect class="mk-card" x="26" y="108" width="178" height="46" rx="10"/>' +
+        '<text class="mk-item-t" x="38" y="130" font-weight="800">② 看提示是哪一类</text>' +
+        '<text class="mk-row-t" x="38" y="148" font-size="8">「由管理员处理」= 不是您的错</text>' +
+        '<rect class="mk-card" x="26" y="162" width="178" height="46" rx="10"/>' +
+        '<text class="mk-item-t" x="38" y="184" font-weight="800">③ 去垃圾箱看看</text>' +
+        '<text class="mk-row-t" x="38" y="202" font-size="8">健康类邮件常被归到垃圾箱</text>' +
+        '<rect class="mk-card" x="26" y="216" width="178" height="46" rx="10"/>' +
+        '<text class="mk-item-t" x="38" y="238" font-weight="800">④ 检查勾选和保存</text>' +
+        '<text class="mk-row-t" x="38" y="256" font-size="8">改完必须点保存才生效</text>' +
+        '<rect class="mk-ok" x="26" y="274" width="178" height="46" rx="12"/>' +
+        '<text class="mk-ok-t" x="115" y="302">还不行 → 换微信推送</text>';
+      hl = '<circle class="mk-hl" cx="115" cy="297" r="40"/><text class="mk-note" x="115" y="44">最稳的是微信</text>';
+    } else if (kind === 'weekly2') {
+      /* v31：周报怎么读（比 weekly 更贴近"收到之后怎么办"） */
+      s += '<rect class="mk-paper" x="28" y="54" width="174" height="256" rx="10"/>' +
+        '<text class="mk-pt" x="40" y="76" font-weight="800" font-size="11">本周用药小结</text>' +
+        '<rect class="mk-line" x="40" y="88" width="140" height="9" rx="4"/>' +
+        '<rect class="mk-line" x="40" y="106" width="120" height="9" rx="4"/>' +
+        '<rect class="mk-row" x="40" y="126" width="150" height="34" rx="8"/>' +
+        '<text class="mk-ok-t" x="115" y="148" font-size="9">依从率 86%（达标）</text>' +
+        '<rect class="mk-row" x="40" y="168" width="150" height="34" rx="8"/>' +
+        '<text class="mk-row-t" x="115" y="190" font-size="9">漏服 2 次 · 集中在晚上</text>' +
+        '<rect class="mk-row" x="40" y="210" width="150" height="34" rx="8"/>' +
+        '<text class="mk-row-t" x="115" y="232" font-size="9">余药：降压药还够 4 天</text>' +
+        '<text class="mk-row-t" x="40" y="266" font-size="8">规律：晚上漏服多 = 晚上那顿</text>' +
+        '<text class="mk-row-t" x="40" y="284" font-size="8">太晚或太累 → 建议改提醒时间</text>';
+      hl = '<circle class="mk-hl" cx="115" y="190" r="40"/><text class="mk-note" x="115" y="44">看出规律</text>';
+    }
     return s + hl + '</svg>';
   }
 
+  /* ==========================================================
+ * v31 操作手册内容
+ * ==========================================================
+ * 【写作原则】
+ *  家属端的读者多半是 30~55 岁的子女 themselves —— 白天要上班、
+ *  只在碎片时间扫一眼手机，而且他们真正焦虑的不是"功能怎么点"，
+ *  而是"我该做什么、做到什么程度算好了"。
+ *  所以家属端每一步都回答三件事：
+ *    ① 这件事解决什么问题  ② 具体怎么点（配图）
+ *    ③ 做完怎么确认自己做对了
+ *  而不是只罗列菜单位置。
+ *
+ * 【为什么用 SVG 示意图而不是真截图】
+ *  界面一改截图就过期，现场拿着过期截图按图索骥反而更糟；
+ *  SVG 画的是"结构示意"（哪是顶栏、哪是大按钮、点哪一块），
+ *  与具体像素无关，长期不会失效，而且每个图只有几百字节。
+ * ========================================================== */
   var GUIDE_ELDER = [
-    { mk: 'home', t: '1. 首页就三件大事', d: '大按钮只有三个：<b>吃药、量血压、求助</b>。想干什么点一下，不用到处找。' },
-    { mk: 'remind', t: '2. 到点它会叫您', d: '到时间屏幕弹出大窗口，还会<b>说话提醒您</b>。吃完了，点绿色「✅ 已服用」就行。' },
-    { mk: 'checkin', t: '3. 忘了打卡，这样补', d: '点底部「用药管理」，每种药右边都有按钮，点一下「已服用」就补上了，<b>不挨骂，补上就好</b>。' },
-    { mk: 'bp', t: '4. 量血压很简单', d: '首页点「量血压」，填<b>高压、低压</b>两个数，点保存。我会念给您听正不正常。' },
-    { mk: 'sos', t: '5. 不舒服，一键求助', d: '点红色「SOS」，或点右上角⚡里的「报告不舒服」，<b>家人马上就能知道</b>。' },
-    { mk: 'chat', t: '6. 有问题，问它就行', d: '点底部「智能助手」，<b>按住话筒直接说话</b>，不用打字。它答完会念给您听。' }
+    { mk: 'home', t: '1. 首页就三件大事', d: '大按钮只有三个：<b>吃药、量血压、求助</b>。想干什么点一下，不用到处找。字和按钮都调得很大，看不清可以点右上角 <b>A</b> 换更大字。' },
+    { mk: 'remind', t: '2. 到点它会叫您', d: '到时间屏幕弹出大窗口，还会<b>说话提醒您</b>。吃完了，点绿色「✅ 已服用」就行。想晚点再吃，点「⏰ 稍后提醒」。' },
+    { mk: 'checkin', t: '3. 忘了打卡，这样补', d: '点底部「用药管理」，每种药右边都有按钮，点一下「已服用」就补上了，<b>不挨骂，补上就好</b>。补完屏幕上会写「好棒」。' },
+    { mk: 'bp', t: '4. 量血压很简单', d: '首页点「量血压」，填<b>高压、低压</b>两个数，点保存。我会念给您听正不正常——正常会夸您，不正常会提醒您注意。' },
+    { mk: 'sos', t: '5. 不舒服，一键求助', d: '点红色「SOS」，或点右上角 ⚡ 里的「报告不舒服」。<b>您登记过的家人会立刻收到通知</b>，谁排第一就先打给谁。' },
+    { mk: 'chat', t: '6. 有问题，直接问它', d: '点底部「智能助手」，<b>按住话筒说话</b>，不用打字。它答完会念给您听。问「我今天该注意什么」，它会把用药、血压一起看，给您排好先后。' }
   ];
+
   var GUIDE_FAMILY = [
-    { mk: 'login', t: '1. 用同一个账号登录', d: '家属在任何设备打开网页，<b>用老人账号登录</b>，老人的用药数据实时同步，换设备不丢。' },
-    { mk: 'settings', t: '2. 设置通知方式', d: '家属守护 → 提醒设置：<b>勾选渠道</b>（短信/邮件/微信推送），填手机号或邮箱，保存。' },
-    { mk: 'push', t: '3. 漏服自动告诉您', d: '系统<b>每 5 分钟自动检查</b>，漏服就推送到您手机；点消息里的链接可一键确认已吃。' },
-    { mk: 'assist', t: '4. 可以代录代打卡', d: '家属守护 → 开启「家属协助模式」，代操作会标注「由家属代录」，<b>老人一眼看出是谁改的</b>。' },
-    { mk: 'weekly', t: '5. 每周一份小结', d: '点「本周小结发给家属」：依从率、漏服、余药、不适反馈，<b>一封信说清楚</b>。' }
+    { mk: 'login', t: '1. 用老人的账号登录就够了', d: '<b>不用给老人单独注册</b>。您在任何设备打开网页，用<b>老人同一个账号密码</b>登录，就能看到他的用药、血压、风险记录。老人那边不需要会操作手机。' },
+    { mk: 'settings', t: '2. 打开提醒（漏服了您会知道）', d: '进「守护」页找到<b>提醒设置</b>：勾选渠道，填<b>收件邮箱</b>或手机号。<br><b>您只需要填收件地址，不需要填密码，也不需要填授权码</b>——发信服务器由康伴统一提供。' },
+    { mk: 'token', t: '3. 想用微信推送？三步就好', d: '<b>①</b> 微信搜「PushPlus服务号」并关注 → <b>②</b> 打开公众号首页，复制那串 token → <b>③</b> 粘到上面的框里，<b>点保存</b>。<br>和您一样想收到提醒的家人（比如配偶、兄弟姐妹）各自关注后，把 token <b>用英文逗号 , 分隔</b>填在同一格里，<b>最多 5 人，都能收到、互不覆盖</b>。' },
+    { mk: 'selftest', t: '4. 一定要测一次（这步别省）', d: '填好之后，点下面的「<b>📮 测一下能不能收到通知</b>」，当场发一封测试信。<br><b>为什么必须做</b>：填错邮箱、被当成垃圾邮件、授权服务器异常——这些<b>都不会报错</b>，界面照样显示"已保存"。不测一次，可能真漏服了才发现一直没收到通知。<br>如果提示「由管理员处理」，说明是服务器的问题，<b>不是您填错了</b>。' },
+    { mk: 'push', t: '5. 漏服提醒会是这样', d: '系统<b>每 5 分钟自动检查一次</b>，按用药档案里的提醒时刻算，不需要老人打开网站。<br>超时未确认就推给您，消息里写清<b>谁的药、几点该吃、已经晚了多久、这是第几次提醒</b>。' },
+    { mk: 'push', t: '6. 点一下就记上了', d: '收到提醒后，点消息里的<b>「确认已经吃了」</b>按钮就行——不用登录、不用输任何东西。点完这一天的这条就不用再提醒了。<br><b>没收到但其实吃了？</b>直接告诉老人点一下，或您在「用药管理」里帮他补记。<br>没确认的话会再提醒 2 次（2 小时后、6 小时后），最多 3 次——<b>不会一直轰炸您</b>。' },
+    { mk: 'mail', t: '7. 邮件提醒长这样', d: '如果您用邮箱收，会收到一封「<b>康伴 · 用药提醒</b>」。里面有一个绿色的「✅ 确认已经吃了」大按钮，手机上一点就中。<br>健康类的邮件常被系统归到<b>垃圾箱</b>，第一次收到后记得加一下信任。' },
+    { mk: 'assist', t: '8. 可以代录、代打卡', d: '守护页开启「<b>家属协助模式</b>」后，您在手机上替老人加的药、代打的卡都会标注「<b>由家属代录</b>」。<br>这样老人一眼就知道是谁改的，<b>不会出现"我明明没吃怎么记上了"</b>的误会。代打卡前建议先电话核实。' },
+    { mk: 'contacts', t: '9. 把紧急联系人填全', d: '老人点 SOS 时，<b>系统按这里的顺序</b>依次通知。所以把<b>关系写清楚</b>（儿子/女儿/邻居），老人手机上一眼就知道是谁。<br>建议填 2 位以上：万一第一位打不通，还能自动找下一位。' },
+    { mk: 'data', t: '10. 远程看老人的情况', d: '同一账号在您手机上，<b>您这边记的、老人那边记的，会自动同步</b>。7 天依从率、余药告急、血压趋势都能直接看。<br>老人不需要碰手机，您远程就能知道"这周到底怎么样"。' },
+    { mk: 'weekly2', t: '11. 每周一份小结', d: '点「本周小结发给家属」，会收到<b>依从率、漏服集中在什么时候、余药还够几天、有没有不适反馈</b>。<br><b>请看"规律"而不只是"分数"</b>：比如"晚上漏服多"，多半是晚上那顿太晚或太累，<b>把提醒时间往前调一点</b>比催老人有用得多。' },
+    { mk: 'call', t: '12. 什么情况该打电话、该上门', d: '<b>可以先打个电话：</b>漏服 1 次、老人能接电话、血压轻度偏高。<br><b>应当天上门：</b>漏服 ≥ 2 次且联系不上、报告了明显不适、血压或血糖明显异常。<br><b>拿不准的时候，上门看看比在电话里纠结更快。</b>' },
+    { mk: 'fix', t: '13. 收不到提醒？照这个顺序查', d: '<b>①</b> 点「测一下能不能收到」——多数问题这一步就暴露了；<br><b>②</b> 看提示属于哪一类，「由管理员处理」说明不是您的错；<br><b>③</b> 去垃圾箱看看；<br><b>④</b> 确认改完点了<b>保存</b>（改完不保存等于没改）。<br>以上都还不行，先换<b>微信推送</b>，它最稳定、也不花钱。' },
+    { mk: 'home', t: '14. 最后一句', d: '康伴只是<b>帮您盯着</b>，不能替医生判断，也不代替您去看老人。<br>它最大的价值是：<b>在您不方便的时候，先替您把"该吃药了"这件事盯住</b>。剩下的，还是得靠您。' }
   ];
 
   function kbGuideHtml(steps) {
