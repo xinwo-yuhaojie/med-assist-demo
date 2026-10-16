@@ -509,7 +509,7 @@
             '<label class="switch-row"><input type="checkbox" id="kbChSms"> 短信</label>' +
             '<label class="switch-row"><input type="checkbox" id="kbChWx"> 个人微信推送</label>' +
             '</div></div>' +
-            '<div class="form-row"><label for="kbEmail">接收提醒的邮箱</label><input id="kbEmail" type="email" inputmode="email" placeholder="如 me@qq.com"></div>' +
+            '<div class="form-row"><label for="kbEmail">接收提醒的邮箱</label><input id="kbEmail" type="email" inputmode="email" placeholder="如 me@qq.com"><div class="muted small" style="margin-top:4px"><b>你只需要填这里这一栏，收件邮箱地址。</b>QQ邮箱、163邮箱、微信邮箱、公司邮箱都行，填谁的都行（可以填您自己的，也可以填子女的）。<b>不需要填密码，也不需要填授权码</b> —— 发信服务器由康伴统一提供，您只管填收件地址。</div></div>' +
             '<div class="form-row"><label for="kbWechat">企业微信群机器人 Webhook</label><input id="kbWechat" type="text" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."></div>' +
             '<div class="form-row"><label for="kbWxToken">个人微信推送 Token（免费，推荐子女使用）</label><input id="kbWxToken" type="password" autocomplete="new-password" placeholder="微信搜公众号「PushPlus服务号」→关注→复制首页的token粘到这里"><div class="muted small" style="margin-top:4px"><b>怎么填：</b>用<b>老人账号</b>登录 → 「守护」→ 本卡片 → 关注公众号「PushPlus服务号」→ 复制首页 token → 粘到这里 → 保存。<br><b>多位子女都要收到：</b>各自关注公众号取自己的 token，<b>用英文逗号 , 分隔</b>（最多 5 人）追加在同一格里保存即可，不会互相覆盖。<br>老人漏服超时后会推给每一位填了 token 的子女微信，消息里带「一键确认已服用」，点一下就补打卡。<b>已配置的 token 不回显</b>（防旁人看屏幕泄露），留空表示不修改。</div></div>' +
             '<div class="form-row"><label for="kbPhone">接收短信的手机号</label><input id="kbPhone" type="tel" inputmode="numeric" placeholder="如 13800000000"></div>' +
@@ -520,7 +520,7 @@
             /* ---------- v29 通知自检：让用户当场知道通道通不通 ---------- */
             '<div class="kb-selftest" id="kbSelfTest">' +
               '<div class="kb-st-t">📮 测一下能不能收到通知</div>' +
-              '<div class="kb-st-d">保存好之后一定要点一下这里发一封测试信。<b>不然你可能一直以为在收提醒、其实一封都没到</b>（授权码填错、邮箱被拒收都不会提示）。</div>' +
+              '<div class="kb-st-d">保存好之后一定要点一下这里发一封测试信。<b>不然你可能一直以为在收提醒、其实一封都没到</b>（填错邮箱、邮箱被拒收都不会提示）。</div>' +
               '<div class="kb-st-row">' +
                 '<select id="kbStChannel" aria-label="选择要测试的通道">' +
                   '<option value="email">邮箱</option>' +
@@ -567,11 +567,18 @@
           /* ==========================================================
            * v29 通知自检交互
            * ==========================================================
-           * 【为什么要做】邮件/微信的失败全是「静默」的：授权码错、端口被墙、
-           *   邮箱被拒收 —— 界面照样显示发送成功。用户只有等真漏服那天才发现，
-           *   那时社区已经承诺过一次了。
-           *   这里给一个"当场验"的按钮：填好地址点一下，10 秒内知道通不通，
-           *   而且服务端会把 SMTP 错误翻译成「该检查授权码 / 该换邮箱」这类能照着做的话。
+           * 【为什么要做】邮件/微信的失败全是「静默」的：填错邮箱、邮箱被拒收、
+                     *   被判垃圾邮件 —— 界面一律显示"发送成功"，没有任何提示。
+                     *   用户只有等真漏服那天才发现，那时社区已经承诺过一次了。
+                     *   这里给一个"当场验"的按钮：填好地址点一下，10 秒内知道通不通，
+                     *   而且服务端会把失败原因翻译成「收件邮箱填错了 / 被拒收 / 连不上服务器」
+                     *   这类能照着做的话。
+                     * 【重要：这里绝不提"授权码"】
+                     *   SMTP 是**服务器级别的一次性配置**（管理员在环境变量里配好），
+                     *   所有用户共用同一个发件服务器。用户只需要填自己的**收件邮箱**，
+                     *   不需要、也不应该知道任何密码或授权码。
+                     *   早期文案里出现过"授权码填错"四个字，会让人误以为每个用户
+                               *   都要填自己的邮箱授权码 —— 那既做不到，也会诱使人把 QQ 邮箱权限交出去。
            * 【不做什么】
            *   · 不自动发（避免一进页面就骚扰子女邮箱）
            *   · 测试信里不含一键确认链接，不会凭空把老人标记成已服药
