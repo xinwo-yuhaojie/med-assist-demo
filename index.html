@@ -1022,7 +1022,7 @@
      * ========================================================== */
     function kbOpenBoard() {
       var old = document.getElementById('kbBoardWrap');
-      if (old; old.parentNode) old.parentNode.removeChild(old);
+      if (old && old.parentNode) old.parentNode.removeChild(old);
       var w = document.createElement('div');
       w.id = 'kbBoardWrap';
       w.setAttribute('style', 'position:fixed;inset:0;z-index:2147483002;background:#f3f6f5;display:flex;flex-direction:column');
@@ -1035,10 +1035,22 @@
         if (w.parentNode) w.parentNode.removeChild(w);
       });
     }
-    /* 点「管理者看板」入口：不再自己拦一道密码，直接进看板（由它做三级验证） */
+    /* 点「管理者看板」入口：不再自己拦一道密码，直接进看板（由它做三级验证）
+       【v35 修复一个我自己写出来的全站瘫痪级 bug】
+       原来这一行误写成：
+           var a = t; t.closest ? t.closest('a[href="dashboard.html"]') : null;
+       `closest()` 的**返回值被直接丢弃**了，于是 `a` 恒等于 `t`（任何被点到的元素），
+       `if (!a) return` 永远不成立 —— 意味着这个**捕获阶段**的监听器
+       会对页面上**每一次点击**都执行 preventDefault() + stopPropagation()。
+       后果：整个应用的所有按钮全部失灵（登录、看板、字号、语音、打卡…），
+       而界面看上去完全正常，只是"点什么都没反应"。
+       现场表现就是「用户登录那里点不了了」。
+       用无头 Chrome 实测才定位到：document 上有个 useCapture=true 的 click
+       监听器把事件吃掉了，dispatchEvent 返回 defaultPrevented=true。
+       现在正确取 closest 的结果，只有真的点在看板链接上才拦截。 */
     document.addEventListener('click', function (e) {
       var t = e.target;
-      var a = t; t.closest ? t.closest('a[href="dashboard.html"]') : null;
+      var a = (t && t.closest) ? t.closest('a[href="dashboard.html"]') : null;
       if (!a) return;
       e.preventDefault();
       e.stopPropagation();
@@ -3406,6 +3418,28 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
 .wiz-done { font-size:1.15em; line-height:2; color:var(--c-text); margin:0 0 16px; }
 .wiz-badge { display:inline-block; font-size:1.1em; font-weight:800; color:#fff;
   background:linear-gradient(135deg,#34A853,#1E7A43); border-radius:999px; padding:8px 18px; margin-bottom:12px; }
+/* ==========================================================
+ * v35 修复：首次使用向导的遮罩**不再拦截点击**（这是个真故障）
+ * ==========================================================
+ * 【症状】顶栏的「登录/注册」「看板」等按钮点不动，界面看上去却完全正常。
+ * 【根因】用无头浏览器实测 elementFromPoint 发现，按钮位置上最顶层的元素是
+ *   `.wiz-box`（向导卡片）—— 向导的 `.wiz-mask` 是
+ *   `position:fixed; inset:0; z-index:2147483005`，**铺满整个视口**。
+ *   v32 我只是把遮罩透明度从 .72 降到 .45 让它"看起来不那么突兀"，
+ *   却忘了它**照样拦截全屏的点击**。于是卡片一出现，整块界面（包括顶栏）
+ *   都点不动，老人只能干看着。
+ * 【为什么这是必须修的】向导是**自动弹出**的（打开页面 2.6 秒后），
+ *   也就是说任何人第一次打开应用，顶栏就全废了 ——
+ *   登录、看板、字号、语音，这些最基础的入口同时失效。
+ * 【怎么修】遮罩不接收指针事件，只有卡片本身接收：
+ *     · 点卡片 → 正常操作向导
+ *     · 点卡片以外的任意位置 → 直接穿透到下面的界面继续用
+ *   这才是"提示卡"该有的行为 —— 它应该是邀请，不是拦截。
+ *   同时保留 ESC 关闭，老人按返回键也能退出。
+ * ========================================================== */
+.wiz-mask { pointer-events: none; }
+.wiz-box { pointer-events: auto; }
+
 /* v32：小卡片柔和滑入。原来的"直接出现"配合全屏遮罩，
    观感上和系统弹窗一样，容易被当成强制流程。 */
 @keyframes wizIn { from { opacity:0; transform:translateY(-14px) scale(.97); } to { opacity:1; transform:none; } }
