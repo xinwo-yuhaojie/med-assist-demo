@@ -382,8 +382,13 @@
             var set = function (id, v) { var e = document.getElementById(id); if (e) e.checked = !!v; };
             var val = function (id, v) { var e = document.getElementById(id); if (e) e.value = (v == null ? '' : v); };
             set('kbChEmail', ch.email); set('kbChWechat', ch.wechat); set('kbChSms', ch.sms); set('kbChWx', ch.wxpush);
-            val('kbEmail', ns.email); val('kbWechat', ns.wechatWebhook); val('kbPhone', ns.smsPhone); val('kbWxToken', ns.wxpushToken);
-            val('kbFamilyEmail', ns.familyEmail); val('kbOverdue', ns.overdueMinutes || 60);
+            val('kbEmail', ns.email); val('kbPhone', ns.smsPhone);
+            /* v25 安全：token / webhook 属凭证，服务端已脱敏为 ********，此处不回填明文，只提示是否已配置 */
+            var tokE = document.getElementById('kbWxToken');
+            if (tokE) { tokE.value = ''; tokE.placeholder = ns.wxpushToken ? '已配置（留空表示不修改）' : '微信搜公众号「PushPlus服务号」→关注→复制首页token粘到这里'; }
+            var hkE = document.getElementById('kbWechat');
+            if (hkE) { hkE.value = ''; hkE.placeholder = ns.wechatWebhook ? '已配置（留空表示不修改）' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...'; }
+            val('kbFamilyEmail', ns.familyEmail); val('kbOverdue', ns.overdueMinutes || 30);
             if (tip) tip.textContent = '';
           }).catch(function () {});
         } catch (e) {}
@@ -400,7 +405,7 @@
           c.className = 'card';
           c.id = 'kbNotifyCard';
           c.innerHTML = '<div class="card-title">🔔 提醒设置 <span class="tag">漏服自动通知</span></div>' +
-            '<div class="muted small" style="margin-bottom:8px">填好后，老人到点没吃药就会自动通知你/家属（每 15 分钟自动检查一次）。</div>' +
+            '<div class="muted small" style="margin-bottom:8px">填好后，<b>老人到点没吃药、超时未确认，就会自动推到你和家属的微信</b>（每 5 分钟自动检查一次）。<b>不需要老人打开网站、不需要老人有手机</b>——按用药档案里的提醒时刻自动计算。</div>' +
             '<div class="form-row"><label>启用的渠道</label><div style="display:flex;gap:14px;flex-wrap:wrap">' +
             '<label class="switch-row"><input type="checkbox" id="kbChEmail"> 邮箱</label>' +
             '<label class="switch-row"><input type="checkbox" id="kbChWechat"> 微信</label>' +
@@ -409,10 +414,10 @@
             '</div></div>' +
             '<div class="form-row"><label for="kbEmail">接收提醒的邮箱</label><input id="kbEmail" type="email" inputmode="email" placeholder="如 me@qq.com"></div>' +
             '<div class="form-row"><label for="kbWechat">企业微信群机器人 Webhook</label><input id="kbWechat" type="text" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."></div>' +
-            '<div class="form-row"><label for="kbWxToken">个人微信推送 Token（免费，推荐家属使用）</label><input id="kbWxToken" type="text" placeholder="微信搜公众号「PushPlus服务号」→关注→复制首页的token粘到这里"><div class="muted small" style="margin-top:4px">开通后，老人漏服时家属微信直接收到提醒，不用打开网页；推送里带「一键确认已服用」链接，点一下就打卡。管理员已配统一推送，家人想各自都收到，各自关注公众号取 token 填入即可。</div></div>' +
+            '<div class="form-row"><label for="kbWxToken">个人微信推送 Token（免费，推荐子女使用）</label><input id="kbWxToken" type="password" autocomplete="new-password" placeholder="微信搜公众号「PushPlus服务号」→关注→复制首页的token粘到这里"><div class="muted small" style="margin-top:4px"><b>怎么填：</b>用<b>老人账号</b>登录 → 「守护」→ 本卡片 → 关注公众号「PushPlus服务号」→ 复制首页 token → 粘到这里 → 保存。<br><b>多位子女都要收到：</b>各自关注公众号取自己的 token，<b>用英文逗号 , 分隔</b>（最多 5 人）追加在同一格里保存即可，不会互相覆盖。<br>老人漏服超时后会推给每一位填了 token 的子女微信，消息里带「一键确认已服用」，点一下就补打卡。<b>已配置的 token 不回显</b>（防旁人看屏幕泄露），留空表示不修改。</div></div>' +
             '<div class="form-row"><label for="kbPhone">接收短信的手机号</label><input id="kbPhone" type="tel" inputmode="numeric" placeholder="如 13800000000"></div>' +
             '<div class="form-row"><label for="kbFamilyEmail">家属邮箱（可选）</label><input id="kbFamilyEmail" type="email" inputmode="email" placeholder="如 son@qq.com"></div>' +
-            '<div class="form-row"><label for="kbOverdue">漏服超过（分钟）</label><input id="kbOverdue" type="text" inputmode="numeric" placeholder="60"></div>' +
+            '<div class="form-row"><label for="kbOverdue">超过多久没吃就提醒（分钟）</label><input id="kbOverdue" type="text" inputmode="numeric" placeholder="30"><div class="muted small" style="margin-top:4px">填 30 就是「该吃药 30 分钟后还没确认，微信提醒家属」。没确认会再提醒 2 次（2 小时后、6 小时后），最多 3 次。</div></div>' +
             '<button class="btn sm" id="kbSaveNotify">保存提醒设置</button>' +
             '<div class="muted small" id="kbNotifyTip" style="margin-top:6px"></div>';
           card.parentNode.insertBefore(c, card.nextSibling);
@@ -425,9 +430,12 @@
                 sms: !!(document.getElementById('kbChSms') || {}).checked,
                 wxpush: !!(document.getElementById('kbChWx') || {}).checked,
               },
-              email: g('kbEmail'), wechatWebhook: g('kbWechat'), smsPhone: g('kbPhone'), wxpushToken: g('kbWxToken'),
-              familyEmail: g('kbFamilyEmail'), overdueMinutes: Number(g('kbOverdue') || 60),
+              email: g('kbEmail'), smsPhone: g('kbPhone'),
+              familyEmail: g('kbFamilyEmail'), overdueMinutes: Number(g('kbOverdue') || 30),
             };
+            /* v25 安全：凭证留空 = 不修改（服务端也会忽略空值），避免误清空已配置的 token */
+            if (g('kbWxToken')) ns.wxpushToken = g('kbWxToken');
+            if (g('kbWechat')) ns.wechatWebhook = g('kbWechat');
             var tip = document.getElementById('kbNotifyTip');
             if (tip) tip.textContent = '保存中…';
             var tk = (window.EMCAuth && EMCAuth.getToken) ? EMCAuth.getToken() : localStorage.getItem('emc_token');
