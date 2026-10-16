@@ -977,103 +977,45 @@
       }
     } catch (e) {}
 
-    /* 14) 看板密码门：进入管理者看板需输入看板密码（只存哈希，不存明文） */
-    try {
-      var KB_ADMIN_HASH = '15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225';
-      function kbGateEnsure() {
-        var g = document.getElementById('kbGateMask');
-        if (g) return g;
-        g = document.createElement('div');
-        g.id = 'kbGateMask';
-        g.setAttribute('style', 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:18px');
-        g.innerHTML = '<div style="background:var(--c-bg-elev,#fff);color:var(--c-fg,#222);border-radius:16px;padding:22px 20px;width:100%;max-width:360px;box-shadow:0 8px 30px rgba(0,0,0,.25)">'
-          + '<div style="font-size:19px;font-weight:700;margin-bottom:6px">🔒 管理者验证</div>'
-          + '<div style="font-size:14px;opacity:.75;margin-bottom:12px">管理者看板仅限工作人员进入，请输入看板密码。</div>'
-          + '<input id="kbGatePwd" type="password" inputmode="numeric" autocomplete="off" placeholder="请输入密码" style="width:100%;box-sizing:border-box;font-size:18px;padding:12px;border:2px solid #bbb;border-radius:10px;letter-spacing:2px">'
-          + '<div id="kbGateErr" style="color:#d33;font-size:14px;min-height:20px;margin-top:6px"></div>'
-          + '<div style="display:flex;gap:10px;margin-top:4px">'
-          + '<button id="kbGateCancel" style="flex:1;font-size:17px;padding:13px;border-radius:10px;border:1px solid #bbb;background:#f2f2f2;color:#333">取消</button>'
-          + '<button id="kbGateOk" style="flex:1;font-size:17px;padding:13px;border-radius:10px;border:0;background:#c62828;color:#fff">进入管理者页面</button>'
-          + '</div></div>';
-        document.body.appendChild(g);
-        g.addEventListener('click', function (e) { if (e.target === g) kbGateClose(); });
-        var c = document.getElementById('kbGateCancel');
-        if (c) c.addEventListener('click', kbGateClose);
-        var okb = document.getElementById('kbGateOk');
-        if (okb) okb.addEventListener('click', kbGateTry);
-        var ip = document.getElementById('kbGatePwd');
-        if (ip) ip.addEventListener('keydown', function (e) { if (e.key === 'Enter') kbGateTry(); });
-        return g;
-      }
-      function kbGateOpen() {
-        var g = kbGateEnsure();
-        g.style.display = 'flex';
-        var err = document.getElementById('kbGateErr'); if (err) err.textContent = '';
-        var ip = document.getElementById('kbGatePwd');
-        if (ip) { ip.value = ''; setTimeout(function () { try { ip.focus(); } catch (e2) {} }, 60); }
-      }
-      function kbGateClose() { var g = document.getElementById('kbGateMask'); if (g) g.style.display = 'none'; }
-      function kbOpenBoard() {
-        var old = document.getElementById('kbBoardWrap');
-        if (old && old.parentNode) old.parentNode.removeChild(old);
-        var w = document.createElement('div');
-        w.id = 'kbBoardWrap';
-        w.setAttribute('style', 'position:fixed;inset:0;z-index:2147483002;background:#f5f6f8;display:flex;flex-direction:column');
-        w.innerHTML = '<div style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:#08221E;color:#fff;font-size:17px;font-weight:800">' +
-          '<span>📊 管理者看板</span>' +
-          '<button id="kbBoardClose" style="min-width:80px;min-height:44px;border:0;border-radius:10px;background:#fff;color:#08221E;font-size:16px;font-weight:800;cursor:pointer">✕ 关闭</button></div>' +
-          '<iframe src="dashboard.html?emb=1" style="flex:1;width:100%;border:0" title="管理者看板"></iframe>';
-        document.body.appendChild(w);
-        document.getElementById('kbBoardClose').addEventListener('click', function () {
-          if (w.parentNode) w.parentNode.removeChild(w);
-        });
-      }
-      function kbGateOkProceed(val) {
-        try { sessionStorage.setItem('kbAdminOk', '1'); sessionStorage.setItem('kbAdminPw', String(val || '')); } catch (e2) {}
-        kbGateClose();
-        kbOpenBoard();
-      }
-      function kbGateTry() {
-        var ip = document.getElementById('kbGatePwd');
-        var err = document.getElementById('kbGateErr');
-        var val = ip ? ip.value : '';
-        if (!val) { if (err) err.textContent = '请先输入密码。'; return; }
-        if (err) err.textContent = '验证中…';
-        /* 首选：服务端验密（一次请求同时拉全站统计；密码不进前端代码） */
-        fetch('https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run/api/admin/stats', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          cache: 'no-store',
-          body: JSON.stringify((function (v) { var o = {}; o['pass' + 'word'] = v; return o; })(String(val || ''))),
-        }).then(function (r) {
-          if (r.status === 401) { if (err) err.textContent = '密码不对，请再试一次。'; if (ip) ip.select(); return; }
-          if (r.status === 429) { if (err) err.textContent = '尝试次数过多，请 1 小时后再试。'; return; }
-          if (!r.ok) throw new Error('http ' + r.status);
-          kbGateOkProceed(val);
-        }).catch(function () {
-          /* 离线/断网兜底：本地哈希比对（仅解锁页面，统计显示待网络） */
-          if (!(window.crypto && crypto.subtle && crypto.subtle.digest)) {
-            if (err) err.textContent = '网络不可用且当前环境不支持本地校验。';
-            return;
-          }
-          crypto.subtle.digest('SHA-256', new TextEncoder().encode(val)).then(function (buf) {
-            var hex = Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-            if (hex === KB_ADMIN_HASH) { kbGateOkProceed(''); }
-            else { if (err) err.textContent = '密码不对，请再试一次。'; if (ip) ip.select(); }
-          }).catch(function () { if (err) err.textContent = '校验失败，请重试。'; });
-        });
-      }
-      /* 拦截所有指向看板的链接（顶栏「看板」、侧边栏更多里的看板），先过密码门 */
-      document.addEventListener('click', function (e) {
-        var t = e.target;
-        var a = t && t.closest ? t.closest('a[href="dashboard.html"]') : null;
-        if (!a) return;
-        e.preventDefault();
-        e.stopPropagation();
-        window.__kbPendingBoard = a.getAttribute('href') || 'dashboard.html';
-        kbGateOpen();
-      }, true);
-    } catch (e) {}
+    /* ==========================================================
+     * v33 移除本地看板密码门（97 行）—— 改由 dashboard.html 统一承担三级验证
+     * ==========================================================
+     * 【为什么要删，而不是改】
+     *   1) 重复：这里已有一套门禁，dashboard.html 里又有一套。用户会连着输两次
+     *      密码、点两次确认，每次调研现场本来人手就忙。
+     *   2) 不安全：密码哈希硬编码在前端（KB_ADMIN_HASH 是一段常量），
+     *      任何人查看源码就拿到了它 —— 对纯数字短密码来说等同于公开密码。
+     *      真正该保密的东西不能放在客户端。
+     *   3) 与产品流程冲突：产品要求「门禁密码 → 二选一 → 管理者看板再输一次密码」，
+     *      这里的第一道门把流程拦死了，根本到不了看板自己的模式选择页。
+     * 【现在】顶栏 / 侧边栏点「管理者看板」直接打开 dashboard.html，
+     *   由它按顺序问：门禁密码 → 选看板 →（选管理者看板时）看板密码。
+     *   好处是密码从不经过 index.html，服务端统一校验。
+     * ========================================================== */
+    function kbOpenBoard() {
+      var old = document.getElementById('kbBoardWrap');
+      if (old; old.parentNode) old.parentNode.removeChild(old);
+      var w = document.createElement('div');
+      w.id = 'kbBoardWrap';
+      w.setAttribute('style', 'position:fixed;inset:0;z-index:2147483002;background:#f3f6f5;display:flex;flex-direction:column');
+      w.innerHTML = '<div style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;background:linear-gradient(135deg,#24857A,#14524B);color:#fff;font-size:17px;font-weight:800">' +
+        '<span>📊 康伴看板</span>' +
+        '<button id="kbBoardClose" style="min-width:80px;min-height:44px;border:0;border-radius:10px;background:#fff;color:#14524B;font-size:16px;font-weight:800;cursor:pointer">✕ 关闭</button></div>' +
+        '<iframe src="dashboard.html?emb=1" style="flex:1;width:100%;border:0" title="康伴看板"></iframe>';
+      document.body.appendChild(w);
+      document.getElementById('kbBoardClose').addEventListener('click', function () {
+        if (w.parentNode) w.parentNode.removeChild(w);
+      });
+    }
+    /* 点「管理者看板」入口：不再自己拦一道密码，直接进看板（由它做三级验证） */
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      var a = t; t.closest ? t.closest('a[href="dashboard.html"]') : null;
+      if (!a) return;
+      e.preventDefault();
+      e.stopPropagation();
+      kbOpenBoard();
+    }, true);
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {

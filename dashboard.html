@@ -3,242 +3,554 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- v32 CSP：看板同样禁止一切外部脚本/iframe。GitHub Pages 不支持自定义响应头，
-     只能用 meta 形式，效果等同。frame-src 'self' 保证内嵌时不被外部广告页挤占。 -->
+<!-- CSP：看板同样禁止一切外部脚本/iframe（GitHub Pages 不支持自定义响应头，meta 形式等效） -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>康伴 · 管理者看板</title>
+<title>康伴 · 看板</title>
 <style>
   :root {
-    --pri: #1F7A6B; --pri-deep: #16605A; --acc: #E07A2F; --dan: #C62828; --ok: #2E8B57; --warn: #E08A1E;
-    --bg: #F5F2EA; --card: #FFFFFF; --ink: #1A1A1A; --ink2: #4A5561; --line: #E4DDD0;
-    --grad: linear-gradient(135deg, #24857A 0%, #16605A 100%);
-    --shadow: 0 1px 2px rgba(31,41,51,.05), 0 4px 14px rgba(31,41,51,.07);
-    --radius: 16px;
+    --pri: #1F7A6B; --pri-deep: #14524B; --pri-soft: #EAF5F3;
+    --acc: #E07A2F; --dan: #C62828; --ok: #2E8B57; --warn: #C77A0B;
+    --bg: #F3F6F5; --card: #FFFFFF; --ink: #16211F; --ink2: #5A6B68; --ink3: #8B9A97;
+    --line: #E2E9E7; --line2: #EFF3F2;
+    --grad: linear-gradient(135deg, #24857A 0%, #14524B 100%);
+    --shadow: 0 1px 2px rgba(22,33,31,.04), 0 6px 18px rgba(22,33,31,.06);
+    --shadow-lg: 0 12px 40px rgba(0,0,0,.12);
+    --r: 18px; --r-sm: 12px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { margin:0; font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); }
+  body {
+    margin:0; color:var(--ink);
+    font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
 
-  /* ============ 门禁 ============ */
-  #gate { position:fixed; inset:0; background:linear-gradient(160deg,#1d3a35 0%,#12212e 100%); display:flex; align-items:center; justify-content:center; padding:18px; z-index:99; }
-  #gate .box { background:#fff; border-radius:22px; padding:28px 22px 22px; width:100%; max-width:380px; box-shadow:0 18px 50px rgba(0,0,0,.35); }
-  #gate .g-ic { width:64px; height:64px; margin:0 auto 12px; border-radius:20px; background:var(--grad); color:#fff; font-size:30px; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 18px rgba(22,96,90,.35); }
-  #gate h2 { margin:0 0 6px; font-size:22px; text-align:center; color:var(--pri-deep); }
-  #gate p { margin:0 0 16px; color:var(--ink2); font-size:14px; text-align:center; line-height:1.7; }
-  #gate input { width:100%; font-size:19px; padding:14px; border:2px solid var(--line); border-radius:14px; letter-spacing:2px; text-align:center; background:#fbfaf7; }
-  #gate input:focus { outline:none; border-color:var(--pri); }
-  #gate .err { color:var(--dan); font-size:14px; min-height:22px; margin:8px 0; text-align:center; font-weight:600; }
-  #gate .btns { display:flex; gap:10px; margin-top:4px; }
-  #gate button { flex:1; font-size:17px; padding:14px; border-radius:14px; border:0; cursor:pointer; font-weight:800; }
-  #gate .c { background:#f2f2f2; border:1px solid #ccc; color:#333; }
-  #gate .o { background:var(--grad); color:#fff; box-shadow:0 4px 14px rgba(22,96,90,.3); }
+  /* ==========================================================
+     v33 门禁：三级流程（门禁密码 → 选看板 → 看板密码）
+     ========================================================== */
+  #gate { position:fixed; inset:0; z-index:99;
+    background:linear-gradient(165deg,#1b4a43 0%,#12222e 55%,#0e1a20 100%);
+    display:flex; align-items:center; justify-content:center; padding:18px;
+    overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  #gate .box {
+    background:#fff; border-radius:24px; padding:26px 20px 20px;
+    width:100%; max-width:400px; box-shadow:var(--shadow-lg);
+    animation:boxIn .3s cubic-bezier(.2,.8,.3,1) both;
+  }
+  @keyframes boxIn { from { opacity:0; transform:translateY(12px) scale(.98);} to { opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: reduce) { #gate .box { animation:none; } }
+
+  /* 步骤指示 */
+  .steps { display:flex; align-items:center; gap:6px; justify-content:center; margin-bottom:16px; }
+  .steps .s { width:26px; height:5px; border-radius:99px; background:#E2E9E7; transition:background .25s; }
+  .steps .s.on { background:var(--pri); }
+  .steps .s.done { background:#9CC8C2; }
+
+  .g-ic { width:60px; height:60px; margin:0 auto 12px; border-radius:19px;
+    background:var(--grad); color:#fff; font-size:28px;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 6px 18px rgba(20,82,75,.3); }
+  #gate h2 { margin:0 0 6px; font-size:21px; text-align:center; color:var(--pri-deep); letter-spacing:.3px; }
+  #gate p { margin:0 0 16px; color:var(--ink2); font-size:14px; text-align:center; line-height:1.75; }
+  #gate input {
+    width:100%; font-size:18px; padding:13px 14px; min-height:52px;
+    border:2px solid var(--line); border-radius:14px; letter-spacing:1px;
+    text-align:center; background:#FAFBFA; color:var(--ink); font-family:inherit;
+  }
+  #gate input::placeholder { letter-spacing:0; color:var(--ink3); font-size:15px; }
+  #gate input:focus { outline:none; border-color:var(--pri); background:#fff; box-shadow:0 0 0 4px rgba(31,122,107,.1); }
+  #gate .err { color:var(--dan); font-size:14px; min-height:22px; margin:10px 0 4px; text-align:center; font-weight:700; line-height:1.6; }
+  #gate .btns { display:flex; gap:10px; }
+  #gate button { flex:1; font-size:16.5px; padding:14px; min-height:50px; border-radius:14px;
+    border:0; cursor:pointer; font-weight:800; font-family:inherit; }
+  #gate .c { background:#F1F4F3; border:1px solid var(--line); color:var(--ink2); }
+  #gate .o { background:var(--grad); color:#fff; box-shadow:0 4px 14px rgba(20,82,75,.28); }
   #gate .c:active, #gate .o:active { transform:scale(.98); }
+  #gate .linkbtn { flex:1; background:none; color:var(--ink3); font-size:14px; min-height:44px; }
 
-  /* ============ 看板主体 ============ */
+  /* 模式选择卡片 */
+  .picks { display:flex; flex-direction:column; gap:11px; margin-top:4px; }
+  .pick {
+    display:flex; align-items:center; gap:13px; text-align:left; width:100%;
+    padding:15px 14px; min-height:76px; border-radius:16px; cursor:pointer;
+    border:2px solid var(--line); background:#fff; font-family:inherit;
+    transition:border-color .18s, transform .12s, box-shadow .18s;
+  }
+  .pick:hover { border-color:#9CC8C2; box-shadow:0 4px 14px rgba(20,82,75,.08); }
+  .pick:active { transform:scale(.985); }
+  .pick .pi { width:44px; height:44px; flex:0 0 auto; border-radius:13px; font-size:21px;
+    display:flex; align-items:center; justify-content:center; }
+  .pick.comm .pi { background:var(--pri-soft); }
+  .pick.mgr  .pi { background:linear-gradient(135deg,#FDF0E2,#FBE3CD); }
+  .pick .pt { font-size:16px; font-weight:800; color:var(--ink); line-height:1.4; }
+  .pick .pd { font-size:12.5px; color:var(--ink2); line-height:1.65; margin-top:3px; }
+  .pick .lock { font-size:11px; font-weight:800; color:#fff; background:var(--acc);
+    border-radius:6px; padding:2px 7px; margin-left:6px; vertical-align:middle; }
+
+  /* ==========================================================
+     看板主体
+     ========================================================== */
   #main { display:none; }
-  .bd-head { background:var(--grad); color:#fff; padding:20px 16px 16px; box-shadow:0 2px 10px rgba(22,96,90,.25); }
-  .bd-head .wrap { max-width:980px; margin:0 auto; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-  .bd-head h1 { font-size:22px; margin:0 0 4px; font-weight:800; }
-  .bd-head .sub { font-size:12.5px; opacity:.88; line-height:1.6; }
+  .bd-head { background:var(--grad); color:#fff; padding:0 0 18px;
+    box-shadow:0 3px 14px rgba(20,82,75,.22); }
+  .bd-head .inner { max-width:1020px; margin:0 auto; padding:18px 14px 0; }
+  .bd-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .bd-title { display:flex; align-items:center; gap:11px; min-width:0; }
+  .bd-mark { width:44px; height:44px; flex:0 0 auto; border-radius:13px; font-size:22px;
+    background:rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center;
+    border:1px solid rgba(255,255,255,.3); }
+  .bd-head h1 { font-size:21px; margin:0 0 3px; font-weight:800; letter-spacing:.3px; }
+  .bd-head .sub { font-size:12.5px; opacity:.9; line-height:1.65; }
   .bd-ops { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .bd-badge { font-size:12.5px; font-weight:800; background:var(--acc); border-radius:999px; padding:6px 12px; }
-  button.rfr { min-height:44px; padding:0 16px; border:0; border-radius:12px; background:#fff; color:var(--pri-deep); font-size:14px; font-weight:800; cursor:pointer; }
+
+  /* 模式徽章：一眼看出当前在看哪个视图 */
+  .bd-badge { font-size:12.5px; font-weight:800; border-radius:999px; padding:7px 13px;
+    background:rgba(255,255,255,.95); color:var(--pri-deep); white-space:nowrap; }
+  .bd-badge.mgr { background:linear-gradient(135deg,#F5A25C,#E07A2F); color:#fff; }
+  .bd-switch { font-size:12.5px; font-weight:800; border-radius:999px; padding:7px 13px;
+    background:rgba(255,255,255,.16); color:#fff; border:1px solid rgba(255,255,255,.45);
+    cursor:pointer; white-space:nowrap; font-family:inherit; }
+  .bd-switch:active { transform:scale(.97); }
+  button.rfr { min-height:42px; padding:0 15px; border:0; border-radius:11px;
+    background:#fff; color:var(--pri-deep); font-size:14px; font-weight:800; cursor:pointer; font-family:inherit; }
   button.rfr.alt { background:rgba(255,255,255,.16); color:#fff; border:1px solid rgba(255,255,255,.45); }
   button.rfr:active { transform:scale(.97); }
-  .wrap { max-width:980px; margin:0 auto; padding:16px 14px 40px; }
 
-  .card { background:var(--card); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); margin-bottom:14px; border:1px solid var(--line); }
-  .card h2 { font-size:16.5px; margin:0 0 4px; display:flex; align-items:center; gap:8px; }
-  .card .h2-sub { font-size:12.5px; color:var(--ink2); margin:0 0 12px; }
-  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:10px; }
-  .kpi { background:#f8f6f0; border:1px solid var(--line); border-radius:14px; padding:14px 10px; text-align:center; }
-  .kpi b { display:block; font-size:26px; line-height:1.2; background:var(--grad); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
-  .kpi span { font-size:12.5px; color:var(--ink2); }
+  .wrap { max-width:1020px; margin:0 auto; padding:16px 14px 44px; }
+
+  .card { background:var(--card); border-radius:var(--r); padding:18px 16px;
+    box-shadow:var(--shadow); margin-bottom:14px; border:1px solid var(--line); }
+  .card:last-child { margin-bottom:0; }
+  .card h2 { font-size:16.5px; margin:0 0 5px; display:flex; align-items:center; gap:8px;
+    font-weight:800; color:var(--ink); }
+  .card .h2-sub { font-size:12.5px; color:var(--ink2); margin:0 0 14px; line-height:1.7; }
+
+  /* KPI 网格 */
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(126px,1fr)); gap:10px; }
+  .kpi { background:linear-gradient(160deg,#FAFBFA,#F4F8F7); border:1px solid var(--line);
+    border-radius:14px; padding:14px 10px; text-align:center; }
+  .kpi b { display:block; font-size:25px; line-height:1.25; font-weight:800;
+    background:var(--grad); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .kpi span { font-size:12.5px; color:var(--ink2); display:block; margin-top:3px; line-height:1.5; }
   .kpi.red b { background:none; -webkit-text-fill-color:var(--dan); color:var(--dan); }
   .kpi.green b { background:none; -webkit-text-fill-color:var(--ok); color:var(--ok); }
   .kpi.acc b { background:none; -webkit-text-fill-color:#b45f16; color:#b45f16; }
-  .note { font-size:13px; color:var(--ink2); line-height:1.85; margin-top:10px; }
-  .tip { font-size:13px; background:var(--c-bg-soft,#eef6f4); border:1px solid var(--line); color:var(--pri-deep); border-radius:12px; padding:10px 12px; line-height:1.8; margin-bottom:12px; }
 
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { padding:10px 8px; border-bottom:1px solid #f0ede4; text-align:left; }
-  th { color:var(--ink2); font-weight:700; white-space:nowrap; font-size:13px; background:#f8f6f0; }
-  tbody tr:active { background:#f8f6f0; }
+  .note { font-size:13px; color:var(--ink2); line-height:1.9; margin-top:12px; }
+  .tip { font-size:13px; background:var(--pri-soft); border:1px solid #CBE3DF; color:var(--pri-deep);
+    border-radius:var(--r-sm); padding:11px 13px; line-height:1.8; margin-bottom:13px; }
+  .tip.warn { background:#FFF6E9; border-color:#F0CE9A; color:#8A5A00; }
+  .tip.bad  { background:#FDECEC; border-color:#F3C2C2; color:#9A2020; }
+
+  /* 表格 */
+  .tb-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch;
+    border:1px solid var(--line2); border-radius:var(--r-sm); }
+  table { width:100%; border-collapse:collapse; font-size:14px; min-width:520px; }
+  th, td { padding:11px 9px; border-bottom:1px solid var(--line2); text-align:left; }
+  th { color:var(--ink2); font-weight:700; white-space:nowrap; font-size:12.5px;
+    background:#F7FAF9; position:sticky; top:0; z-index:1; }
+  tbody tr:last-child td { border-bottom:0; }
+  tbody tr:hover { background:#F7FAF9; }
   td.n { text-align:center; }
   .bad { color:var(--dan); font-weight:800; }
   .ok { color:var(--ok); font-weight:700; }
   .warn { color:var(--warn); font-weight:700; }
-  .nm-real { font-weight:800; color:var(--pri-deep); }
-  .nm-real .rt { font-size:11px; background:var(--pri); color:#fff; border-radius:6px; padding:1px 6px; margin-left:6px; font-weight:700; }
-  a.back { display:inline-block; margin-top:6px; font-size:14px; color:var(--pri); text-decoration:none; font-weight:700; }
+
+  /* 姓名：社区看板可点击揭示 */
+  .nm { display:inline-flex; align-items:center; gap:6px; font-weight:700; }
+  .nm-real { color:var(--pri-deep); font-weight:800; }
+  .nm-real .rt { font-size:10.5px; background:var(--pri); color:#fff; border-radius:5px;
+    padding:1.5px 6px; font-weight:700; }
+  /* 打码态：做成"可点"，用虚线框 + 锁提示明确告诉用户可以点 */
+  .nm-mask {
+    cursor:pointer; border:1.5px dashed #B6C9C6; border-radius:9px; padding:4px 9px;
+    background:#F7FAF9; color:var(--ink2); font-weight:700; user-select:none;
+    transition:border-color .18s, background .18s;
+  }
+  .nm-mask:hover { border-color:var(--pri); background:var(--pri-soft); }
+  .nm-mask:active { transform:scale(.97); }
+  .nm-mask .lk { font-size:10.5px; margin-left:4px; opacity:.7; }
+  .nm-revealing { opacity:.5; pointer-events:none; }
+
+  a.back { display:inline-flex; align-items:center; gap:5px; margin-top:14px; font-size:14px;
+    color:var(--pri); text-decoration:none; font-weight:700; }
   body.emb #exitLine { display:none; }
+
+  /* 揭示真实姓名的小弹窗 */
+  #nameDlg { position:fixed; inset:0; z-index:120; display:none;
+    background:rgba(16,34,32,.55); align-items:center; justify-content:center; padding:18px; }
+  #nameDlg .nbox { background:#fff; border-radius:20px; padding:22px 18px 18px;
+    width:100%; max-width:340px; box-shadow:var(--shadow-lg); text-align:center;
+    animation:boxIn .24s cubic-bezier(.2,.8,.3,1) both; }
+  #nameDlg .nic { font-size:34px; line-height:1; margin-bottom:8px; }
+  #nameDlg h3 { margin:0 0 6px; font-size:18px; color:var(--pri-deep); }
+  #nameDlg .who { font-size:14px; color:var(--ink2); margin-bottom:14px; line-height:1.7; }
+  #nameDlg input { width:100%; font-size:17px; padding:12px; min-height:50px;
+    border:2px solid var(--line); border-radius:13px; text-align:center;
+    letter-spacing:1px; background:#FAFBFA; font-family:inherit; }
+  #nameDlg input:focus { outline:none; border-color:var(--pri); box-shadow:0 0 0 4px rgba(31,122,107,.1); }
+  #nameDlg .err { color:var(--dan); font-size:13.5px; min-height:20px; margin:9px 0 3px;
+    font-weight:700; line-height:1.6; }
+  #nameDlg .btns { display:flex; gap:9px; }
+  #nameDlg button { flex:1; font-size:16px; padding:13px; min-height:48px; border-radius:13px;
+    border:0; cursor:pointer; font-weight:800; font-family:inherit; }
+  #nameDlg .c { background:#F1F4F3; border:1px solid var(--line); color:var(--ink2); }
+  #nameDlg .o { background:var(--grad); color:#fff; }
+
   @media print {
-    .bd-ops, a.back { display:none !important; }
-    .bd-head { background:#fff !important; color:#000 !important; box-shadow:none; }
+    .bd-ops, a.back, .nm-mask .lk { display:none !important; }
+    .bd-head { background:#fff !important; color:#000 !important; box-shadow:none; border-bottom:2px solid #000; }
     .bd-head h1, .bd-head .sub { color:#000 !important; }
+    .bd-badge, .bd-switch, button.rfr { border:1px solid #999 !important; }
     body { background:#fff; }
+    .card { box-shadow:none; break-inside:avoid; }
   }
 </style>
 </head>
 <body>
 
-<!-- 门禁：输入密码后直接进入管理者看板（全量真实数据） -->
+<!-- ============ 门禁：三级流程 ============ -->
 <div id="gate">
   <div class="box">
-    <div class="g-ic">🔓</div>
-    <h2>管理者看板</h2>
-    <p>输入看板密码后进入，可查看全部居民用药明细与真实姓名。</p>
-    <input id="pwd" type="password" autocomplete="off" placeholder="请输入看板密码">
-    <div class="err" id="err"></div>
-    <div class="btns">
-      <button class="c" id="cancel">取消</button>
-      <button class="o" id="ok">进入看板</button>
+    <!-- 步骤条 -->
+    <div class="steps">
+      <span class="s on" id="st1"></span><span class="s" id="st2"></span><span class="s" id="st3"></span>
+    </div>
+
+    <!-- 第 1 步：门禁密码 -->
+    <div id="p1">
+      <div class="g-ic">🔓</div>
+      <h2>康伴看板</h2>
+      <p>请输入看板门禁密码</p>
+      <input id="pwd" type="password" autocomplete="off" placeholder="门禁密码" aria-label="门禁密码">
+      <div class="err" id="err"></div>
+      <div class="btns">
+        <button class="c" id="cancel">取消</button>
+        <button class="o" id="ok">下一步</button>
+      </div>
+    </div>
+
+    <!-- 第 2 步：选择看板 -->
+    <div id="p2" style="display:none">
+      <div class="g-ic">🗂️</div>
+      <h2>请选择看板</h2>
+      <p>两个看板看到的内容不同，按需选择</p>
+      <div class="picks">
+        <button class="pick comm" id="pickComm">
+          <span class="pi">🏘️</span>
+          <span>
+            <span class="pt">社区治理看板</span>
+            <span class="pd">看汇总指标与居民使用情况，人名默认打码；点人名并输入人名密码可查看真实姓名。</span>
+          </span>
+        </button>
+        <button class="pick mgr" id="pickMgr">
+          <span class="pi">🔑</span>
+          <span>
+            <span class="pt">管理者看板<span class="lock">需密码</span></span>
+            <span class="pd">全量用户数据，真实姓名直接显示，无需逐个揭示。</span>
+          </span>
+        </button>
+      </div>
+      <div class="err" id="err2"></div>
+      <div class="btns" style="margin-top:12px">
+        <button class="c" id="back1">上一步</button>
+      </div>
+    </div>
+
+    <!-- 第 3 步：管理者看板密码 -->
+    <div id="p3" style="display:none">
+      <div class="g-ic">🔑</div>
+      <h2>管理者看板</h2>
+      <p>该看板可查看<b>全量用户数据与真实姓名</b><br>请输入看板密码继续</p>
+      <input id="mgrPw" type="password" autocomplete="off" placeholder="管理者看板密码" aria-label="管理者看板密码">
+      <div class="err" id="err3"></div>
+      <div class="btns">
+        <button class="c" id="back2">上一步</button>
+        <button class="o" id="okMgr">进入</button>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- 看板主体 -->
+<!-- ============ 揭示真实姓名 弹窗 ============ -->
+<div id="nameDlg">
+  <div class="nbox">
+    <div class="nic">🔍</div>
+    <h3>查看真实姓名</h3>
+    <div class="who">居民 <b id="ndTarget">—</b> 的真实姓名<br>需要人名密码</div>
+    <input id="namePw" type="password" autocomplete="off" placeholder="人名密码" aria-label="人名密码">
+    <div class="err" id="ndErr"></div>
+    <div class="btns">
+      <button class="c" id="ndCancel">取消</button>
+      <button class="o" id="ndOk">查看</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 看板主体 ============ -->
 <div id="main">
   <div class="bd-head">
-    <div class="wrap">
-      <div>
-        <h1>康伴 · 管理者看板</h1>
-        <div class="sub" id="genLine">—</div>
-      </div>
-      <div class="bd-ops">
-        <span class="bd-badge">🔐 全量数据 · 真实姓名</span>
-        <button class="rfr alt" id="btnRefresh">刷新数据</button>
+    <div class="inner">
+      <div class="bd-top">
+        <div class="bd-title">
+          <div class="bd-mark" id="bdMark">🏘️</div>
+          <div>
+            <h1 id="bdTitle">康伴 · 社区治理看板</h1>
+            <div class="sub" id="genLine">—</div>
+          </div>
+        </div>
+        <div class="bd-ops">
+          <span class="bd-badge" id="bdBadge">—</span>
+          <button class="bd-switch" id="btnSwitch">切换看板</button>
+          <button class="rfr" id="btnRefresh">刷新数据</button>
+        </div>
       </div>
     </div>
   </div>
+
   <div class="wrap">
     <div class="card">
       <h2>📊 今日 / 近 7 天总览</h2>
       <p class="h2-sub">居民账号的用药依从、漏服、余药与不适反馈汇总</p>
       <div class="kpis" id="kpis"></div>
     </div>
+
     <div class="card" id="siteCard" style="display:none">
-      <h2>📈 本站使用数据（含游客）</h2>
+      <h2>📈 本站使用数据</h2>
       <p class="h2-sub">今日打开与近 7 天使用情况，游客浏览也会记录</p>
       <div class="kpis" id="siteKpis"></div>
       <div class="note" id="siteNote"></div>
     </div>
+
     <div class="card" id="cumCard" style="display:none">
-      <h2>📚 累计使用数据（永久记录）</h2>
-      <p class="h2-sub">自平台上线以来的全部使用量，数据永久保存，不会随日期清除</p>
+      <h2>📚 累计使用数据 <span class="tag" style="font-size:11px;font-weight:800;background:#B45F16;color:#fff;border-radius:6px;padding:2px 7px;vertical-align:middle;">永久记录</span></h2>
+      <p class="h2-sub">自平台上线以来的全部使用量，<b>永久保存，不会随日期清除</b></p>
       <div class="kpis" id="cumKpis"></div>
       <div class="note" id="cumNote"></div>
     </div>
+
     <div class="card">
-      <h2>👥 居民明细（真实数据 · 真实姓名）</h2>
-      <p class="h2-sub">全部账号的近 7 天用药情况，人名已实名显示</p>
+      <h2>👥 居民明细</h2>
+      <p class="h2-sub" id="userSub">全部账号的近 7 天用药情况</p>
       <div class="tip" id="nameTip" style="display:none"></div>
-      <div style="overflow-x:auto"><table id="tbl"><thead><tr>
-        <th>姓名</th><th>性别</th><th class="n">药品</th><th class="n">7天依从</th><th class="n">今日漏服</th><th class="n">余药&lt;7天</th><th class="n">不适反馈</th>
-      </tr></thead><tbody id="tbody"></tbody></table></div>
+      <div class="tip" id="mgrTip" style="display:none"></div>
+      <div class="tip" id="commTip" style="display:none"></div>
+      <div class="tb-scroll">
+        <table id="tbl">
+          <thead><tr>
+            <th>姓名</th><th>性别</th><th class="n">药品</th><th class="n">7天依从</th>
+            <th class="n">今日漏服</th><th class="n">余药&lt;7天</th><th class="n">不适反馈</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
       <div class="note" id="emptyTip" style="display:none">暂无账号数据。</div>
     </div>
+
     <div class="card">
       <h2>📡 服务与提醒渠道</h2>
       <div class="note" id="chLine">—</div>
-      <div class="note">看板数据由服务端实时汇总（不落盘、不含手机号等隐私字段）；居民端入口：https://xinwo-yuhaojie.github.io/med-assist-demo/</div>
+      <div class="note">看板数据由服务端实时汇总（不落盘、不含手机号等隐私字段）；居民端入口：<br>
+        <a href="https://xinwo-yuhaojie.github.io/med-assist-demo/" target="_blank" rel="noopener"
+           style="color:var(--pri);font-weight:700;">https://xinwo-yuhaojie.github.io/med-assist-demo/</a></div>
     </div>
+
     <a class="back" id="exitLine" href="index.html">← 返回康伴首页</a>
   </div>
 </div>
 
 <script>
 (function () {
+  'use strict';
   var FC = 'https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run';
-  var gate = document.getElementById('gate');
-  var main = document.getElementById('main');
+  var gate = document.getElementById('gate'), main = document.getElementById('main');
   var emb = location.search.indexOf('emb=') >= 0;
   if (emb) document.body.className = 'emb';
 
-  var sessionPw = '';
-  try { sessionPw = sessionStorage.getItem('kbAdminPw') || ''; } catch (e) {}
+  /* 当前状态：门禁密码 + 所选模式 + 管理者密码 */
+  var S = { gatePw: '', board: 'community', mgrPw: '' };
+  try {
+    S.gatePw = sessionStorage.getItem('kbAdminPw') || '';
+    S.board = sessionStorage.getItem('kbAdminBoard') || 'community';
+    S.mgrPw = sessionStorage.getItem('kbMgrPw') || '';
+  } catch (e) {}
+  function save() {
+    try {
+      sessionStorage.setItem('kbAdminPw', S.gatePw);
+      sessionStorage.setItem('kbAdminBoard', S.board);
+      if (S.mgrPw) sessionStorage.setItem('kbMgrPw', S.mgrPw); else sessionStorage.removeItem('kbMgrPw');
+    } catch (e) {}
+  }
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function $(id) { return document.getElementById(id); }
 
-  /* 已验证过门禁 → 直接进看板 */
-  try { if (sessionStorage.getItem('kbAdminOk') === '1') enter(); } catch (e) {}
-
-  function tryIn() {
-    var v = document.getElementById('pwd').value;
-    var err = document.getElementById('err');
-    if (!v) { err.textContent = '请输入密码'; return; }
-    err.textContent = '验证中…';
-    fetch(FC + '/api/admin/stats', { method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', body: JSON.stringify({ password: v }) })
-      .then(function (r) {
-        if (r.status === 401) { err.textContent = '密码不对，请再试一次。'; return null; }
-        if (r.status === 429) { err.textContent = '尝试次数过多，请稍后再试。'; return null; }
-        if (!r.ok) throw new Error('http ' + r.status);
-        return r.json();
-      })
-      .then(function (j) {
-        if (!j) return;
-        try { sessionStorage.setItem('kbAdminOk', '1'); sessionStorage.setItem('kbAdminPw', v); } catch (e) {}
-        sessionPw = v;
-        enter();
-        render(j);
-      })
-      .catch(function () { err.textContent = '网络不可用，请稍后重试。'; });
+  /* ---------- 步骤切换 ---------- */
+  function step(n) {
+    $('p1').style.display = (n === 1) ? '' : 'none';
+    $('p2').style.display = (n === 2) ? '' : 'none';
+    $('p3').style.display = (n === 3) ? '' : 'none';
+    [['st1', 1], ['st2', 2], ['st3', 3]].forEach(function (p) {
+      var el = $(p[0]);
+      el.className = 's' + (p[1] === n ? ' on' : (p[1] < n ? ' done' : ''));
+    });
   }
-  document.getElementById('ok').addEventListener('click', tryIn);
-  document.getElementById('pwd').addEventListener('keydown', function (e) { if (e.key === 'Enter') tryIn(); });
-  document.getElementById('cancel').addEventListener('click', function () {
+  function fail(which, msg) { var e = $(which); if (e) { e.textContent = msg || ''; } }
+
+  function leave() {
     if (emb && parent && parent.document) {
       var w = parent.document.getElementById('kbBoardWrap');
       if (w && w.parentNode) w.parentNode.removeChild(w);
       return;
     }
     location.href = 'index.html';
-  });
+  }
+
+  /* ---------- 第 1 步：验门禁 ---------- */
+  function verifyGate() {
+    var v = $('pwd').value;
+    fail('err', '');
+    if (!v) { fail('err', '请输入密码'); return; }
+    fail('err', '验证中…');
+    /* 只用门禁密码请求社区视图 —— 顺带验证密码本身，
+       不传 board/managerPw，确保这一关不可能拿到实名数据。 */
+    api({ password: v, board: 'community' }).then(function (j) {
+      if (!j) return;
+      S.gatePw = v; save();
+      step(2);
+      fail('err', '');
+    });
+  }
+
+  /* ---------- 第 2 步：选看板 ---------- */
+  function chooseComm() {
+    S.board = 'community'; S.mgrPw = ''; save();
+    fail('err2', ''); fail('err3', '');
+    enter();
+  }
+  function chooseMgr() {
+    fail('err3', '');
+    step(3);
+    setTimeout(function () { try { $('mgrPw').focus(); } catch (e) {} }, 60);
+  }
+  function verifyMgr() {
+    var v = $('mgrPw').value;
+    fail('err3', '');
+    if (!v) { fail('err3', '请输入管理者看板密码'); return; }
+    fail('err3', '验证中…');
+    api({ password: S.gatePw, board: 'manager', managerPw: v }).then(function (j) {
+      if (!j) return;
+      /* 后端只有在密码正确时才会回 mgrOk:true；
+         若被降级为社区视图，明确告诉用户"密码不对"，不要让人以为进了管理者看板。 */
+      if (!j.mgrOk) { fail('err3', '管理者看板密码不正确'); return; }
+      S.board = 'manager'; S.mgrPw = v; save();
+      enter();
+    });
+  }
+
+  /* ---------- 统一请求 ---------- */
+  function api(body) {
+    return fetch(FC + '/api/admin/stats', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      cache: 'no-store', body: JSON.stringify(body)
+    }).then(function (r) {
+      if (r.status === 401) { routeErr('密码已失效，请重新输入门禁密码。'); return null; }
+      if (r.status === 429) { routeErr('尝试次数过多，请稍后再试。'); return null; }
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).catch(function () {
+      routeErr('网络不可用，请稍后重试。');
+      return null;
+    });
+  }
+  function routeErr(msg) {
+    if (main.style.display === 'block') {
+      var gl = $('genLine'); if (gl) gl.textContent = msg;
+    } else {
+      step(1); fail('err', msg); fail('err3', msg);
+    }
+  }
 
   function enter() {
     gate.style.display = 'none';
     main.style.display = 'block';
+    load();
   }
 
-  document.getElementById('btnRefresh').addEventListener('click', function () { load(); });
-
-  function kpi(v, t, cls) { return '<div class="kpi ' + (cls || '') + '"><b>' + esc(v) + '</b><span>' + esc(t) + '</span></div>'; }
-
+  /* ---------- 载入并渲染 ---------- */
   function load() {
-    var errTip = document.getElementById('genLine');
-    fetch(FC + '/api/admin/stats', { method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', body: JSON.stringify({ password: sessionPw }) })
-      .then(function (r) {
-        if (r.status === 401) { errTip.textContent = '密码已失效，请重新输入密码进入看板。'; return null; }
-        if (!r.ok) throw new Error('http ' + r.status);
-        return r.json();
-      })
-      .then(function (j) { if (j) render(j); })
-      .catch(function () { errTip.textContent = '统计数据加载失败（网络或密码失效），点右上角刷新重试。'; });
+    var body = { password: S.gatePw, board: S.board };
+    if (S.board === 'manager') body.managerPw = S.mgrPw;
+    api(body).then(function (j) {
+      if (!j) return;
+      /* 关键：以后端**实际生效**的视图为准，而不是我们请求的那个。
+         若管理者密码失效被降级，标题/徽章必须立刻改回社区视图，不能显示实名却挂着管理者标签。 */
+      var eff = (j.board === 'manager' && j.mgrOk) ? 'manager' : 'community';
+      S.board = eff;
+      if (eff === 'community') { S.mgrPw = ''; }
+      save();
+      render(j, eff);
+    });
   }
 
-  function render(j) {
+  function kpi(v, t, cls) {
+    return '<div class="kpi ' + (cls || '') + '"><b>' + esc(v) + '</b><span>' + esc(t) + '</span></div>';
+  }
+
+  function render(j, mode) {
     var s = j.stats || {};
-    document.getElementById('genLine').textContent =
-      '全部居民用药明细 · 真实姓名 · 数据实时汇总 · 生成于 ' + new Date().toLocaleString('zh-CN') + (j.today ? ('（统计日 ' + j.today + '）') : '');
-    /* 防呆：若后端尚未升级（仍按打码模式返回），明确提示，而不是让人误以为坏了 */
-    if (j.namesMasked) {
-      var nt = document.getElementById('nameTip');
-      nt.style.display = '';
-      nt.innerHTML = '⚠️ 当前后端仍是旧版本，返回的是<b>打码姓名</b>。真实姓名显示需要后端升级：在 FC 控制台重新上传最新部署包（fc-web.zip）即可。';
+    var isMgr = (mode === 'manager');
+
+    /* —— 头部：标题与徽章随模式切换 —— */
+    $('bdMark').textContent = isMgr ? '🔑' : '🏘️';
+    $('bdTitle').textContent = isMgr ? '康伴 · 管理者看板' : '康伴 · 社区治理看板';
+    var badge = $('bdBadge');
+    badge.textContent = isMgr ? '🔐 全量数据 · 真实姓名' : '🏘️ 社区视图 · 人名打码';
+    badge.className = 'bd-badge' + (isMgr ? ' mgr' : '');
+    $('genLine').textContent = '数据实时汇总 · 生成于 ' + new Date().toLocaleString('zh-CN')
+      + (j.today ? ('（统计日 ' + j.today + '）') : '');
+
+    /* —— 模式提示 —— */
+    var t1 = $('nameTip'), t2 = $('mgrTip'), t3 = $('commTip');
+    t1.style.display = 'none'; t2.style.display = 'none'; t3.style.display = 'none';
+    if (isMgr) {
+      $('userSub').textContent = '全部账号的近 7 天用药情况，真实姓名直接显示';
+      if (j.mgrDenied) {
+        t2.className = 'tip bad';
+        t2.innerHTML = '⚠️ <b>管理者看板密码未通过</b>，当前显示的是社区视图（人名已打码）。请返回重新输入看板密码。';
+        t2.style.display = '';
+      }
+    } else {
+      $('userSub').textContent = '全部账号的近 7 天用药情况；人名默认打码，点击可输入人名密码查看';
+      if (j.namesMasked) {
+        t3.className = 'tip';
+        t3.innerHTML = '🔒 当前为<b>社区治理视图</b>，人名已打码。<b>点击表格里的人名</b>，输入人名密码即可查看该居民真实姓名（一次一个，不会批量泄露）。';
+        t3.style.display = '';
+      }
+      if (j.namesMasked && j.mgrDenied) {
+        /* 后端仍是旧包：既不认识 board 也不回 mgrOk */
+        t1.className = 'tip warn';
+        t1.innerHTML = '⚠️ 后端可能仍是旧版本（未返回视图标识）。如需管理者看板，请在 FC 控制台重新上传最新部署包（fc-web.zip）。';
+        t1.style.display = '';
+      }
     }
 
     /* —— 今日 / 近7天总览 —— */
     var done = (s.taken7 || 0) + (s.missed7 || 0);
     var k = [];
     k.push(kpi(s.users == null ? '—' : s.users, '居民账号数'));
-    k.push(kpi(s.avgRate7 == null ? '—' : s.avgRate7 + '%', '7 天平均依从率', (s.avgRate7 != null && s.avgRate7 < 80) ? 'red' : 'green'));
-    k.push(kpi((s.taken7 || 0) + ' / ' + (s.missed7 || 0), '7 天按时 / 漏服(次)', (s.missed7 || 0) > 0 ? ((s.missed7 || 0) / (done || 1) > 0.15 ? 'red' : '') : 'green'));
+    k.push(kpi(s.avgRate7 == null ? '—' : s.avgRate7 + '%', '7 天平均依从率',
+      (s.avgRate7 != null && s.avgRate7 < 80) ? 'red' : 'green'));
+    k.push(kpi((s.taken7 || 0) + ' / ' + (s.missed7 || 0), '7 天按时 / 漏服(次)',
+      (s.missed7 || 0) > 0 ? ((s.missed7 || 0) / (done || 1) > 0.15 ? 'red' : '') : 'green'));
     k.push(kpi(s.activeToday == null ? '—' : s.activeToday, '今日有用药记录人数'));
     k.push(kpi(s.lowMeds == null ? '—' : s.lowMeds, '余药不足项', (s.lowMeds || 0) > 0 ? 'red' : 'green'));
-    k.push(kpi(((s.adverse7 && s.adverse7.mild) || 0) + '+' + ((s.adverse7 && s.adverse7.severe) || 0), '7 天不适(轻微+明显)', ((s.adverse7 && s.adverse7.severe) || 0) > 0 ? 'red' : ''));
-    document.getElementById('kpis').innerHTML = k.join('');
+    k.push(kpi(((s.adverse7 && s.adverse7.mild) || 0) + '+' + ((s.adverse7 && s.adverse7.severe) || 0),
+      '7 天不适(轻微+明显)', ((s.adverse7 && s.adverse7.severe) || 0) > 0 ? 'red' : ''));
+    $('kpis').innerHTML = k.join('');
 
-    /* —— 本站使用数据 —— */
+    /* —— 本站使用数据（近 7 天）—— */
     try {
       var siteDays = (j.site && j.site.days) || {};
       var td2 = siteDays[j.today] || { ev: {}, uv: 0 };
@@ -257,55 +569,163 @@
       sk.push(kpi(tot.addmed || 0, '7天添加药品'));
       sk.push(kpi(tot.adr || 0, '7天不适报告'));
       sk.push(kpi(tot.weekly || 0, '7天周报发送'));
-      document.getElementById('siteKpis').innerHTML = sk.join('');
-      document.getElementById('siteNote').textContent =
-        '统计口径：人数按设备指纹去重（不存 IP 原值）；近 7 天有访问天数 ' + activeDays + ' 天，总打开 ' + (tot.visit || 0) + ' 次。游客浏览也会记录，防止被白嫖测试无感知。';
-      document.getElementById('siteCard').style.display = 'block';
-    } catch (e) {}
+      $('siteKpis').innerHTML = sk.join('');
+      $('siteNote').textContent = '统计口径：人数按设备指纹去重（不存 IP 原值）；近 7 天有访问天数 ' + activeDays
+        + ' 天，总打开 ' + (tot.visit || 0) + ' 次。游客浏览也会记录，防止被白嫖测试无感知。';
+      $('siteCard').style.display = 'block';
+    } catch (e) { $('siteCard').style.display = 'none'; }
 
-    /* —— 累计使用数据（永久记录） —— */
+    /* —— 累计使用数据（永久记录）—— */
     try {
       var cum = j.cum || null;
-      if (!cum) { document.getElementById('cumCard').style.display = 'none'; throw new Error('no cum'); }
+      if (!cum) { $('cumCard').style.display = 'none'; throw new Error('no cum'); }
       var ce = cum.ev || {};
       var ck = [];
       ck.push(kpi(cum.days || 0, '累计使用天数', 'acc'));
+      ck.push(kpi(cum.uv || 0, '累计独立设备', 'acc'));
       ck.push(kpi(ce.visit || 0, '累计打开次数'));
-      ck.push(kpi(cum.uv || 0, '累计独立设备'));
       ck.push(kpi(ce.login || 0, '累计登录次数'));
+      ck.push(kpi(ce.guest || 0, '累计游客浏览'));
       ck.push(kpi(ce.chat || 0, '累计对话次数'));
       ck.push(kpi(ce.checkin || 0, '累计打卡次数'));
       ck.push(kpi(ce.addmed || 0, '累计添加药品'));
       ck.push(kpi(ce.adr || 0, '累计不适报告'));
       ck.push(kpi(ce.weekly || 0, '累计周报发送'));
-      ck.push(kpi(s.users == null ? '—' : s.users, '累计居民账号'));
-      document.getElementById('cumKpis').innerHTML = ck.join('');
-      document.getElementById('cumNote').textContent =
-        '永久记录：以上数据汇总自平台上线以来每一天的使用日志，不随「今日 / 近7天」窗口清除。' +
-        (cum.firstDate ? ('首次使用：' + cum.firstDate + '；最近使用：' + (cum.lastDate || '—') + '。') : '');
-      document.getElementById('cumCard').style.display = 'block';
-    } catch (e) {}
+      ck.push(kpi(s.users == null ? '—' : s.users, '当前居民账号'));
+      $('cumKpis').innerHTML = ck.join('');
+      var span = '';
+      if (cum.firstDate) {
+        span = '首次使用：' + cum.firstDate + '；最近使用：' + (cum.lastDate || '—') + '；'
+          + '已持续 ' + (cum.days || 0) + ' 天。';
+      }
+      $('cumNote').textContent = '永久记录：以上数据汇总自平台上线以来每一天的使用日志（按天分桶存储），'
+        + '不会像「今日 / 近 7 天」那样随窗口期清除，可用于长期记录使用量。' + span;
+      $('cumCard').style.display = 'block';
+    } catch (e) { $('cumCard').style.display = 'none'; }
 
-    /* —— 居民明细（真实姓名） —— */
-    var rows = (s.perUser || []).map(function (p) {
+    /* —— 居民明细 —— */
+    var list = s.perUser || [];
+    $('tbody').innerHTML = list.map(function (p) {
       var rate = p.rate7 == null ? '—' : p.rate7 + '%';
       var rateCls = p.rate7 == null ? '' : (p.rate7 >= 85 ? 'ok' : (p.rate7 >= 70 ? 'warn' : 'bad'));
-      return '<tr><td><span class="nm-real">' + esc(p.name) + '<span class="rt">实名</span></span></td>' +
+      var nmCell;
+      if (isMgr) {
+        nmCell = '<span class="nm nm-real">' + esc(p.name) + '<span class="rt">实名</span></span>';
+      } else {
+        /* 社区视图：人名做成"可点击"，点一下要人名密码 */
+        nmCell = '<span class="nm-mask" data-id="' + esc(p.id || '') + '" role="button" tabindex="0"'
+          + ' title="点击查看真实姓名">' + esc(p.name) + '<span class="lk">🔒</span></span>';
+      }
+      return '<tr><td>' + nmCell + '</td>' +
         '<td>' + esc(p.gender || '—') + '</td>' +
         '<td class="n">' + (p.meds || 0) + '</td>' +
         '<td class="n ' + rateCls + '">' + rate + '</td>' +
         '<td class="n' + (p.missedToday ? ' bad' : '') + '">' + (p.missedToday || 0) + '</td>' +
         '<td class="n' + (p.low ? ' bad' : '') + '">' + (p.low || 0) + '</td>' +
-        '<td class="n' + (p.adrSevere ? ' bad' : (p.adrMild ? ' warn' : '')) + '">' + ((p.adrMild || 0) + (p.adrSevere || 0)) + (p.adrSevere ? '(明显' + p.adrSevere + ')' : '') + '</td></tr>';
+        '<td class="n' + (p.adrSevere ? ' bad' : (p.adrMild ? ' warn' : '')) + '">'
+          + ((p.adrMild || 0) + (p.adrSevere || 0)) + (p.adrSevere ? ('(明显' + p.adrSevere + ')') : '') + '</td></tr>';
     }).join('');
-    document.getElementById('tbody').innerHTML = rows;
-    document.getElementById('emptyTip').style.display = rows ? 'none' : 'block';
+    $('emptyTip').style.display = list.length ? 'none' : 'block';
 
-    /* —— 服务与提醒渠道 —— */
+    /* —— 提醒渠道 —— */
     var c = s.channels || {};
-    document.getElementById('chLine').innerHTML =
-      '已开启提醒渠道（按账号）：邮箱 <b>' + (c.email || 0) + '</b> · 企业微信 <b>' + (c.wechat || 0) + '</b> · 短信 <b>' + (c.sms || 0) + '</b> · 个人微信推送 <b>' + (c.wxpush || 0) + '</b><br>' +
-      '微信推送与邮箱通知由康伴智能体自动发送：老人到点未打卡 → 5 分钟内扫描 → 家属微信收到"一键确认"提醒。';
+    $('chLine').innerHTML = '已开启提醒渠道（按账号）：邮箱 <b>' + (c.email || 0) + '</b> · 企业微信 <b>'
+      + (c.wechat || 0) + '</b> · 短信 <b>' + (c.sms || 0) + '</b> · 个人微信推送 <b>' + (c.wxpush || 0) + '</b><br>'
+      + '微信推送与邮箱通知由康伴智能体自动发送：老人到点未打卡 → 5 分钟内扫描 → 家属微信收到「一键确认」提醒。';
+  }
+
+  /* ==========================================================
+     社区视图：点人名 → 输密码 → 显示真实姓名
+     —— 只请求当前这一个人（后端也只返回这一个）
+     ========================================================== */
+  var ndPending = null;
+  function openNameDlg(el) {
+    ndPending = el;
+    $('ndTarget').textContent = el.textContent.replace('🔒', '').trim() || '该居民';
+    $('namePw').value = '';
+    fail('ndErr', '');
+    $('nameDlg').style.display = 'flex';
+    setTimeout(function () { try { $('namePw').focus(); } catch (e) {} }, 60);
+  }
+  function closeNameDlg() { $('nameDlg').style.display = 'none'; ndPending = null; }
+  function revealName() {
+    var v = $('namePw').value;
+    if (!ndPending) return;
+    fail('ndErr', '');
+    if (!v) { fail('ndErr', '请输入人名密码'); return; }
+    fail('ndErr', '验证中…');
+    var id = ndPending.getAttribute('data-id');
+    fetch(FC + '/api/admin/names', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store',
+      body: JSON.stringify({ password: S.gatePw, id: id, namePw: v })
+    }).then(function (r) {
+      if (r.status === 401) { fail('ndErr', '门禁密码已失效，请重新进入看板'); return null; }
+      if (r.status === 403) { fail('ndErr', '人名密码不正确'); return null; }
+      if (r.status === 429) { fail('ndErr', '尝试过于频繁，请稍后再试'); return null; }
+      if (r.status === 404) { fail('ndErr', '未找到该居民信息'); return null; }
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      if (!j || !j.ok) return;
+      /* 原地替换：把打码块换成实名标记，不整表重绘（保持滚动位置） */
+      var el = ndPending;
+      el.className = 'nm nm-real';
+      el.removeAttribute('data-id'); el.removeAttribute('role'); el.removeAttribute('tabindex');
+      el.title = '';
+      el.innerHTML = esc(j.name) + '<span class="rt">实名</span>';
+      closeNameDlg();
+    }).catch(function () { fail('ndErr', '网络不可用，请稍后重试'); });
+  }
+
+  /* —— 事件绑定 —— */
+  $('ok').addEventListener('click', verifyGate);
+  $('pwd').addEventListener('keydown', function (e) { if (e.key === 'Enter') verifyGate(); });
+  $('cancel').addEventListener('click', leave);
+  $('pickComm').addEventListener('click', chooseComm);
+  $('pickMgr').addEventListener('click', chooseMgr);
+  $('okMgr').addEventListener('click', verifyMgr);
+  $('mgrPw').addEventListener('keydown', function (e) { if (e.key === 'Enter') verifyMgr(); });
+  $('back1').addEventListener('click', function () { fail('err2', ''); step(1); });
+  $('back2').addEventListener('click', function () { fail('err3', ''); step(2); });
+  $('btnRefresh').addEventListener('click', function () { load(); });
+  $('btnSwitch').addEventListener('click', function () {
+    /* 切换看板：回门禁第2步重新选，已记住门禁密码不必重输 */
+    step(2); fail('err2', ''); fail('err3', '');
+    gate.style.display = ''; main.style.display = 'none';
+  });
+  $('ndOk').addEventListener('click', revealName);
+  $('namePw').addEventListener('keydown', function (e) { if (e.key === 'Enter') revealName(); });
+  $('ndCancel').addEventListener('click', closeNameDlg);
+  $('nameDlg').addEventListener('click', function (e) { if (e.target === $('nameDlg')) closeNameDlg(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' && e.key !== 'Esc' && e.keyCode !== 27) return;
+    if ($('nameDlg').style.display === 'flex') { closeNameDlg(); return; }
+    if (gate.style.display === 'none' && S.board === 'manager') {
+      /* 管理者看板按 ESC 直接退回模式选择，避免把密码一直留在会话里 */
+      step(2); gate.style.display = ''; main.style.display = 'none';
+    }
+  });
+  /* 事件委托：点人名揭示 */
+  $('tbody').addEventListener('click', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('.nm-mask') : null;
+    if (el) openNameDlg(el);
+  });
+  $('tbody').addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var el = e.target && e.target.closest ? e.target.closest('.nm-mask') : null;
+    if (el) { e.preventDefault(); openNameDlg(el); }
+  });
+
+  /* —— 已通过门禁则跳过第 1 步 —— */
+  function boot() {
+    if (!S.gatePw) { step(1); return; }
+    step(2);
+  }
+  if (S.gatePw && S.board === 'manager' && S.mgrPw) {
+    /* 本会话上次就是管理者看板 → 直接进 */
+    gate.style.display = 'none'; main.style.display = 'block'; load();
+  } else {
+    boot();
   }
 })();
 </script>
