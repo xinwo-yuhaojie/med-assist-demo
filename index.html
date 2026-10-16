@@ -3141,7 +3141,7 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
            完整语义放在 title/aria-label 与页面内的 #simpleExitInline 大按钮上。 -->
       <button class="icon-btn" id="btnSimpleExit" title="退出老人模式，恢复完整界面" aria-label="退出老人模式，恢复完整界面">退出</button>
       <button class="icon-btn" id="btnFamilyExit" title="退出家属模式" aria-label="退出家属模式">退出</button>
-      <a class="icon-btn" href="dashboard.html" title="管理者页面" aria-label="社区治理管理者页面" style="text-decoration:none">管理者</a>
+      <a class="icon-btn" href="dashboard.html" title="管理者看板" aria-label="管理者看板" style="text-decoration:none">看板</a>
       <button class="icon-btn" id="accountBtn" title="登录或注册云端账号" aria-label="登录或注册云端账号">登录/注册</button>
     </div>
   </header>
@@ -3673,6 +3673,12 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
       <div class="card">
         <div class="card-title">📊 我的用药数据 <span class="tag">近 7 天 / 近 14 天</span></div>
         <div class="stat-grid" id="dataStats"></div>
+      </div>
+      <!-- v24：累计档案（180 天窗口汇总，不随 7/14 天趋势窗口清除） -->
+      <div class="card">
+        <div class="card-title">📚 我的累计档案 <span class="tag">近 180 天</span></div>
+        <div class="small muted" style="margin-bottom:10px">这些数字按半年的使用记录累计，不受上方 7/14/30 天趋势窗口影响。</div>
+        <div class="stat-grid" id="dataCum"></div>
       </div>
       <div id="dataCharts"></div>
       <div id="dataTable"></div>
@@ -11486,6 +11492,47 @@ EMC.Care = (function () {
       stat(s14.taken, '近 14 天已服次数') +
       stat(E.screen(medsForEngine()).count, '风险提示项数');
 
+    /* v24：累计档案（单独拉 180 天窗口计算，不干扰 14 天视图状态；一次性缓存）。
+       说明：不用 summary(9999)——那会生成上万个日格卡死页面；云端接口上限也是 180 天。 */
+    var cumBox0 = $id('dataCum');
+    if (cumBox0 && !window.__kbCumCache) {
+      window.__kbCumCache = { loading: true };
+      store.getRecords(180).then(function (recs180) {
+        var taken = 0, missed = 0, days = {};
+        (recs180 || []).forEach(function (r) {
+          if (r.status === 'taken') taken++;
+          else if (r.status === 'missed') missed++;
+          if (r.status !== 'pending') days[r.date] = 1;
+        });
+        var firstDay = Object.keys(days).sort()[0] || '';
+        window.__kbCumCache = { taken: taken, missed: missed, days: Object.keys(days).length, firstDay: firstDay };
+        renderCumCard();
+      }).catch(function () { window.__kbCumCache = null; });
+    } else if (cumBox0) {
+      renderCumCard();
+    }
+    function renderCumCard() {
+      var cumBox = $id('dataCum');
+      var cum = window.__kbCumCache;
+      if (!cumBox || !cum || cum.loading) {
+        if (cumBox && (!cum || cum.loading)) cumBox.innerHTML = '<div class="skeleton w70"></div><div class="skeleton w45"></div>';
+        return;
+      }
+      var hpAll = S.health || [];
+      var bpAll = hpAll.filter(function (h) { return h.type === 'bp'; }).length;
+      var gluAll = hpAll.filter(function (h) { return h.type === 'glu'; }).length;
+      var adrAll = hpAll.filter(function (h) { return h.type === 'adr'; }).length;
+      cumBox.innerHTML =
+        statTone(cum.taken, '累计按时服药（次）', 'ok') +
+        statTone(cum.missed, '累计漏服（次）', cum.missed ? 'warn' : 'ok') +
+        statTone(cum.days, '累计打卡天数', 'ok') +
+        statTone(cum.firstDay || '—', '首次打卡日期', '') +
+        statTone(bpAll, '血压记录（次）', '') +
+        statTone(gluAll, '血糖记录（次）', '') +
+        statTone(adrAll, '不适自查（次）', adrAll ? 'warn' : 'ok') +
+        statTone(S.meds.length, '当前在用药品（种）', '');
+    }
+
     var slotData = EMC.SLOTS.map(function (sl) {
       return { name: sl.label, value: s14.bySlot[sl.key] || 0 };
     });
@@ -11544,6 +11591,12 @@ EMC.Care = (function () {
 
   function exportCsv() {
     var s = E.summary(S.records, S.meds, 14);
+    var cumTaken = 0, cumMissed = 0, cumDays = {};
+    S.records.forEach(function (r) {
+      if (r.status === 'taken') cumTaken++;
+      else if (r.status === 'missed') cumMissed++;
+      if (r.status !== 'pending') cumDays[r.date] = 1;
+    });
     var lines = ['日期,时段,药品,类别,状态,记录时间'];
     S.records.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }).forEach(function (r) {
       var dr = E.drugOf(r.mid) || {};
@@ -11554,6 +11607,9 @@ EMC.Care = (function () {
     lines.push('近7天依从率(%),' + s.rate);
     lines.push('近7天漏服次数,' + s.missed);
     lines.push('在用药品数,' + S.meds.length);
+    lines.push('累计按时服药次数,' + cumTaken);
+    lines.push('累计漏服次数,' + cumMissed);
+    lines.push('累计打卡天数,' + Object.keys(cumDays).length);
     if (S.health.length) {
       lines.push('');
       lines.push('健康记录日期,类型,收缩压,舒张压,心率,血糖,餐次');
@@ -13303,7 +13359,7 @@ EMC.Care = (function () {
     { id: 'mi-fs',    kind: 'fs',    ic: '📝', nm: '切换字号', ds: '小 / 中 / 大 / 特大 四档' },
     { id: 'mi-theme', kind: 'theme', ic: '🌗', nm: '切换显示模式', ds: '明亮 / 夜间 / 高对比' },
     { id: 'mi-help',  kind: 'help',  ic: '❓', nm: '帮助与说明', ds: '怎么用、遇到问题怎么办' },
-    { id: 'mi-board', kind: 'board', ic: '📈', nm: '社区治理管理者页面', ds: '社区工作人员查看的数据页' }
+    { id: 'mi-board', kind: 'board', ic: '📈', nm: '管理者看板', ds: '社区治理与使用数据看板' }
   ];
 
   /** 渲染「更多」面板的入口列表（每次打开时重建，保证与当前登录态一致） */
