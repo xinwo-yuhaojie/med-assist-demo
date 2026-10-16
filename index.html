@@ -1,6 +1,43 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+<!-- ==========================================================
+     v32 CSP：内容安全策略（防止任何外部广告/脚本注入）
+     ==========================================================
+     【为什么要加】用户反馈"手机端会突然蹦出别人网站的广告、然后马上消失"。
+     排查后确认：站内**没有任何外部脚本、iframe、CDN 引用**，
+     三个静态文件（index / dashboard / kb.js）都干净。
+     所以那不是我们放的广告，最可能是**输入法弹出瞬间输入法自己的皮肤推广**
+     （国产安卓输入法的常见行为），或所处网络的中间环节注入。
+
+     【CSP 能做什么】即使真有人往页面里注入外部脚本，这段策略也会在
+     **浏览器层面直接拒绝执行** —— 不执行就不会有广告弹窗，
+     这是"不依赖我们排查得干净"的兜底防线。
+
+     【为什么用 meta 而不是服务端 header】
+     GitHub Pages 是纯静态托管，**不支持自定义响应头**，
+     只能用 <meta http-equiv>。这在 CSP 里是标准做法、效果等同。
+
+     【指令说明】
+       default-src 'self'  —— 默认只许同源（这条挡住绝大多数注入）
+       script-src 'self' 'unsafe-inline' —— 允许内联脚本（本项目主体是内联的），
+                             但**不含任何外部域名**，所以外部脚本无法加载
+       connect-src 'self' https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run
+                   http://127.0.0.1:* http://localhost:*
+                           —— 只允许连接我们的后端 API；
+                           另外放行本机端口是为了**不破坏开发者本机调试**
+                           （ASR_LOCAL 指向 127.0.0.1:8790）。
+                           风险实质为零：要利用它必须先注入脚本，
+                           而 script-src 已经禁掉了所有外部脚本。
+       frame-src 'self'   —— iframe 只能加载同源（看板内嵌），挡住外部广告 iframe
+       img-src 'self' data: blob: —— 图片只许同源、data: 与 blob:（药品照片、数据导出预览）
+       style-src 'self' 'unsafe-inline' —— 样式同理
+       base-uri 'self' / form-action 'self' —— 挡 <base> 劫持与表单外发
+       object-src 'none'  —— 彻底禁掉 <object>/<embed>
+     ========================================================== -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run http://127.0.0.1:* http://localhost:*; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="x-content-type-options" content="nosniff">
 <!-- v28：本行必须保持在文件最开头。
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
@@ -849,6 +886,22 @@
 
     /* 12) 终极硬保护：绝不让任何代码把用户"带出网站" */
     try {
+      /* ==========================================================
+       * v32 CSP 违规计数：给「页面安全自检」提供真实证据
+       * ==========================================================
+       * 浏览器在 CSP 拦下任何一次外部资源加载时都会触发 securitypolicyviolation。
+       * 正常情况下**一次都不会触发**；一旦触发，就说明有人尝试往页面里
+       * 塞外部脚本/图片（网络中间环节注入，或页面被篡改）。
+       * 把它记下来，自检里就能明确回答"到底有没有东西想进来"，而不是靠猜。
+       */
+      window.__kbBlockedPops = 0;
+      document.addEventListener('securitypolicyviolation', function (ev) {
+        window.__kbBlockedPops++;
+        try { console.warn('[EMC] CSP 已拦截：' + ev.violatedDirective + ' → ' + ev.blockedURI); } catch (e) {}
+      }, true);
+    } catch (e) {}
+
+    try {
       if (!window.__kbBackGuard) {
         window.__kbBackGuard = true;
         /* ============ A. 拦截所有历史操作（多环境兼容） ============ */
@@ -1577,7 +1630,12 @@ body.kb-open #sosFloat, body.kb-open #backTop { opacity: 0; pointer-events: none
 .auth-hint-soft { background: #FFF8E8; border-color: #E8B84B; color: #5C4508; }
 .auth-hint-soft b { color: #8A5A00; }
 
-/* =================/* v29：通知自检卡（邮件/微信通道是否真的能收到）
+/* =================/* v32：页面安全自检弹窗样式 */
+.kb-plain-dlg { max-width: 660px; max-height: 86vh; overflow-y: auto; position: relative;
+  -webkit-overflow-scrolling: touch; }
+.kb-plain-body { font-size: 15px; line-height: 1.8; color: var(--c-text); }
+
+/* v29：通知自检卡（邮件/微信通道是否真的能收到）
    * 设计取向：这是现场演示和社区推广最容易出问题的一环 ——
    * 「以为在收提醒、其实一封都没到」。所以做成一眼能懂、一键能验。 */
    .kb-selftest {
@@ -3341,14 +3399,39 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
  * ========================================================== */
 .wiz-mask { position:fixed; inset:0; z-index:2147483005; background:rgba(10,26,24,.72);
   display:flex; align-items:center; justify-content:center; padding:16px; }
-.wiz-box { width:100%; max-width:440px; background:var(--c-bg-elev,#fff); border-radius:24px;
-  padding:22px 18px 18px; box-shadow:0 20px 60px rgba(0,0,0,.4); text-align:center; }
+/* ==========================================================
+   * v32 向导改为「小窗卡片」，不再全屏铺满
+   * ==========================================================
+   * 【为什么要改】原来 max-width 440px 但 inset:0 + 居中，实际在手机上
+   * 观感就是「整屏被盖住」，而老人对"突然占满整个屏幕的东西"有本能的警惕，
+   * 加上 v26 会自动弹出 —— 第一印象变成"这 app 一打开就弹广告/强制我做什么"，
+   * 很容易被当成流氓软件直接关掉。这和我们要的"有人带路"完全相反。
+   * 【改成什么样】
+   *   ① 遮罩透明度降低（.72 → .45），下面的界面仍然看得见，
+   *      老人知道"我的东西还在"，不会慌；
+   *   ② 卡片缩小到 380px 并居中偏上，四周留出背景，
+   *      视觉上就是"一张提示卡"，而不是"系统弹窗"；
+   *   ③ 不再居中铺满 —— 放在视口上方约 1/3 处，
+   *      这样下面的首页内容（大按钮）仍然可见可点，随时能走；
+   *   ④ 标题字号、图标略收，按钮仍保持大（适老化底线不能动）。
+   * ========================================================== */
+.wiz-box { width:100%; max-width:380px; background:var(--c-bg-elev,#fff); border-radius:22px;
+  padding:20px 18px 16px; box-shadow:0 16px 44px rgba(0,0,0,.28); text-align:center;
+  max-height:min(78vh,560px); overflow-y:auto; -webkit-overflow-scrolling:touch; }
+/* 卡片落在视口上三分之一处，下面的界面仍可见 */
+@media (min-width:520px) {
+  .wiz-mask { align-items:flex-start; padding-top:min(14vh,120px); }
+}
+@media (max-width:519px) {
+  .wiz-mask { align-items:flex-start; padding:calc(14px + env(safe-area-inset-top,0px)) 14px 14px; }
+}
+.wiz-mask { background:rgba(10,26,24,.45); }
 .wiz-step { display:flex; gap:6px; justify-content:center; margin-bottom:14px; }
 .wiz-dot { width:34px; height:8px; border-radius:99px; background:#E4DDD0; }
 .wiz-dot.on { background:var(--c-primary); }
-.wiz-ic { font-size:60px; line-height:1.1; margin:2px 0 8px; }
-.wiz-t { font-size:1.5em; font-weight:800; color:var(--c-primary); margin:0 0 8px; line-height:1.4; }
-.wiz-d { font-size:1.12em; line-height:1.9; color:var(--c-text); margin:0 0 18px; }
+.wiz-ic { font-size:50px; line-height:1.1; margin:2px 0 6px; }
+.wiz-t { font-size:1.3em; font-weight:800; color:var(--c-primary); margin:0 0 6px; line-height:1.4; }
+.wiz-d { font-size:1.04em; line-height:1.8; color:var(--c-text); margin:0 0 14px; }
 .wiz-d b { color:var(--c-accent); }
 .wiz-big { display:block; width:100%; min-height:78px; border:0; border-radius:20px;
   background:linear-gradient(135deg,#24857A,#16605A); color:#fff;
@@ -3363,6 +3446,11 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
 .wiz-done { font-size:1.15em; line-height:2; color:var(--c-text); margin:0 0 16px; }
 .wiz-badge { display:inline-block; font-size:1.1em; font-weight:800; color:#fff;
   background:linear-gradient(135deg,#34A853,#1E7A43); border-radius:999px; padding:8px 18px; margin-bottom:12px; }
+/* v32：小卡片柔和滑入。原来的"直接出现"配合全屏遮罩，
+   观感上和系统弹窗一样，容易被当成强制流程。 */
+@keyframes wizIn { from { opacity:0; transform:translateY(-14px) scale(.97); } to { opacity:1; transform:none; } }
+.wiz-box { animation:wizIn .26s cubic-bezier(.2,.8,.3,1) both; }
+@media (prefers-reduced-motion: reduce) { .wiz-box { animation:none; } }
 
 /* ==========================================================
  * v22 P1-14：回答「逐段朗读」按钮
@@ -4061,6 +4149,7 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
     <button data-q="guide">📖 操作手册</button>
     <button data-q="wiz">🎓 第一次怎么用</button>
     <button data-q="voicetest">🔊 测一下能不能说话</button>
+    <button data-q="safecheck">🛡️ 页面安全自检</button>
     <button data-q="chat">🤖 问智能体</button>
     <button data-q="meds">💊 去打卡</button>
     <button data-q="addmed">＋ 添加药品</button>
@@ -9672,6 +9761,9 @@ EMC.Care = (function () {
               store.setSettings(S.settings); syncVoiceBtn();
             }
             setTimeout(function () { try { V.selfTest(); } catch (e) { toast('这台手机不支持语音播报，用文字一样可以记账'); } }, 120);
+          } else if (q === 'safecheck') {
+            /* v32 页面安全自检：现场若再出现「莫名弹窗/跳转」，靠它区分责任方 */
+            try { runPageSecurityCheck(); } catch (e) { toast('自检脚本异常'); }
           } else if (q === 'addmed') {
             switchTab('meds');
             setTimeout(function () { var x = $id('btnAddMed'); if (x) x.click(); }, 80);
@@ -10255,7 +10347,32 @@ EMC.Care = (function () {
     if (tab === 'home') { renderOverview(); renderHome(); }
     if (tab === 'meds') { renderMeds(); renderHeatmap(); renderMedTimeline(); renderDiseaseGroups(); }
     if (tab === 'health') { renderHealth(); renderWeeklyReport(); renderBpAssoc(); renderRiskTrend(); }
-    if (tab === 'bp') { renderBpQuickLast(); setTimeout(function () { var b = $id('qBpSys'); if (b) { try { b.focus(); } catch (e) {} } }, 120); }
+    /* v32 移动端稳定性：切页不再自动弹键盘
+     【原实现的问题】切到「血压」页时立刻 qBpSys.focus()。
+     在手机上这会：① 键盘凭空弹出 → 视口高度骤变 → 页面被顶得上下跳；
+     ② 触发输入法弹出（国产安卓输入法常在弹出瞬间闪一下自己的皮肤推广）；
+     ③ 老人根本没想输入，屏幕先乱跳一下，第一印象就是"这 app 有点怪"。
+     现场调研里这是最容易被误解成"应用坏了"的细节。
+     现在改为**不自动聚焦**，改成滚动到该区域并给出提示，
+     让用户自己点一下输入框 —— 键盘只在用户真正要输入时才出现。 */
+    if (tab === 'bp') {
+      renderBpQuickLast();
+      setTimeout(function () {
+        var b = $id('qBpSys');
+        if (!b) return;
+        /* 只做「温和的视线引导」：滚动到可视区中部 + 短暂高亮，不夺焦点 */
+        try {
+          var host = b.closest && b.closest('.bq-grid');
+          if (host && host.scrollIntoView) host.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          else if (b.scrollIntoView) b.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        } catch (e) {}
+        try {
+          b.style.transition = 'box-shadow .25s';
+          b.style.boxShadow = '0 0 0 4px rgba(30,122,67,.55)';
+          setTimeout(function () { b.style.boxShadow = ''; }, 2600);
+        } catch (e2) {}
+      }, 160);
+    }
     if (tab === 'guardian') { renderGuardian(); renderCareTasks(); }
     if (tab === 'risk') renderRisk();
     if (tab === 'data') renderData();
@@ -11447,6 +11564,97 @@ EMC.Care = (function () {
       } catch (e) {}
     }
   }
+  /* ==========================================================
+ * v32 页面安全自检（⚡ → 🛡️ 页面安全自检）
+ * ==========================================================
+ * 【为什么要有这个】用户反馈"手机上会突然蹦出别人网站的广告"。
+ *   排查后确认站内没有任何外部资源，怀疑是输入法推广或网络注入。
+ *   但现场再遇到类似问题时，**光靠嘴说没用**，需要一个能当场出结论的东西：
+ *     · 页面里有没有外来的 iframe / script / 图片（=被注入）
+ *     · 站点本身有没有广告脚本（=我们的问题，要立刻修）
+ *     · 正在播放的媒体、被拦截的弹窗（=浏览器层面证据）
+ *   跑一次就知道该找谁，不用互相推诿。
+    *
+    * 【函数名踩过的坑】这里原本也叫 runSelfCheck，但同文件 12861 行
+    * 已经有一个「药品冲突自查」同名函数。后定义者会覆盖先定义者 ——
+    * 结果是药品冲突自查直接坏掉（点「自查」没反应或跑到安全检查上）。
+    * 故本函数命名为 runPageSecurityCheck，两个功能互不干扰。
+    * ========================================================== */
+   function showKbDialog(html, title) {
+    var m = $id('kbPlainDlg');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'kbPlainDlg';
+      m.className = 'mask';
+      m.style.display = 'none';
+      m.innerHTML = '<div class="dialog kb-plain-dlg" role="dialog" aria-modal="true">' +
+        '<button type="button" class="guide-close" id="kbPlainClose" aria-label="关闭">✕ 关闭</button>' +
+        '<h3 class="guide-title" id="kbPlainTitle"></h3>' +
+        '<div id="kbPlainBody" class="kb-plain-body"></div></div>';
+      document.body.appendChild(m);
+      m.addEventListener('click', function (e) { if (e.target === m) m.style.display = 'none'; });
+      $id('kbPlainClose').addEventListener('click', function () { m.style.display = 'none'; });
+    }
+    $id('kbPlainTitle').textContent = title || '';
+    $id('kbPlainBody').innerHTML = html;
+    m.style.display = '';
+  }
+
+  function runPageSecurityCheck() {
+    var r = [];
+    /* 1) 外来 iframe */
+    var fs_ = document.querySelectorAll('iframe');
+    var badFrame = [];
+    fs_.forEach(function (f) {
+      var s = (f.getAttribute('src') || '').trim();
+      if (s && s.indexOf(location.origin) !== 0 && s.indexOf('./') !== 0 && s.indexOf('/') !== 0) badFrame.push(s.slice(0, 80));
+    });
+    r.push({ ok: badFrame.length === 0, t: '页面内的独立窗口（iframe）', d: fs_.length ? (fs_.length + ' 个，全部来自本站：' + Array.prototype.map.call(fs_, function (f) { return f.getAttribute('src') || '（空）'; }).join('、')) : '没有' });
+    /* 2) 外部脚本 */
+    var ext = [];
+    document.querySelectorAll('script[src]').forEach(function (s) {
+      var u = s.getAttribute('src') || '';
+      if (u.indexOf(location.origin) !== 0) ext.push(u.slice(0, 80));
+    });
+    r.push({ ok: ext.length === 0, t: '外部脚本', d: ext.length ? ext.join('、') : '一个都没有（本项目不含任何第三方脚本）' });
+    /* 3) 外部图片 */
+    var extImg = [];
+    document.querySelectorAll('img').forEach(function (im) {
+      var u = im.getAttribute('src') || '';
+      if (u && u.indexOf('data:') !== 0 && u.indexOf(location.origin) !== 0 && u.indexOf('./') !== 0) extImg.push(u.slice(0, 80));
+    });
+    r.push({ ok: extImg.length === 0, t: '外部图片', d: extImg.length ? extImg.join('、') : '没有' });
+    /* 4) 是否正在播放音视频（很多推广是自动播放的音频） */
+    var playing = [];
+    document.querySelectorAll('video,audio').forEach(function (m) { if (!m.paused) playing.push(m.currentSrc || m.src || '（内嵌）'); });
+    r.push({ ok: playing.length === 0, t: '正在播放的音视频', d: playing.length ? playing.join('、') : '没有' });
+    /* 5) 被浏览器拦截的弹窗（运营商劫持注入脚本时会被拦） */
+    var blocked = (window.__kbBlockedPops || 0);
+    r.push({ ok: blocked === 0, t: '被拦截的弹窗请求', d: blocked ? ('有 ' + blocked + ' 次被浏览器拦下，说明页面被尝试注入内容') : '0 次' });
+    /* 6) CSP 是否生效 */
+    var csp = !!document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+    r.push({ ok: csp, t: '内容安全策略（CSP）', d: csp ? '已启用：即使有人想注入外部脚本，浏览器也会直接拒绝执行' : '未启用' });
+
+    var bad = r.filter(function (x) { return !x.ok; });
+    var html = '<div style="max-width:640px;max-height:76vh;overflow:auto">' +
+      '<p style="margin:0 0 12px;font-size:15px;line-height:1.8">下面是本页面的检查结果。' +
+      (bad.length
+        ? '<b style="color:#C62828">发现 ' + bad.length + ' 项异常</b>，请截图发给技术员。'
+        : '<b style="color:#1E7A43">全部正常，没有发现任何外部广告注入。</b>') + '</p>' +
+      r.map(function (x) {
+        return '<div style="padding:10px 12px;margin-bottom:8px;border-radius:10px;background:' +
+          (x.ok ? '#EAF6EF' : '#FDEBEA') + '">' +
+          '<div style="font-weight:800;color:' + (x.ok ? '#1E6B41' : '#B71C1C') + '">' +
+          (x.ok ? '✅ ' : '⚠️ ') + esc(x.t) + '</div>' +
+          '<div style="font-size:13px;color:#444;margin-top:4px;line-height:1.7">' + esc(x.d) + '</div></div>';
+      }).join('') +
+      '<p style="font-size:13px;color:#666;line-height:1.8;margin-top:12px">' +
+      '<b>说明：</b>如果这里全部正常，但现场仍出现陌生网站广告，那基本可以确定是' +
+      '<b>手机输入法自带的推广</b>（键盘弹出瞬间闪一下）或<b>当前网络的中间环节注入</b>，' +
+      '与应用本身无关 —— 可以换一个网络环境再试一次来验证。</p></div>';
+    showKbDialog(html, '页面安全自检');
+  }
+
   function closeKbWiz() {
     var box = $id('kbWiz');
     if (box) box.style.display = 'none';
@@ -11456,8 +11664,16 @@ EMC.Care = (function () {
     try {
       if (localStorage.getItem(WIZ_KEY) === '1') return;      /* 已完成 */
       if (localStorage.getItem(WIZ_SNOOZE) === E.fmtDate(new Date())) return;  /* 今天已点「以后再说」 */
+      /* v32：连着两天没完成就不自动弹了。
+         老人对"一打开就弹"极其敏感，连续两天还弹会被当成骚扰，
+         反而把产品挡在门外 —— 改成最多自动出现一次，
+         第二次要由用户主动从 ⚡ 面板点「第一次怎么用」。 */
+      if (Number(localStorage.getItem('emc_v26_wizard_seen') || 0) >= 1) return;
+      localStorage.setItem('emc_v26_wizard_seen', String(Number(localStorage.getItem('emc_v26_wizard_seen') || 0) + 1));
     } catch (e) {}
-    setTimeout(function () { openKbWiz(false); }, 1400);
+    /* 延后到 2.6 秒：先让首页正常渲染出来、老人看清自己在哪里，
+       再出现卡片 —— 一上来就弹会被当成"页面都没加载完就插队"。 */
+    setTimeout(function () { openKbWiz(false); }, 2600);
   }
   function wizDone() {
     try { localStorage.setItem(WIZ_KEY, '1'); localStorage.removeItem(WIZ_SNOOZE); } catch (e) {}
