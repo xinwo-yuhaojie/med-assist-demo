@@ -30,31 +30,14 @@
   #gate .o { background:var(--grad); color:#fff; box-shadow:0 4px 14px rgba(22,96,90,.3); }
   #gate .c:active, #gate .o:active { transform:scale(.98); }
 
-  /* ============ 看板选择 ============ */
-  #chooser { display:none; min-height:100vh; background:linear-gradient(160deg,#1d3a35 0%,#12212e 100%); padding:40px 18px; }
-  #chooser .ch-wrap { max-width:640px; margin:0 auto; }
-  #chooser h1 { color:#fff; font-size:26px; margin:0 0 6px; text-align:center; }
-  #chooser .ch-sub { color:rgba(255,255,255,.75); font-size:14px; text-align:center; margin:0 0 26px; }
-  .ch-cards { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-  @media (max-width:560px){ .ch-cards { grid-template-columns:1fr; } }
-  .ch-card { background:#fff; border:0; border-radius:20px; padding:24px 20px; text-align:left; cursor:pointer; box-shadow:0 12px 34px rgba(0,0,0,.28); transition:transform .15s ease; display:block; }
-  .ch-card:active { transform:scale(.98); }
-  .ch-card .ch-ic { font-size:38px; display:block; margin-bottom:10px; }
-  .ch-card .ch-nm { display:block; font-size:20px; font-weight:800; color:var(--pri-deep); margin-bottom:6px; }
-  .ch-card .ch-ds { display:block; font-size:13.5px; color:var(--ink2); line-height:1.75; }
-  .ch-card.mgr { background:linear-gradient(150deg,#fff 60%,#fdf3e7 100%); border:2px solid var(--acc); }
-  .ch-card.mgr .ch-nm { color:#b45f16; }
-  #chooser .back { display:block; text-align:center; margin-top:22px; color:rgba(255,255,255,.8); font-size:14px; text-decoration:none; }
-
-  /* ============ 主看板 ============ */
+  /* ============ 看板主体 ============ */
   #main { display:none; }
   .bd-head { background:var(--grad); color:#fff; padding:20px 16px 16px; box-shadow:0 2px 10px rgba(22,96,90,.25); }
   .bd-head .wrap { max-width:980px; margin:0 auto; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
   .bd-head h1 { font-size:22px; margin:0 0 4px; font-weight:800; }
-  .bd-head .sub { font-size:12.5px; opacity:.85; line-height:1.6; }
+  .bd-head .sub { font-size:12.5px; opacity:.88; line-height:1.6; }
   .bd-ops { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .bd-badge { font-size:12.5px; font-weight:800; background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.4); border-radius:999px; padding:6px 12px; }
-  .bd-badge.mgr { background:var(--acc); border-color:var(--acc); }
+  .bd-badge { font-size:12.5px; font-weight:800; background:var(--acc); border-radius:999px; padding:6px 12px; }
   button.rfr { min-height:44px; padding:0 16px; border:0; border-radius:12px; background:#fff; color:var(--pri-deep); font-size:14px; font-weight:800; cursor:pointer; }
   button.rfr.alt { background:rgba(255,255,255,.16); color:#fff; border:1px solid rgba(255,255,255,.45); }
   button.rfr:active { transform:scale(.97); }
@@ -71,7 +54,7 @@
   .kpi.green b { background:none; -webkit-text-fill-color:var(--ok); color:var(--ok); }
   .kpi.acc b { background:none; -webkit-text-fill-color:#b45f16; color:#b45f16; }
   .note { font-size:13px; color:var(--ink2); line-height:1.85; margin-top:10px; }
-  .tip { font-size:13px; background:#fdf3e7; border:1px dashed var(--acc); color:#8a4d12; border-radius:12px; padding:10px 12px; line-height:1.8; margin-bottom:12px; }
+  .tip { font-size:13px; background:var(--c-bg-soft,#eef6f4); border:1px solid var(--line); color:var(--pri-deep); border-radius:12px; padding:10px 12px; line-height:1.8; margin-bottom:12px; }
 
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th, td { padding:10px 8px; border-bottom:1px solid #f0ede4; text-align:left; }
@@ -81,28 +64,12 @@
   .bad { color:var(--dan); font-weight:800; }
   .ok { color:var(--ok); font-weight:700; }
   .warn { color:var(--warn); font-weight:700; }
-  .nm-chip { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 14px; border:2px solid var(--line); background:#fff; border-radius:999px; font-size:14px; font-weight:800; color:var(--ink); cursor:pointer; }
-  .nm-chip:active { transform:scale(.97); border-color:var(--acc); }
-  .nm-chip .lk { font-size:12px; color:var(--acc); }
-  .nm-real { font-weight:800; }
-  .nm-real .rt { font-size:11px; background:var(--ok); color:#fff; border-radius:6px; padding:1px 6px; margin-left:6px; font-weight:700; }
+  .nm-real { font-weight:800; color:var(--pri-deep); }
+  .nm-real .rt { font-size:11px; background:var(--pri); color:#fff; border-radius:6px; padding:1px 6px; margin-left:6px; font-weight:700; }
   a.back { display:inline-block; margin-top:6px; font-size:14px; color:var(--pri); text-decoration:none; font-weight:700; }
-
-  /* ============ 小弹窗（密码输入） ============ */
-  .mini-mask { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; padding:18px; z-index:120; }
-  .mini-box { background:#fff; border-radius:20px; padding:22px 18px; width:100%; max-width:360px; box-shadow:0 16px 44px rgba(0,0,0,.3); }
-  .mini-box h3 { margin:0 0 6px; font-size:18px; color:var(--pri-deep); text-align:center; }
-  .mini-box .mb-sub { font-size:13px; color:var(--ink2); text-align:center; margin:0 0 14px; line-height:1.7; }
-  .mini-box input { width:100%; font-size:18px; padding:13px; border:2px solid var(--line); border-radius:12px; text-align:center; letter-spacing:1px; }
-  .mini-box input:focus { outline:none; border-color:var(--pri); }
-  .mini-box .err { color:var(--dan); font-size:13.5px; min-height:20px; margin:8px 0 0; text-align:center; font-weight:600; }
-  .mini-box .btns { display:flex; gap:10px; margin-top:10px; }
-  .mini-box button { flex:1; min-height:48px; font-size:16px; border-radius:12px; border:0; cursor:pointer; font-weight:800; }
-  .mini-box .c { background:#f2f2f2; border:1px solid #ccc; color:#333; }
-  .mini-box .o { background:var(--grad); color:#fff; }
   body.emb #exitLine { display:none; }
   @media print {
-    .bd-ops, a.back, .nm-chip .lk { display:none !important; }
+    .bd-ops, a.back { display:none !important; }
     .bd-head { background:#fff !important; color:#000 !important; box-shadow:none; }
     .bd-head h1, .bd-head .sub { color:#000 !important; }
     body { background:#fff; }
@@ -111,12 +78,12 @@
 </head>
 <body>
 
-<!-- 门禁 -->
+<!-- 门禁：输入密码后直接进入管理者看板（全量真实数据） -->
 <div id="gate">
   <div class="box">
-    <div class="g-ic">🔒</div>
-    <h2>管理者看板 · 身份验证</h2>
-    <p>本页面仅限社区工作人员进入，密码由管理员在服务端配置。</p>
+    <div class="g-ic">🔓</div>
+    <h2>管理者看板</h2>
+    <p>输入看板密码后进入，可查看全部居民用药明细与真实姓名。</p>
     <input id="pwd" type="password" autocomplete="off" placeholder="请输入看板密码">
     <div class="err" id="err"></div>
     <div class="btns">
@@ -126,28 +93,7 @@
   </div>
 </div>
 
-<!-- 看板选择（门禁通过后） -->
-<div id="chooser">
-  <div class="ch-wrap">
-    <h1>康伴 · 管理者看板</h1>
-    <p class="ch-sub">请选择要进入的看板，可随时切换</p>
-    <div class="ch-cards">
-      <button class="ch-card" id="chCommunity">
-        <span class="ch-ic">🏘️</span>
-        <span class="ch-nm">社区治理看板</span>
-        <span class="ch-ds">看平台汇总使用数据（今日 / 近7天 / 累计永久）与居民整体情况。人名默认打码，输入人名揭示密码后可查看真实姓名。</span>
-      </button>
-      <button class="ch-card mgr" id="chManager">
-        <span class="ch-ic">🔐</span>
-        <span class="ch-nm">管理者看板</span>
-        <span class="ch-ds">查看全部用户明细数据：真实人名、用药依从、余药、不适反馈等。需要输入管理者看板密码。</span>
-      </button>
-    </div>
-    <a class="back" href="index.html">← 返回康伴首页</a>
-  </div>
-</div>
-
-<!-- 主看板 -->
+<!-- 看板主体 -->
 <div id="main">
   <div class="bd-head">
     <div class="wrap">
@@ -156,9 +102,8 @@
         <div class="sub" id="genLine">—</div>
       </div>
       <div class="bd-ops">
-        <span class="bd-badge" id="boardBadge">社区治理看板</span>
-        <button class="rfr alt" id="btnSwitch">切换看板</button>
-        <button class="rfr" id="btnRefresh">刷新</button>
+        <span class="bd-badge">🔐 全量数据 · 真实姓名</span>
+        <button class="rfr alt" id="btnRefresh">刷新数据</button>
       </div>
     </div>
   </div>
@@ -181,11 +126,11 @@
       <div class="note" id="cumNote"></div>
     </div>
     <div class="card">
-      <h2 id="userCardTitle">👥 居民明细（按账号）</h2>
-      <p class="h2-sub" id="userCardSub">近 7 天各居民用药情况</p>
+      <h2>👥 居民明细（真实数据 · 真实姓名）</h2>
+      <p class="h2-sub">全部账号的近 7 天用药情况，人名已实名显示</p>
       <div class="tip" id="nameTip" style="display:none"></div>
       <div style="overflow-x:auto"><table id="tbl"><thead><tr>
-        <th>称呼</th><th>性别</th><th class="n">药品</th><th class="n">7天依从</th><th class="n">今日漏服</th><th class="n">余药&lt;7天</th><th class="n">不适反馈</th>
+        <th>姓名</th><th>性别</th><th class="n">药品</th><th class="n">7天依从</th><th class="n">今日漏服</th><th class="n">余药&lt;7天</th><th class="n">不适反馈</th>
       </tr></thead><tbody id="tbody"></tbody></table></div>
       <div class="note" id="emptyTip" style="display:none">暂无账号数据。</div>
     </div>
@@ -202,38 +147,24 @@
 (function () {
   var FC = 'https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run';
   var gate = document.getElementById('gate');
-  var chooser = document.getElementById('chooser');
   var main = document.getElementById('main');
   var emb = location.search.indexOf('emb=') >= 0;
   if (emb) document.body.className = 'emb';
 
-  var sessionPw = '', sessionBoard = '', sessionMgr = false;
+  var sessionPw = '';
   try { sessionPw = sessionStorage.getItem('kbAdminPw') || ''; } catch (e) {}
-  try { sessionBoard = sessionStorage.getItem('kbAdminBoard') || ''; } catch (e) {}
-  try { sessionMgr = sessionStorage.getItem('kbAdminMgr') === '1'; } catch (e) {}
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-  /* 门禁已验证过 → 直接恢复上次的看板（或回到选择页） */
-  try { if (sessionStorage.getItem('kbAdminOk') === '1') { afterGate(); } } catch (e) {}
-
-  function afterGate() {
-    gate.style.display = 'none';
-    if (sessionBoard === 'community' || (sessionBoard === 'manager' && sessionMgr)) {
-      chooser.style.display = 'none'; main.style.display = 'block';
-      load(sessionBoard);
-    } else {
-      sessionBoard = '';
-      chooser.style.display = 'block';
-    }
-  }
+  /* 已验证过门禁 → 直接进看板 */
+  try { if (sessionStorage.getItem('kbAdminOk') === '1') enter(); } catch (e) {}
 
   function tryIn() {
     var v = document.getElementById('pwd').value;
     var err = document.getElementById('err');
     if (!v) { err.textContent = '请输入密码'; return; }
     err.textContent = '验证中…';
-    fetch(FC + '/api/admin/stats', { method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', body: JSON.stringify((function (v) { var o = {}; o['pass' + 'word'] = v; return o; })(v)) })
+    fetch(FC + '/api/admin/stats', { method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', body: JSON.stringify({ password: v }) })
       .then(function (r) {
         if (r.status === 401) { err.textContent = '密码不对，请再试一次。'; return null; }
         if (r.status === 429) { err.textContent = '尝试次数过多，请稍后再试。'; return null; }
@@ -244,7 +175,8 @@
         if (!j) return;
         try { sessionStorage.setItem('kbAdminOk', '1'); sessionStorage.setItem('kbAdminPw', v); } catch (e) {}
         sessionPw = v;
-        afterGate();
+        enter();
+        render(j);
       })
       .catch(function () { err.textContent = '网络不可用，请稍后重试。'; });
   }
@@ -259,85 +191,39 @@
     location.href = 'index.html';
   });
 
-  /* ============ 看板选择 ============ */
-  document.getElementById('chCommunity').addEventListener('click', function () { enterBoard('community'); });
-  document.getElementById('chManager').addEventListener('click', function () {
-    if (sessionMgr) { enterBoard('manager'); return; }
-    askMini('🔐 管理者看板验证', '查看全部用户数据需要管理者看板密码', '请输入管理者看板密码', function (pw, done) {
-      fetch(FC + '/api/admin/stats', { method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', body: JSON.stringify({ password: sessionPw, board: 'manager', boardPw: pw }) })
-        .then(function (r) {
-          if (r.status === 403) { done('看板密码不正确，请重试'); return; }
-          if (r.status === 401) { done('门禁密码已失效，请刷新页面重新进入'); return; }
-          if (!r.ok) throw new Error('http ' + r.status);
-          sessionMgr = true;
-          try { sessionStorage.setItem('kbAdminMgr', '1'); sessionStorage.setItem('kbAdminMgrPw', pw); } catch (e) {}
-          done(null);
-          enterBoard('manager');
-        })
-        .catch(function () { done('网络不可用，请稍后重试'); });
-    });
-  });
-
-  function enterBoard(board) {
-    sessionBoard = board;
-    try { sessionStorage.setItem('kbAdminBoard', board); } catch (e) {}
-    chooser.style.display = 'none';
+  function enter() {
+    gate.style.display = 'none';
     main.style.display = 'block';
-    load(board);
   }
-  document.getElementById('btnSwitch').addEventListener('click', function () {
-    main.style.display = 'none';
-    chooser.style.display = 'block';
-  });
 
-  /* ============ 数据加载与渲染 ============ */
-  function load(board) {
-    board = board || sessionBoard || 'community';
-    var errTip = document.getElementById('genLine');
-    var payload = { password: sessionPw, board: board };
-    if (board === 'manager') {
-      var mpw = '';
-      try { mpw = sessionStorage.getItem('kbAdminMgrPw') || ''; } catch (e) {}
-      if (!mpw) {   /* 看板密码丢失（会话过期）→ 回选择页重新验证 */
-        sessionMgr = false; sessionBoard = '';
-        try { sessionStorage.removeItem('kbAdminMgr'); sessionStorage.removeItem('kbAdminBoard'); } catch (e) {}
-        main.style.display = 'none'; chooser.style.display = 'block';
-        return;
-      }
-      payload.boardPw = mpw;
-    }
-    fetch(FC + '/api/admin/stats', { method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', body: JSON.stringify(payload) })
-      .then(function (r) {
-        if (r.status === 403 && board === 'manager') {   /* 看板密码失效 → 重新验证 */
-          sessionMgr = false;
-          try { sessionStorage.removeItem('kbAdminMgr'); sessionStorage.removeItem('kbAdminMgrPw'); } catch (e) {}
-          main.style.display = 'none'; chooser.style.display = 'block';
-          return null;
-        }
-        if (!r.ok) throw new Error('http ' + r.status);
-        return r.json();
-      })
-      .then(function (j) { if (j) render(j, board); })
-      .catch(function () { errTip.textContent = '统计数据加载失败（网络或密码失效），点右上角刷新重试。'; });
-  }
-  document.getElementById('btnRefresh').addEventListener('click', function () { load(sessionBoard); });
+  document.getElementById('btnRefresh').addEventListener('click', function () { load(); });
 
   function kpi(v, t, cls) { return '<div class="kpi ' + (cls || '') + '"><b>' + esc(v) + '</b><span>' + esc(t) + '</span></div>'; }
 
-  function render(j, board) {
-    var isMgr = board === 'manager';
-    var s = j.stats || {};
-    var badge = document.getElementById('boardBadge');
-    badge.textContent = isMgr ? '🔐 管理者看板' : '🏘️ 社区治理看板';
-    badge.classList.toggle('mgr', isMgr);
-    document.getElementById('genLine').textContent =
-      (isMgr ? '管理者看板 · 全量用户数据' : '社区治理看板 · 人名默认打码') + ' · 数据实时汇总 · 生成于 ' + new Date().toLocaleString('zh-CN') + (j.today ? ('（统计日 ' + j.today + '）') : '');
-    document.getElementById('userCardTitle').textContent = isMgr ? '👥 居民明细（真实数据）' : '👥 居民明细（按账号）';
-    document.getElementById('userCardSub').textContent = isMgr ? '近 7 天各居民用药情况（真实人名）' : '近 7 天各居民用药情况（人名已打码）';
-    document.getElementById('nameTip').style.display = isMgr ? 'none' : 'block';
-    document.getElementById('nameTip').innerHTML = isMgr ? '' : '🔒 为保护居民隐私，人名默认打码。点击人名并输入<b>人名揭示密码</b>后可查看真实姓名（仅本次会话可见）。';
+  function load() {
+    var errTip = document.getElementById('genLine');
+    fetch(FC + '/api/admin/stats', { method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', body: JSON.stringify({ password: sessionPw }) })
+      .then(function (r) {
+        if (r.status === 401) { errTip.textContent = '密码已失效，请重新输入密码进入看板。'; return null; }
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.json();
+      })
+      .then(function (j) { if (j) render(j); })
+      .catch(function () { errTip.textContent = '统计数据加载失败（网络或密码失效），点右上角刷新重试。'; });
+  }
 
-    /* —— 今日 / 近7天总览（不变） —— */
+  function render(j) {
+    var s = j.stats || {};
+    document.getElementById('genLine').textContent =
+      '全部居民用药明细 · 真实姓名 · 数据实时汇总 · 生成于 ' + new Date().toLocaleString('zh-CN') + (j.today ? ('（统计日 ' + j.today + '）') : '');
+    /* 防呆：若后端尚未升级（仍按打码模式返回），明确提示，而不是让人误以为坏了 */
+    if (j.namesMasked) {
+      var nt = document.getElementById('nameTip');
+      nt.style.display = '';
+      nt.innerHTML = '⚠️ 当前后端仍是旧版本，返回的是<b>打码姓名</b>。真实姓名显示需要后端升级：在 FC 控制台重新上传最新部署包（fc-web.zip）即可。';
+    }
+
+    /* —— 今日 / 近7天总览 —— */
     var done = (s.taken7 || 0) + (s.missed7 || 0);
     var k = [];
     k.push(kpi(s.users == null ? '—' : s.users, '居民账号数'));
@@ -348,7 +234,7 @@
     k.push(kpi(((s.adverse7 && s.adverse7.mild) || 0) + '+' + ((s.adverse7 && s.adverse7.severe) || 0), '7 天不适(轻微+明显)', ((s.adverse7 && s.adverse7.severe) || 0) > 0 ? 'red' : ''));
     document.getElementById('kpis').innerHTML = k.join('');
 
-    /* —— 本站使用数据（不变） —— */
+    /* —— 本站使用数据 —— */
     try {
       var siteDays = (j.site && j.site.days) || {};
       var td2 = siteDays[j.today] || { ev: {}, uv: 0 };
@@ -373,7 +259,7 @@
       document.getElementById('siteCard').style.display = 'block';
     } catch (e) {}
 
-    /* —— v24：累计使用数据（永久记录，不清除） —— */
+    /* —— 累计使用数据（永久记录） —— */
     try {
       var cum = j.cum || null;
       if (!cum) { document.getElementById('cumCard').style.display = 'none'; throw new Error('no cum'); }
@@ -396,14 +282,12 @@
       document.getElementById('cumCard').style.display = 'block';
     } catch (e) {}
 
-    /* —— 居民明细：管理者=真实人名；社区=打码可点击揭示 —— */
+    /* —— 居民明细（真实姓名） —— */
     var rows = (s.perUser || []).map(function (p) {
       var rate = p.rate7 == null ? '—' : p.rate7 + '%';
       var rateCls = p.rate7 == null ? '' : (p.rate7 >= 85 ? 'ok' : (p.rate7 >= 70 ? 'warn' : 'bad'));
-      var nameCell = isMgr
-        ? ('<span class="nm-real">' + esc(p.name) + '<span class="rt">真实</span></span>')
-        : ('<button type="button" class="nm-chip" data-id="' + esc(p.id || '') + '" data-name="' + esc(p.name) + '">' + esc(p.name) + ' <span class="lk">🔒 点击揭示</span></button>');
-      return '<tr><td>' + nameCell + '</td><td>' + esc(p.gender || '—') + '</td>' +
+      return '<tr><td><span class="nm-real">' + esc(p.name) + '<span class="rt">实名</span></span></td>' +
+        '<td>' + esc(p.gender || '—') + '</td>' +
         '<td class="n">' + (p.meds || 0) + '</td>' +
         '<td class="n ' + rateCls + '">' + rate + '</td>' +
         '<td class="n' + (p.missedToday ? ' bad' : '') + '">' + (p.missedToday || 0) + '</td>' +
@@ -413,75 +297,11 @@
     document.getElementById('tbody').innerHTML = rows;
     document.getElementById('emptyTip').style.display = rows ? 'none' : 'block';
 
-    /* 社区治理看板：点击打码人名 → 输入人名揭示密码 → 拉取真实姓名 */
-    if (!isMgr) {
-      document.getElementById('tbody').querySelectorAll('.nm-chip').forEach(function (b) {
-        b.addEventListener('click', function () {
-          var id = b.getAttribute('data-id');
-          askMini('🔓 查看真实人名', '该操作会记录。请输入人名揭示密码', '请输入人名揭示密码', function (pw, done) {
-            fetch(FC + '/api/admin/names', { method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', body: JSON.stringify({ password: sessionPw, namePw: pw }) })
-              .then(function (r) {
-                if (r.status === 403) { done('密码不正确，请重试'); return; }
-                if (r.status === 429) { done('尝试太频繁，请稍后再试'); return; }
-                if (r.status === 401) { done('门禁密码已失效，请刷新页面'); return; }
-                if (!r.ok) throw new Error('http ' + r.status);
-                return r.json();
-              })
-              .then(function (jj) {
-                if (!jj) return;
-                var map = {};
-                (jj.names || []).forEach(function (n) { map[n.id] = n.name; });
-                document.getElementById('tbody').querySelectorAll('.nm-chip').forEach(function (x) {
-                  var xid = x.getAttribute('data-id');
-                  if (map[xid]) {
-                    var sp = document.createElement('span');
-                    sp.className = 'nm-real';
-                    sp.innerHTML = esc(map[xid]) + '<span class="rt">已揭示</span>';
-                    x.parentNode.replaceChild(sp, x);
-                  }
-                });
-                done(null);
-              })
-              .catch(function () { done('网络不可用，请稍后重试'); });
-          });
-        });
-      });
-    }
-
-    /* —— 服务与提醒渠道（不变） —— */
+    /* —— 服务与提醒渠道 —— */
     var c = s.channels || {};
     document.getElementById('chLine').innerHTML =
       '已开启提醒渠道（按账号）：邮箱 <b>' + (c.email || 0) + '</b> · 企业微信 <b>' + (c.wechat || 0) + '</b> · 短信 <b>' + (c.sms || 0) + '</b> · 个人微信推送 <b>' + (c.wxpush || 0) + '</b><br>' +
       '微信推送与邮箱通知由康伴智能体自动发送：老人到点未打卡 → 5 分钟内扫描 → 家属微信收到"一键确认"提醒。';
-  }
-
-  /* ============ 通用小弹窗（密码输入） ============ */
-  function askMini(title, sub, placeholder, onOk) {
-    var mask = document.createElement('div');
-    mask.className = 'mini-mask';
-    mask.innerHTML = '<div class="mini-box" role="dialog" aria-modal="true">' +
-      '<h3>' + esc(title) + '</h3><p class="mb-sub">' + esc(sub) + '</p>' +
-      '<input type="password" autocomplete="off" placeholder="' + esc(placeholder || '请输入密码') + '">' +
-      '<div class="err"></div>' +
-      '<div class="btns"><button class="c" type="button">取消</button><button class="o" type="button">确定</button></div></div>';
-    document.body.appendChild(mask);
-    var inp = mask.querySelector('input');
-    var err = mask.querySelector('.err');
-    var done = false;
-    function close() { if (document.body.contains(mask)) document.body.removeChild(mask); }
-    function submit() {
-      var v = inp.value;
-      if (!v) { err.textContent = '请输入密码'; return; }
-      onOk(v, function (msg) {
-        if (msg) { err.textContent = msg; return; }
-        close();
-      });
-    }
-    mask.querySelector('.c').addEventListener('click', close);
-    mask.querySelector('.o').addEventListener('click', submit);
-    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
-    mask.addEventListener('click', function (e) { if (e.target === mask) close(); });
-    try { inp.focus(); } catch (e) {}
   }
 })();
 </script>

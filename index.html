@@ -731,7 +731,7 @@
       }
     } catch (e) {}
 
-    /* 14) 看板密码门：进入社区治理看板需输入管理者密码（只存哈希，不存明文） */
+    /* 14) 看板密码门：进入管理者看板需输入看板密码（只存哈希，不存明文） */
     try {
       var KB_ADMIN_HASH = '15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225';
       function kbGateEnsure() {
@@ -742,7 +742,7 @@
         g.setAttribute('style', 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:18px');
         g.innerHTML = '<div style="background:var(--c-bg-elev,#fff);color:var(--c-fg,#222);border-radius:16px;padding:22px 20px;width:100%;max-width:360px;box-shadow:0 8px 30px rgba(0,0,0,.25)">'
           + '<div style="font-size:19px;font-weight:700;margin-bottom:6px">🔒 管理者验证</div>'
-          + '<div style="font-size:14px;opacity:.75;margin-bottom:12px">社区治理管理者页面仅限工作人员进入，请输入管理者密码。</div>'
+          + '<div style="font-size:14px;opacity:.75;margin-bottom:12px">管理者看板仅限工作人员进入，请输入看板密码。</div>'
           + '<input id="kbGatePwd" type="password" inputmode="numeric" autocomplete="off" placeholder="请输入密码" style="width:100%;box-sizing:border-box;font-size:18px;padding:12px;border:2px solid #bbb;border-radius:10px;letter-spacing:2px">'
           + '<div id="kbGateErr" style="color:#d33;font-size:14px;min-height:20px;margin-top:6px"></div>'
           + '<div style="display:flex;gap:10px;margin-top:4px">'
@@ -774,9 +774,9 @@
         w.id = 'kbBoardWrap';
         w.setAttribute('style', 'position:fixed;inset:0;z-index:2147483002;background:#f5f6f8;display:flex;flex-direction:column');
         w.innerHTML = '<div style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:#08221E;color:#fff;font-size:17px;font-weight:800">' +
-          '<span>📊 社区治理管理者页面</span>' +
+          '<span>📊 管理者看板</span>' +
           '<button id="kbBoardClose" style="min-width:80px;min-height:44px;border:0;border-radius:10px;background:#fff;color:#08221E;font-size:16px;font-weight:800;cursor:pointer">✕ 关闭</button></div>' +
-          '<iframe src="dashboard.html?emb=1" style="flex:1;width:100%;border:0" title="社区治理管理者页面"></iframe>';
+          '<iframe src="dashboard.html?emb=1" style="flex:1;width:100%;border:0" title="管理者看板"></iframe>';
         document.body.appendChild(w);
         document.getElementById('kbBoardClose').addEventListener('click', function () {
           if (w.parentNode) w.parentNode.removeChild(w);
@@ -13359,7 +13359,7 @@ EMC.Care = (function () {
     { id: 'mi-fs',    kind: 'fs',    ic: '📝', nm: '切换字号', ds: '小 / 中 / 大 / 特大 四档' },
     { id: 'mi-theme', kind: 'theme', ic: '🌗', nm: '切换显示模式', ds: '明亮 / 夜间 / 高对比' },
     { id: 'mi-help',  kind: 'help',  ic: '❓', nm: '帮助与说明', ds: '怎么用、遇到问题怎么办' },
-    { id: 'mi-board', kind: 'board', ic: '📈', nm: '管理者看板', ds: '社区治理与使用数据看板' }
+    { id: 'mi-board', kind: 'board', ic: '📈', nm: '管理者看板', ds: '全部居民用药明细与使用数据' }
   ];
 
   /** 渲染「更多」面板的入口列表（每次打开时重建，保证与当前登录态一致） */
