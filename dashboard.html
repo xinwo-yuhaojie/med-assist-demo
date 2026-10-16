@@ -367,22 +367,35 @@
   var emb = location.search.indexOf('emb=') >= 0;
   if (emb) document.body.className = 'emb';
 
-  /* 当前状态：门禁密码 + 所选看板 + 该看板的密码 */
+  /* ==========================================================
+   * v35 看板密码**只留在内存里，绝不落盘**
+   * ==========================================================
+   * 【原实现的泄露点】三道密码（门禁 / 社区看板 / 管理者看板）
+   *   以**明文**写进 sessionStorage。任何同源脚本只要一句
+   *     sessionStorage.getItem('kbBoardPw')
+   *   就能拿到管理者看板密码，而它背后是**全量用户真实姓名与全部用药数据**。
+   *   尤其危险的是：如果页面上任何一处出现 XSS，
+   *   攻击者第一件事就是读 sessionStorage —— 把密码放在那里等于把钥匙挂在门上。
+   *
+   * 【现在的取舍】密码只存在于当前页面的内存中（关掉标签页即消失）。
+   *   代价是**刷新页面需要重新输入密码** —— 这正是安全与便捷之间的正确取舍：
+   *   管理员每天进入看板次数有限，多输一次密码，
+   *   换来"磁盘上根本没有密码"这个性质。
+   *
+   * 【仍然保留 sessionStorage 的只有非敏感状态】
+   *   kbLastBoard —— 只是"上次选了哪个看板"（用于把标题预填好），
+   *   不含任何密码。
+   * ========================================================== */
   var S = { gatePw: '', board: '', boardPw: '' };
-  try {
-    S.gatePw = sessionStorage.getItem('kbAdminPw') || '';
-    S.board = sessionStorage.getItem('kbAdminBoard') || '';
-    S.boardPw = sessionStorage.getItem('kbBoardPw') || '';
-  } catch (e) {}
+  try { S.board = sessionStorage.getItem('kbLastBoard') || ''; } catch (e) {}
   function save() {
     try {
-      sessionStorage.setItem('kbAdminPw', S.gatePw);
-      sessionStorage.setItem('kbAdminBoard', S.board);
-      if (S.boardPw) sessionStorage.setItem('kbBoardPw', S.boardPw);
-      else sessionStorage.removeItem('kbBoardPw');
-      /* v34：切看板时清掉旧密码，绝不把上一个看板的密码误发给另一个看板 */
-      sessionStorage.removeItem('kbMgrPw');
-      sessionStorage.removeItem('kbCommunityPw');
+      /* 只记"选了哪个看板"，不含密码 */
+      if (S.board) sessionStorage.setItem('kbLastBoard', S.board);
+      /* 清掉历史版本可能遗留的密码 */
+      ['kbAdminPw', 'kbBoardPw', 'kbMgrPw', 'kbCommunityPw'].forEach(function (k) {
+        try { sessionStorage.removeItem(k); } catch (e2) {}
+      });
     } catch (e) {}
   }
 
@@ -527,7 +540,10 @@
 
   /* ---------- 载入并渲染 ---------- */
   function load() {
-    if (!S.board) { gate.style.display = ''; main.style.display = 'none'; step(2); return; }
+    /* v35：没有门禁密码或看板密码，说明是刷新后重来 —— 回到对应步骤重新输入，
+       绝不用空密码去打接口（会被 403，徒增无谓的限流计数）。 */
+    if (!S.gatePw) { gate.style.display = ''; main.style.display = 'none'; step(1); return; }
+    if (!S.board || !S.boardPw) { gate.style.display = ''; main.style.display = 'none'; askBoardPw(S.board || 'community'); return; }
     var body = { password: S.gatePw, board: S.board };
     if (S.board === 'manager') body.managerPw = S.boardPw; else body.communityPw = S.boardPw;
     api(body).then(function (j) {
@@ -762,11 +778,12 @@
     if (el) { e.preventDefault(); openNameDlg(el); }
   });
 
-  /* —— 启动：已记住门禁+看板密码就直接进，否则从第 1 步开始 —— */
-  if (S.gatePw && S.board && S.boardPw) {
-    gate.style.display = 'none'; main.style.display = 'block'; load();
-  } else if (S.gatePw) {
-    step(2);   /* 门禁还记得，直接让他选看板 */
+  /* —— 启动 ——
+     v35：密码不再落盘，所以刷新后一律从门禁开始重新输入。
+     sessionStorage 只记住"上次选的是哪个看板"，用于预填标题与占位符，
+     省得每次都先点一次卡片。 */
+  if (S.board === 'manager' || S.board === 'community') {
+    try { askBoardPw(S.board); } catch (e) { step(1); }
   } else {
     step(1);
   }

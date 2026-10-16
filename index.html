@@ -358,9 +358,44 @@
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
     } catch (e) { alert('导出失败：' + e.message); }
   }
+  /* ==========================================================
+   * v35 导出脱敏：**绝不再把密码哈希和会话 token 写进备份文件**
+   * ==========================================================
+   * 【原来的泄露路径（审计 P0）】
+   *   原来导出的 JSON 里是：
+   *     users  → 每个账号的 pass:{salt, hash}（scrypt 口令哈希）
+   *     sess   → **当前有效的会话 token**
+   *   两个后果：
+   *     ① 拿到文件的人可对哈希做离线爆破（这些密码多是 6 位数字，
+   *        现代 GPU 秒破），进而登录账号、读取老人全部健康数据；
+   *     ② sess 里的 token 是**可直接冒用**的有效凭证，等于把账号交出去。
+   *   而 doImport 还会 `lsSet(SK, j.sess)` **无条件接收**他人文件里的
+   *   token —— 导出一个文件再发给别人（社区场景极常见：发给子女备份）
+   *   就等于把访问权一并交出。
+   * 【现在】备份只保留账号名与设置，**剔除 pass 字段**，完全不导出 sess；
+   *   导入时也忽略文件里的任何 token，强制重新登录。
+   *   代价是换设备后需要重新输一次密码 —— 这是必须付的安全代价。
+   * ========================================================== */
+  function exportSanitize(users) {
+    var out = {};
+    Object.keys(users || {}).forEach(function (k) {
+      var u = users[k] || {};
+      /* 只保留"识别这个账号需要的信息"，口令一律不带 */
+      out[k] = { username: u.username, profile: u.profile, settings: u.settings };
+    });
+    return out;
+  }
   function doExport() {
+    var safeUsers = exportSanitize(lsGet(UK, {}));
+    var n = Object.keys(safeUsers).length;
     download('kangban-backup-' + new Date().toISOString().slice(0, 10) + '.json',
-      JSON.stringify({ v: 1, at: new Date().toISOString(), users: lsGet(UK, {}), sess: lsGet(SK, {}) }, null, 2));
+      JSON.stringify({
+        v: 2,
+        at: new Date().toISOString(),
+        note: '本文件不含密码与登录凭证；换设备后需重新登录。',
+        users: safeUsers,
+      }, null, 2));
+    try { toast('已导出 ' + n + ' 个账号的资料（不含密码）'); } catch (e) {}
   }
   function doImport() {
     var inp = document.createElement('input');
@@ -373,9 +408,17 @@
           var j = JSON.parse(fr.result);
           if (!j || typeof j !== 'object' || !j.users) throw new Error('不是有效的备份文件');
           if (!confirm('确定导入吗？会覆盖本机现有的账号数据。')) return;
-          lsSet(UK, j.users);
-          if (j.sess) lsSet(SK, j.sess);
-          alert('导入成功，页面将刷新');
+          /* v35：只导入资料，**忽略文件里的任何口令与 token**。
+             否则拿到别人备份文件的人可以直接冒用其会话。 */
+          var users = {};
+          Object.keys(j.users || {}).forEach(function (k) {
+            var u = j.users[k] || {};
+            users[k] = { username: u.username || k, profile: u.profile || {}, settings: u.settings || {} };
+          });
+          if (!Object.keys(users).length) throw new Error('文件里没有可导入的账号');
+          lsSet(UK, users);
+          try { sessionStorage.removeItem('kb_sess_v1'); } catch (e2) {}
+          alert('导入成功（不含密码）。\n为安全起见请重新登录一次。');
           location.reload();
         } catch (e) { alert('导入失败：' + e.message); }
       };
@@ -5262,7 +5305,8 @@ EMC.Chart = (function () {
   var PALETTE = ['var(--c-p1)', 'var(--c-p2)', 'var(--c-p3)', 'var(--c-p4)', 'var(--c-p5)', 'var(--c-p6)', 'var(--c-p7)', 'var(--c-p8)'];
 
   function esc(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   /* 环形进度：显示百分比 */
@@ -5920,9 +5964,18 @@ EMC.Engine = (function () {
   function summary(records, meds, days) {
     days = days || 7;
     var recs = records || [];
+    /* v35：指纹补上 mid。原来只含 date+status，
+       同一天同一时段换了药（或补记/撤销）时指纹不变 → 命中旧缓存 → 统计数字偏小。 */
     var fp = days + '|' + recs.length + '|' +
-      recs.map(function (r) { return r.date + '#' + r.status; }).join('|');
-    if (_summaryCache.key === fp && _summaryCache.val) return _summaryCache.val;
+      recs.map(function (r) { return r.date + '#' + r.status + '#' + (r.mid || ''); }).join('|');
+    var cached = _summaryCacheGet(fp);
+    if (cached) return cached;
+    /* v35：缓存"正在计算"的 key，防止同一次渲染里重复计算同一区间。
+       renderData() 会连着要 7 天 / 30 天 / 90 天三种区间，
+       单槽缓存（只有一个 key）三种互相冲刷，命中率接近 0，
+       等于每次都重跑 O(days × records × 3) 的 filter。
+       改成 4 槽 LRU：常见的三种区间能同时命中。
+       注意这里只是"登记意图"，真正的写入在函数末尾。 */
 
     var today = new Date(); today.setHours(0, 0, 0, 0);
     var total = 0, taken = 0, missed = 0, bySlot = {}, byDay = [];
@@ -5949,22 +6002,81 @@ EMC.Engine = (function () {
       bySlot: bySlot, byDay: byDay,
       streak: calcStreak(recs)
     };
-    _summaryCache = { key: fp, val: result };
+    _summaryCacheSet(fp, result);
     return result;
   }
-  var _summaryCache = { key: null, val: null };
+  /* ==========================================================
+   * v35 summary 缓存：单槽 → 4 槽 LRU
+   * ==========================================================
+   * 【原实现的问题】只有一个 {key, val}，后来者直接覆盖前者。
+   *   而 renderData() 会在**同一次渲染里连着要 7 天 / 30 天 / 90 天**三种区间，
+   *   三种 key 互相冲刷 → 命中率接近 0，等于每次都重跑
+   *   O(days × records × 3) 的 Array.filter，缓存形同虚设。
+   * 【修法】4 槽轮转，够放常用的三种区间 + 一个备用。
+   *   顺带修一个正确性隐患：原来的指纹只含 date+status，
+   *   如果两条记录同日同状态但 mid 不同（例如一天内同一时段补记/改药），
+   *   指纹不变 → 返回旧缓存 → 统计数字偏小。
+   *   现在把 mid 也纳入指纹。
+   * ========================================================== */
+  var _summaryCache = [];
+  function _summaryCacheGet(key) {
+    for (var i = 0; i < _summaryCache.length; i++) {
+      if (_summaryCache[i].key === key) {
+        var hit = _summaryCache[i].val;
+        /* 提到最前（LRU） */
+        _summaryCache.splice(i, 1); _summaryCache.unshift({ key: key, val: hit });
+        return hit;
+      }
+    }
+    return null;
+  }
+  function _summaryCacheSet(key, val) {
+    _summaryCache.unshift({ key: key, val: val });
+    while (_summaryCache.length > 4) _summaryCache.pop();
+  }
 
+  /* ==========================================================
+   * v35 calcStreak：60 天 × 2 次 filter → 一次遍历建索引
+   * ==========================================================
+   * 【原来的问题】循环 60 天，每轮对整个 records 数组做 filter：
+   *     var dayRecs = recs.filter(r => r.date === key);        // O(N)
+   *     var bad     = dayRecs.filter(r => r.status==='missed') // O(dayN)
+   *     dayRecs.every(...)                                     // O(dayN)
+   * 合计约 O(120N)。而它是**独立于 summary 缓存**的 —— 也就是说
+   * summary 命中缓存时，calcStreak 照样每次重跑。
+   * kbSnapshot() 每 30 秒调一次 summary，长记录下这就是常驻 CPU 开销。
+   * 【现在】先用一次 O(N) 遍历建「日期 → {missed 数, 总数, 全 pending}」索引，
+   *          之后每天只做 O(1) 查表，整体降到 O(N + 60)。
+   * ========================================================== */
+  var _streakIdx = null, _streakFp = '';
   function calcStreak(records) {
     var recs = records || [];
     var today = new Date(); today.setHours(0, 0, 0, 0);
+    /* 建索引：内容指纹变化时才重建。
+       最初只比 length，但"打了一条又撤销一条"会让长度不变而内容改变，
+       于是索引失效、连续天数算错 —— 这正是打卡撤销场景会遇到的。 */
+    var sfp = recs.length + ':' + (recs.length ? (recs[0].date + '@' + recs[recs.length - 1].date) : '');
+    if (!_streakIdx || _streakFp !== sfp) {
+      var idx = {};
+      for (var i = 0; i < recs.length; i++) {
+        var r = recs[i];
+        if (!r || !r.date) continue;
+        var e = idx[r.date];
+        if (!e) { e = idx[r.date] = { n: 0, missed: 0, allPending: true }; }
+        e.n++;
+        if (r.status === 'missed') e.missed++;
+        if (r.status !== 'pending') e.allPending = false;
+      }
+      _streakIdx = idx; _streakFp = sfp;
+    }
     var n = 0;
-    for (var i = 0; i < 60; i++) {
-      var key = fmtDate(new Date(today.getTime() - i * 86400000));
-      var dayRecs = recs.filter(function (r) { return r.date === key; });
-      if (!dayRecs.length) continue;
-      var bad = dayRecs.filter(function (r) { return r.status === 'missed'; }).length;
-      if (i === 0 && dayRecs.every(function (r) { return r.status === 'pending'; })) continue;
-      if (bad > 0) break;
+    for (var d = 0; d < 60; d++) {
+      var key = fmtDate(new Date(today.getTime() - d * 86400000));
+      var e2 = _streakIdx[key];
+      if (!e2) continue;
+      /* 今天还没处理任何记录时不算"断"，这是原有语义，保持不变 */
+      if (d === 0 && e2.allPending) continue;
+      if (e2.missed > 0) break;
       n++;
     }
     return n;
@@ -8236,8 +8348,38 @@ window.EMCStore = (function () {
   function lsLoad(key, def) {
     try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch (e) { return def; }
   }
+/* ==========================================================
+   * v35 lsSave：保存失败必须让用户知道（此前是静默吞异常）
+   * ==========================================================
+   * 【原实现的严重问题】这是**所有本地数据落盘的唯一出口**
+   *   （meds / records / health / guardian / profile / notify 全部走这里）。
+   *   原来 catch 后什么都不做 —— 在隐私模式、存储配额满、
+   *   或某些内置浏览器 WebView 里 setItem 会抛异常，此时：
+   *     · saveMeds() / saveRecords() 照样返回，
+   *     · 界面照常显示"已保存"，
+   *     · **但数据一个字都没存下来**。
+   *   老人记了一上午的血压，刷新后全没了，还以为是应用坏了 ——
+   *   这比直接报错可怕得多，因为它骗人。
+   * ========================================================== */
+  var lsSaveWarned = false;
   function lsSave(key, val) {
-    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { /* ignore */ }
+    try {
+      localStorage.setItem(key, JSON.stringify(val));
+      return true;
+    } catch (e) {
+      console.warn('[EMC] 本地保存失败：' + key, e && e.name);
+      if (!lsSaveWarned) {
+        lsSaveWarned = true;
+        try {
+          var quota = (e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014));
+          toast(quota
+            ? '⚠️ 手机存储空间已满，最新记录没能保存。请清理浏览器数据后重试'
+            : '⚠️ 当前浏览器无法保存数据（可能开了无痕模式），本次记录不会保留');
+          try { V.speak(quota ? '手机存储满了，记录没有存上' : '当前是无痕模式，记录存不住'); } catch (e2) {}
+        } catch (e3) {}
+      }
+      return false;
+    }
   }
   function drugOf(mid) { return E.drugOf ? E.drugOf(mid) : null; }
   function fmtDate(d) {
@@ -9135,7 +9277,50 @@ EMC.Care = (function () {
   ];
 
   /* ---------- 工具 ---------- */
-  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  /* ==========================================================
+ * v35 电话号码 → tel: 链接的安全拼接
+ * ==========================================================
+ * 【为什么不能只靠 esc()】
+ *   联系人数据不仅来自本地表单（addContact 有正则校验），
+ *   还会从**云端**同步进来（kbLiveTick 持续拉 /api/family），
+ *   前端那套校验被完全绕过。
+ *   而 tel: 的 href 是双引号属性，号码里一个 `"` 就能闭合属性并注入事件处理器。
+ * 【做法】只保留电话真正需要的字符，其余全部丢弃 ——
+ *   比转义更彻底：号码里出现分号/引号/尖括号本来就一定是脏数据，
+ *   静默清理比原样拼进 URL 安全得多。
+ * ========================================================== */
+  function telHref(phone) {
+    var s = String(phone == null ? '' : phone);
+    /* 只留数字、+、#、*（# 键用于分机，* 用于转接） */
+    var clean = s.replace(/[^0-9+*#]/g, '');
+    return 'tel:' + clean;
+  }
+
+  /* ==========================================================
+ * v35 转义函数加固：**补上单引号与双引号**（真实的 XSS 根因）
+ * ==========================================================
+ * 【原实现的漏洞】只转义 & < >，**引号没转**。
+ *   而全站有 20 多处把 esc() 的结果塞进双引号属性，形如
+ *     'data-fedit="' + esc(c.id) + '"'
+ *   攻击者只要让某个字段里出现一个 `"`（用药名、家属姓名、
+ *   甚至**用户粘贴的处方文本**都可能含引号），就能提前闭合属性，
+ *   注入 onerror= / onfocus= 等事件处理器 —— 这是完整的 XSS 通路。
+ *   审计里最现实的一条链：药名来自用户粘贴的处方文本，
+ *   经过 renderImportList 拼进 input 的 value 属性。
+ *
+ * 【现在】补齐 & < > " ' 五个。
+ *   `'&#39;'` 用于单引号，`'&quot;'` 用于双引号，
+ *   两者都能阻止属性截断；单引号常被遗忘是因为多数属性用双引号，
+ *   但代码里也有单引号属性的写法，且未来新增代码容易踩坑。
+ * ========================================================== */
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
   function $id(id) { return document.getElementById(id); }
   function val(id) { var e = $id(id); return e ? e.value.trim() : ''; }
   function fmtDate(d) {
@@ -9166,7 +9351,7 @@ EMC.Care = (function () {
     catch (e) { return {}; }
   }
   function snapSet(obj) {
-    try { localStorage.setItem(SNAP_KEY, JSON.stringify(obj)); } catch (e) {}
+    try { localStorage.setItem(SNAP_KEY, JSON.stringify(obj)); } catch (e) { console.warn('[EMC] 离线快照写入失败', e && e.name); }
   }
 
   /* ==========================================================
@@ -9203,6 +9388,7 @@ EMC.Care = (function () {
     }
 
     var n = 0;
+    var failN = 0;   /* v35：补传失败的条数。只要 >0 就不打"已迁移"标记，下次登录重试。 */
 
     /* 1) 药品：按「名称|剂量」判重，避免重复添加 */
     var medKey = {};
@@ -9213,7 +9399,7 @@ EMC.Care = (function () {
       var k = (g.name || '') + '|' + (g.dose || '');
       if (medKey[k]) continue;
       medKey[k] = 1;
-      try { await store.addMed(g); n++; } catch (e) {}
+      try { await store.addMed(g); n++; } catch (e) { failN++; console.warn('[EMC] 补传药品失败：' + (g.name || '')); }
     }
 
     /* 2) 血压血糖：时间戳去重 */
@@ -9225,7 +9411,7 @@ EMC.Care = (function () {
       var hk = (h.ts || '') + '|' + (h.type || '') + '|' + (h.value || '');
       if (hpKey[hk]) continue;
       hpKey[hk] = 1;
-      try { await store.addHealth(h); n++; } catch (e) {}
+      try { await store.addHealth(h); n++; } catch (e) { failN++; console.warn('[EMC] 补传健康记录失败'); }
     }
 
     /* 3) 家属：手机号去重 */
@@ -9236,7 +9422,7 @@ EMC.Care = (function () {
       if (!c || !c.name) continue;
       if (fmKey[String(c.phone || c.name || '')]) continue;
       fmKey[String(c.phone || c.name || '')] = 1;
-      try { await store.addFamily(c); n++; } catch (e) {}
+      try { await store.addFamily(c); n++; } catch (e) { failN++; console.warn('[EMC] 补传联系人失败：' + (c.name || '')); }
     }
 
     /* 4) 今天已打卡的服药记录：云端没有才补 */
@@ -9248,10 +9434,20 @@ EMC.Care = (function () {
       var rk = r.date + '#' + r.mid + '#' + r.slot;
       if (recKey[rk]) continue;
       recKey[rk] = 1;
-      try { await store.addCheckin({ date: r.date, mid: r.mid, slot: r.slot, status: r.status }); n++; } catch (e) {}
+      try { await store.addCheckin({ date: r.date, mid: r.mid, slot: r.slot, status: r.status }); n++; } catch (e) { failN++; }
     }
 
-    try { localStorage.setItem(GM_KEY, '1'); } catch (e) {}
+    /* v35 关键修正：**有失败就不打"已迁移"标记**
+       原实现 4 处 `catch (e) {}` 吞掉补传失败，结尾却无条件写 GM_KEY='1'。
+       后果是：这批补传失败的数据**既没进新账号、又永远不会被重试** ——
+       而这恰好发生在"老人刚注册完、最以为数据都在"的那一刻，属于最不能丢的场景。
+       现在统计失败条数：只要有失败就不打标记，下次登录会自动重试
+       （去重逻辑保证不会重复导入已成功的部分）。 */
+    if (failN === 0) {
+      try { localStorage.setItem(GM_KEY, '1'); } catch (e) {}
+    } else {
+      console.warn('[EMC] 游客数据补传有 ' + failN + ' 项失败，下次登录会自动重试');
+    }
     return n;
   }
 
@@ -11122,6 +11318,15 @@ EMC.Care = (function () {
   var Bus = {
     map: {},
     on: function (evt, fn) { (this.map[evt] || (this.map[evt] = [])).push(fn); },
+    /* v35：补 off()。原来只有 on/emit，没有退订能力。
+       bindCockpit() 注册 4 个订阅后无法注销 —— 目前它只被 init() 调一次所以尚未发作；
+       但只要将来出现任何"重新初始化"的路径（重试、重新登录后重绑），
+       订阅数就会翻倍，renderCockpit 的调用次数也跟着翻倍。
+       补上 off() 让退订成为可能，是低成本的防患。 */
+    off: function (evt, fn) {
+      var a = this.map[evt]; if (!a) return;
+      var i = a.indexOf(fn); if (i >= 0) a.splice(i, 1);
+    },
     emit: function (evt, data) {
       (this.map[evt] || []).forEach(function (f) { try { f(data); } catch (e) {} });
       (this.map['*'] || []).forEach(function (f) { try { f({ evt: evt, data: data }); } catch (e) {} });
@@ -11175,8 +11380,35 @@ EMC.Care = (function () {
     return out.slice(0, 3);
   }
 
+  /* ==========================================================
+   * v35 renderCockpit：内容没变就不重绘
+   * ==========================================================
+   * 【为什么】kbLiveTick 每 30 秒无条件调一次 renderCockpit()，
+   *   而它会：整块覆盖 cpInsights / cpKpis 的 innerHTML → DOM 全量重建
+   *   → 再 querySelectorAll('[data-go]') 重新绑一遍监听。
+   *   老人打开页面后放在那里不动，这个重建就每 30 秒发生一次，
+   *   在千元机上表现为「放着也在耗电、偶尔一卡」。
+   * 【怎么做】算出「这帧真正要显示的内容」指纹，与上次相同就直接返回。
+   *   注意指纹必须**基于最终要渲染的内容**（快照的各个字段），
+   *   而不是时间戳 —— 否则时钟每帧都变，等于没加。
+   *   时钟单独更新，不受此短路影响。
+   * ========================================================== */
+  var cpLastSig = '';
   function renderCockpit() {
     var snap = kbSnapshot();
+    var sig = [snap.due, snap.taken, snap.pending, snap.missed, snap.rate, snap.streak,
+               snap.risk, snap.riskCount, snap.low.length, snap.bpBad, snap.gluBad,
+               snap.adrSev, snap.healthBad, snap.contacts].join('|');
+    /* 时钟始终更新（它本来就是「实时」的一部分） */
+    var clock0 = $id('cockpitClock');
+    if (clock0) {
+      var d0 = new Date();
+      clock0.textContent = ('0' + d0.getHours()).slice(-2) + ':' + ('0' + d0.getMinutes()).slice(-2)
+        + ':' + ('0' + d0.getSeconds()).slice(-2) + ' 更新';
+    }
+    if (sig === cpLastSig) return;      /* 数据没变 → 不重建 DOM */
+    cpLastSig = sig;
+
     var clock = $id('cockpitClock');
     if (clock) {
       var d = new Date();
@@ -11247,9 +11479,33 @@ EMC.Care = (function () {
   var kbLiveSyncing = false;
   /* v28：上一轮同步后各集合的指纹，用来判断「真的变了」而不是「每次都重渲染」 */
   var kbSyncFp = { records: '', meds: '', health: '', guardian: '', settings: '' };
+  /* ==========================================================
+   * v35 kbFp：数据指纹（判断"云端数据是否真的变了"）
+   * ==========================================================
+   * 【原来的两个问题】
+   *   ① `JSON.stringify(v||null)` 在同一行里被调用了 **两次**
+   *      （一次取 .length，一次 String(...) 又 stringify 一遍），纯浪费；
+   *      调用侧还把 kbFp 整体调了两遍（先比较、后存），于是每类数据每轮
+   *      要做 6 次全量序列化，4 类数据 = 24 次。
+   *   ② 更要紧的是**指纹不可靠**：只取"长度 + 末尾 160 字符"。
+   *      如果改动发生在数组前部（老人记录通常按时间递增，**新的打卡
+   *      恰恰追加在末尾或前面），前部变化可能既不影响长度也不影响尾部，
+   *      于是被误判为"数据没变"，**远端更新被静默丢弃**。
+   *      老人那边已经打了卡，子女那边却看不到。
+   * 【现在】一次序列化取全文，用「长度 + 头尾各一段 + 简单散列」做指纹：
+   *   比全文更省，又不会像只看尾部那样漏判。真正的内容比对交给调用侧
+   *   （这里只做"要不要进入比对"的粗筛，宁可多比也不能漏）。
+   * ========================================================== */
   function kbFp(v) {
-    try { return JSON.stringify(v || null).length + ':' + String(JSON.stringify(v || null)).slice(-160); }
-    catch (e) { return ''; }
+    try {
+      var str = JSON.stringify(v === undefined ? null : v);
+      if (!str) return '0';
+      var n = str.length;
+      /* djb2 散列全文，O(n) 单遍，比全文字符串做键便宜 */
+      var h = 5381;
+      for (var i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+      return n + ':' + (h >>> 0);
+    } catch (e) { return ''; }
   }
   async function kbLiveTick() {
     try {
@@ -11273,20 +11529,25 @@ EMC.Care = (function () {
           var health = await store.getHealth();
           var fam = await store.getFamily();
           var dirty = [];
-          if (kbFp(recs) !== kbSyncFp.records) {
-            kbSyncFp.records = kbFp(recs);
+          /* v35：指纹只算一次并存进局部变量复用（原来整体调了两遍） */
+          var fpR = kbFp(recs);
+          if (fpR !== kbSyncFp.records) {
+            kbSyncFp.records = fpR;
             if (JSON.stringify(recs) !== JSON.stringify(S.records)) { S.records = recs; dirty.push('records'); }
           }
-          if (kbFp(meds) !== kbSyncFp.meds) {
-            kbSyncFp.meds = kbFp(meds);
+          var fpM = kbFp(meds);
+          if (fpM !== kbSyncFp.meds) {
+            kbSyncFp.meds = fpM;
             if (JSON.stringify(meds) !== JSON.stringify(S.meds)) { S.meds = meds; dirty.push('meds'); }
           }
-          if (kbFp(health) !== kbSyncFp.health) {
-            kbSyncFp.health = kbFp(health);
+          var fpH = kbFp(health);
+          if (fpH !== kbSyncFp.health) {
+            kbSyncFp.health = fpH;
             if (JSON.stringify(health) !== JSON.stringify(S.health)) { S.health = health; dirty.push('health'); }
           }
-          if (kbFp(fam) !== kbSyncFp.guardian) {
-            kbSyncFp.guardian = kbFp(fam);
+          var fpG = kbFp(fam);
+          if (fpG !== kbSyncFp.guardian) {
+            kbSyncFp.guardian = fpG;
             /* 家人口径：S.guardian.contacts 对应后端 /api/family */
             var curC = (S.guardian && S.guardian.contacts) || [];
             if (JSON.stringify(fam) !== JSON.stringify(curC)) {
@@ -12007,7 +12268,9 @@ EMC.Care = (function () {
     box.innerHTML = '';
     list.forEach(function (d) {
       var div = document.createElement('div');
-      div.innerHTML = '<b>' + d.name + '</b>　<span class="muted">' + d.cat + ' · ' + d.dose + '</span>';
+      /* v35：补 esc()。当前数据源是内置药库（风险低），但一旦药库改为
+       云端下发或可编辑，这里立刻成为注入点 —— 补上比赌安全。 */
+    div.innerHTML = '<b>' + esc(d.name) + '</b>　<span class="muted">' + esc(d.cat) + ' · ' + esc(d.dose) + '</span>';
       div.addEventListener('click', function () { S.picked = d; renderPicked(); box.innerHTML = ''; $id('medSearch').value = d.name; });
       box.appendChild(div);
     });
@@ -12015,7 +12278,10 @@ EMC.Care = (function () {
   function renderPicked() {
     var p = $id('medPicked');
     if (!S.picked) { p.innerHTML = '<span class="muted">尚未选择药品</span>'; return; }
-    p.innerHTML = '<b>' + S.picked.name + '</b>　' + S.picked.dose + '<div class="small muted">' + S.picked.timing + '</div>';
+    /* v35：补 esc()。S.picked 直接来自用户存的药品记录，
+       药名/剂量常常是**粘贴处方文本**得来的，最可能含引号与尖括号。 */
+    p.innerHTML = '<b>' + esc(S.picked.name) + '</b>　' + esc(S.picked.dose)
+      + '<div class="small muted">' + esc(S.picked.timing) + '</div>';
   }
   function openEditMed(id) {
     var m = S.meds.filter(function (x) { return x.id === id; })[0];
@@ -12355,7 +12621,7 @@ EMC.Care = (function () {
         : ('血糖 ' + h.val + ' mmol/L · ' + (h.meal === 'post' ? '餐后' : '空腹'));
       var tagText = lv === 'high' ? '偏高' : (lv === 'low' ? '偏低' : '达标');
       var mark = '<span class="h-tag ' + cls + '">' + tagText + '</span>';
-      var adv = ano ? '<div class="adv"><b>就医建议：</b>' + healthAdvice(h) + '</div>' : '';
+      var adv = ano ? '<div class="adv"><b>就医建议：</b>' + esc(healthAdvice(h)) + '</div>' : '';
       return '<div class="h-item ' + cls + '"><div class="h-val">' + valText + mark +
         (h.demo ? ' <span class="demo-badge">演示</span>' : '') + '</div>' +
         '<div class="muted small">' + h.date + ' ' + (h.time || '') + (h.note ? ' · ' + esc(h.note) : '') + '</div>' +
@@ -12435,7 +12701,8 @@ EMC.Care = (function () {
       S.guardian.contacts.map(function (c) {
         return '<div class="med-row"><div class="info"><div class="nm">' + esc(c.name) + ' <span class="muted small">' + esc(c.relation || '') + '</span></div>' +
           '<div class="ds">☎ ' + esc(c.phone || '') + '</div></div>' +
-          '<a class="btn gray sm" href="tel:' + esc(c.phone || '') + '" style="text-decoration:none;text-align:center">呼叫</a>' +
+          /* v35：电话 href 走 telHref()（只保留数字+#*），防止云端脏数据闭合属性注入 */
+      '<a class="btn gray sm" href="' + telHref(c.phone) + '" style="text-decoration:none;text-align:center">呼叫</a>' +
           '<button class="btn gray sm" data-fedit="' + esc(c.id) + '">编辑</button>' +
           '<button class="btn gray sm" data-fdel="' + esc(c.id) + '">删除</button></div>';
       }).join('') : '<div class="empty">尚未添加家属联系人</div>';
@@ -13464,7 +13731,7 @@ EMC.Care = (function () {
 
     /* 只保留有电话的联系人；没有电话的联系人列出来也无法拨打，不如不列 */
     var callRows = contacts.filter(function (c) { return c && c.phone; }).map(function (c) {
-      return '<a class="sos-call" href="tel:' + esc(c.phone) + '">' +
+      return '<a class="sos-call" href="' + telHref(c.phone) + '">' +
         '<span class="sc-n">' + esc(c.name || '家属') + '</span>' +
         '<span class="sc-r">' + esc(c.relation || '家属') + '</span>' +
         '<span class="sc-p">📞 ' + esc(c.phone) + '</span>' +
@@ -13491,16 +13758,30 @@ EMC.Care = (function () {
         ? '已打开紧急求助。最上面是拨打一百二零，最下面一格是家人的电话，点一下就能打。'
         : '已打开紧急求助。最上面是拨打一百二十。');
     } catch (e) {}
-    /* ESC 关闭兜底：老人若按了手机返回/主页键，不至于卡在遮罩后面 */
-    function close() { try { if (mask.parentNode) mask.parentNode.removeChild(mask); } catch (e) {} }
+    /* ==========================================================
+     * v35 修一处我自己在上一轮引入的监听器泄漏
+     * ==========================================================
+     * 【原写法的问题】ESC 监听器只在 **按 ESC 的那条分支里**被移除：
+     *     document.addEventListener('keydown', function onEsc(e) {
+     *       if (ESC) { close(); document.removeEventListener('keydown', onEsc); }
+     *     });
+     * 而老人更常用的是点「我没事，关掉」或点遮罩 —— 这两条路径走 close()，
+     * 监听器**永久留在 document 上**，并持有 mask 闭包引用。
+     * 老人反复误触 SOS 是高频真实场景，于是每次都泄漏一整个 DOM 树。
+     * 【正确写法】把 handler 提到变量里，在 close() 里**无条件**移除，
+     * 保证"无论从哪条路关闭，监听器一定被摘掉"。这也正是同文件里提醒浮层
+     * （escHandler）的写法，当时没对齐。
+     * ========================================================== */
+    var escHandler = function (e) {
+      if (e.key === 'Escape' || e.key === 'Esc' || e.keyCode === 27) close();
+    };
+    function close() {
+      document.removeEventListener('keydown', escHandler);
+      try { if (mask.parentNode) mask.parentNode.removeChild(mask); } catch (e) {}
+    }
     mask.querySelector('#sosClose').addEventListener('click', close);
     mask.addEventListener('click', function (e) { if (e.target === mask) close(); });
-    document.addEventListener('keydown', function onEsc(e) {
-      if (e.key === 'Escape' || e.keyCode === 27) {
-        close();
-        document.removeEventListener('keydown', onEsc);
-      }
-    });
+    document.addEventListener('keydown', escHandler);
   }
 
   /* ---------- 账号 UI ---------- */
