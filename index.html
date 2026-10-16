@@ -958,24 +958,9 @@
       }
     } catch (e) {}
 
-    /* 13) 把悬浮的 SOS 按钮搬到首页最下面（不再挡住屏幕） */
-    try {
-      var sf = document.getElementById('sosFloat');
-      var home = document.getElementById('tab-home');
-      if (sf && home && !sf.__kbMoved) {
-        sf.__kbMoved = true;
-        sf.className = 'btn sos-big kb-home-sos';
-        sf.textContent = '🆘 紧急求助';
-        sf.removeAttribute('title');
-        home.appendChild(sf);
-        if (!document.getElementById('kbSosStyle')) {
-          var s3 = document.createElement('style');
-          s3.id = 'kbSosStyle';
-          s3.textContent = '#sosFloat.kb-home-sos{display:block!important;position:static!important;left:auto!important;right:auto!important;bottom:auto!important;top:auto!important;width:100%!important;height:auto!important;min-height:56px!important;max-width:none!important;margin:14px 0 26px!important;border-radius:var(--radius-lg)!important}';
-          document.head.appendChild(s3);
-        }
-      }
-    } catch (e) {}
+    /* 13) v34：原「把悬浮 SOS 搬到首页」的逻辑已随 #sosFloat 一并删除。
+   *  它没能生效，按钮退化回右下角悬浮态，与 ⚡ 快捷按钮重叠。
+   *  首页也不需要它 —— 老人模式的「求助」大按钮已经在首页显著位置。 */
 
     /* ==========================================================
      * v33 移除本地看板密码门（97 行）—— 改由 dashboard.html 统一承担三级验证
@@ -1463,7 +1448,7 @@ body { padding-bottom: var(--sab); }
 }
 /* 键盘弹起时底部导航与悬浮球让位，避免遮挡输入框与发送键 */
 body.kb-open .tabbar { transform: translateY(130%); transition: transform var(--dur) var(--ease); }
-body.kb-open #sosFloat, body.kb-open #backTop { opacity: 0; pointer-events: none; }
+body.kb-open #backTop { opacity: 0; pointer-events: none; }
 .tabbar { transition: transform var(--dur) var(--ease); }
 .composer input {
   flex: 1; min-height: 56px; border: 2px solid var(--c-border); border-radius: var(--radius);
@@ -1892,16 +1877,7 @@ body.fs-4 { --fs: 33px; }
 .dialog.sos { max-width: 440px; }
 .dialog.sos h3 { color: var(--c-danger); }
 
-#sosFloat {
-  /* v19 P0-2：底部避让统一走 --sab / --kb 令牌（不再直接写 env()） */
-  position: fixed; right: calc(16px + var(--sar)); bottom: calc(78px + var(--sab) + var(--kb));
-  z-index: 45; width: 60px; height: 60px; border-radius: 50%;
-  border: 3px solid #fff; background: var(--grad-danger); color: #fff;
-  font-size: 1.5em; box-shadow: 0 6px 18px rgba(183, 28, 28, .4);
-  display: flex; align-items: center; justify-content: center; cursor: pointer;
-}
-#sosFloat:active { transform: scale(.94); }
-
+/* v34：#sosFloat 样式已随按钮移除（它固定在右下角，与快捷按钮重叠） */
 /* 轻提示 toast */
 .toast {
   position: fixed; left: 50%; top: 76px; transform: translateX(-50%) translateY(-12px);
@@ -1961,7 +1937,7 @@ body.fs-4 { --fs: 33px; }
   .overview-card .ov-cell:nth-child(1), .overview-card .ov-cell:nth-child(2) { border-bottom: 1px solid var(--c-border); }
 }
 @media print {
-  .tabbar, .topbar, .composer, .chips, .toolbar, #sosFloat { display: none !important; }
+  .tabbar, .topbar, .composer, .chips, .toolbar { display: none !important; }
   body { background: #fff; }
 }
 
@@ -2809,7 +2785,6 @@ html { overflow-x: hidden; }
   .card { padding: 20px; margin-bottom: 20px; }
   .overview-card { margin: 22px 28px 0; }
   .voice-state { left: 248px; }
-  #sosFloat { right: 28px; bottom: 28px; }
   .chat-scroll { height: 52vh; height: 52dvh; }
 
   .home-ov { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -2850,7 +2825,7 @@ html { overflow-x: hidden; }
   html, body { background: #fff !important; }
   /* 隐藏纯交互元素，避免出现在纸质报告里 */
   .tabbar, .topbar, .sidebar, .composer, .chips, .toolbar, .suggest,
-  #sosFloat, .voice-state, .toast { display: none !important; }
+  .voice-state, .toast { display: none !important; }
   body { padding: 0 !important; }
   .app, .app-body, main, .board { max-width: none !important; padding: 0 !important; margin: 0 !important; }
 
@@ -4131,8 +4106,18 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
     <button type="button" class="vw-x" id="voiceWarnClose" aria-label="关闭提示">×</button>
   </div>
 
-  <!-- 全局 SOS 悬浮按钮 -->
-  <button id="sosFloat" title="紧急求助" aria-label="紧急求助">🆘</button>
+  <!-- v34：全局 SOS 悬浮按钮已移除
+       【为什么删】它固定在视口右下角，与同一位置的 ⚡ 快捷按钮**完全重叠**，
+         两个圆球叠在一起：既挡住了 ⚡ 的点击区（现场演示时经常误触），
+         视觉上也像是坏掉了。
+         根因是下面第 13 段「搬到首页」的 JS 没能生效（执行时机/CSP 等原因），
+         按钮退化回悬浮态；而 ⚡ 的定位同样是右下角，于是撞在一起。
+         【为什么不修而是删】求助入口并不依赖它，且有四个更合适的去处：
+           ① 老人模式首页「求助」大按钮（#simpleSos，三件事之一）
+           ② 守护页顶部红色 SOS 大按钮（#guardSos，位置固定、不会被遮）
+           ③ 助手页「紧急求助」按钮（#btnSos）
+           ④ 直接对智能体说「救命 / 求助」（#agentSos）
+         老人与家属都能一眼找到，删掉这个重叠的悬浮球是净收益。 -->
 
   <!-- v19 P1-6/P1-13：动态内容无障碍播报区（Toast / 加载完成 / 用药提醒） -->
   <div id="livePolite" class="sr-only" aria-live="polite" aria-atomic="true"></div>
@@ -9919,8 +9904,7 @@ EMC.Care = (function () {
     if (qSos) qSos.addEventListener('click', openSos);
 
     /* 全局 SOS 悬浮按钮 */
-    var sosFloat = $id('sosFloat');
-    if (sosFloat) sosFloat.addEventListener('click', openSos);
+    /* v34：#sosFloat 的事件绑定已随按钮一并移除 */
   }
 
   /* v19 P0-5：字号 4 档（21/24/28/32），档位名「小 / 中 / 大 / 特大」 */
