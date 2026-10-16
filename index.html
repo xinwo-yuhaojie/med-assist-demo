@@ -421,7 +421,37 @@
       lk.rel = 'manifest'; lk.href = './manifest.webmanifest';
       document.head.appendChild(lk);
       if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === '127.0.0.1' || location.hostname === 'localhost')) {
-        navigator.serviceWorker.register('./sw.js').catch(function () {});
+        /* ==========================================================
+         * v28 补上「自动更新」的最后一环
+         * ==========================================================
+         * 【为什么这段不可省】我们重写了 sw.js 修掉白屏漏洞，但——
+         *   老人手机上**已经注册过旧版 sw.js**。浏览器不会自动换掉它，
+         *   而旧版正是那个「一升版就把 HTML 当 JS 返回」的版本。
+         *   也就是说：光修 sw.js 文件不够，还得保证**新 sw.js 能自己上去**。
+         * 【做法】标准的三件事：
+         *   ① updatefound → 出现新 SW 时，若本页已有 SW 在控制，说明是「更新」；
+         *      等它装好就清缓存 + 刷新一次，让新规则立刻接管。
+         *   ② 每次打开都调 reg.update() 主动查一次（否则要等到浏览器自发检查，
+         *      间隔可能长达几天 —— 老人几天内不打开是常态）。
+         *   ③ 只在「已有控制者」时刷新，避免首次安装把自己刷掉造成闪屏。
+         * ========================================================== */
+        navigator.serviceWorker.register('./sw.js').then(function (reg) {
+          function adoptNewWorker(nw) {
+            if (!nw) return;
+            nw.addEventListener('statechange', function () {
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                /* 有旧 SW 在管，新 SW 装好了 → 清掉旧缓存并刷新一次 */
+                try { caches.keys().then(function (ks) { ks.forEach(function (k) { if (k.indexOf('kangban-') === 0) caches.delete(k); }); }); } catch (e) {}
+                window.__kbSWAdopted = true;
+                try { location.reload(); } catch (e2) { location.href = location.href; }
+              }
+            });
+          }
+          if (reg.installing) adoptNewWorker(reg.installing);
+          reg.addEventListener('updatefound', function () { adoptNewWorker(reg.installing); });
+          /* 主动查一次更新 */
+          try { reg.update(); } catch (e) {}
+        }).catch(function () { /* 注册失败不影响使用，只是没有离线能力 */ });
       }
     } catch (e) {}
 
