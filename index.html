@@ -1366,6 +1366,15 @@ body.kb-open #sosFloat, body.kb-open #backTop { opacity: 0; pointer-events: none
 }
 #offlineBar.show { display: block; }
 
+/* v27：注册页引导卡（现场第一道门，让应用自己说清「让子女帮您注册」） */
+.auth-hint {
+  margin-top: 12px; padding: 12px 14px; border-radius: 14px;
+  background: var(--c-primary-soft, #EAF5F3);
+  border: 2px solid var(--c-primary, #16605A);
+  color: var(--c-text, #222); font-size: .92em; line-height: 1.95; text-align: left;
+}
+.auth-hint b { color: var(--c-primary, #16605A); }
+
 /* ==========================================================
    * v27 P1：语音播报不可用提示条
    * 【为什么要做】调研现场最怕「点了没声音」。老人手机常缺中文语音包，
@@ -3908,6 +3917,16 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
       <div id="authForgotRow" class="auth-fg"><span id="authForgot">忘记密码？</span></div>
       <button id="authGuest" class="auth-gb">先以游客身份体验（数据仅存本机）</button>
       <div class="auth-ft">家人可用同一账号密码登录，远程查看老人用药 / 健康 / 风险记录。</div>
+      <!-- v27：现场第一道门的引导。老人自己不会注册账号，
+           但「让子女帮您注册」这句话必须由应用说出来，不能指望志愿者临场解释。 -->
+      <div class="auth-hint">
+        <b>第一次用怎么办？</b><br>
+        建议让子女帮忙注册一个账号（用手机号即可，几秒钟）。
+        注册之后，<b>您在手机上的每一次记录，子女都能在自己手机上看到</b>；
+        忘了吃药时，子女的微信也会收到提醒。<br>
+        也可以先点上面的按钮直接体验，体验时录的记录不会丢，
+        以后注册了会自动帮您搬到新账号里。
+      </div>
     </div>
   </div>
 
