@@ -1,6 +1,11 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+<!-- v28：本行必须保持在文件最开头。
+     版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
+     而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
+     如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
+<script>window.KB_BUILD=2026101701;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -17,7 +22,7 @@
   var LOCAL_API = /^\/api\/(login|register|reset-password|me|meds|records|checkin|health|family|notify|summary)/;
 
   // 云端账号开关：向函数探测 /api/store，返回 mode=oss（已开通 OSS）时账号改走云端
-  // 关键：拿不到明确答复（超时/网络失败）时**仍按云端**，避免“一会儿本机一会儿云端”导致登录被顶掉
+  // 关键：拿不到明确答复（超时/网络失败）时**仍按云端**，避免"一会儿本机一会儿云端"导致登录被顶掉
   var _cloudP = null, _cloudOn = true;
   function cloudReady() {
     if (!_cloudP) {
@@ -34,6 +39,33 @@
     return _cloudP;
   }
   try { cloudReady(); } catch (e) {}   // 页面一加载就提前探测，登录时不再等
+
+  /* ==========================================================
+   * v28 匿名设备令牌
+   * 【背景：为什么要加它】服务端所有「贵接口」（AI 问答 / 语音合成 / 语音识别）
+   *   以前只按 IP 限流。但 IP 可以被伪造（请求头自带 X-Forwarded-For 即可），
+   *   也就是说限流形同虚设 —— 别人可以无限刷你的大模型账单。
+   *   服务端已改成「IP 桶 + 令牌桶」双限流，这个令牌就是令牌桶的钥匙。
+   * 【它是什么】一个本机生成的 32 位随机十六进制串，只存在这台设备的
+   *   localStorage 里，随 AI 类请求发给服务端做计数用。
+   * 【安全性说明（重要，别误会）】
+   *   · 它**不是**登录凭据，泄露了也读不到任何人的数据；
+   *   · 它**不能**让任何人免费用 AI —— 只是让「换 IP 绕过限流」这条路走不通；
+   *   · 真正的身份认证仍然是 emc_token，两者互不替代。
+   * 换手机/清缓存会重新生成一枚，等于重新开始计数，这是可接受的。
+   * ========================================================== */
+  var ANON_KEY = 'kb_anon_v28';
+  function anonToken() {
+    var t = null;
+    try { t = localStorage.getItem(ANON_KEY); } catch (e) {}
+    if (!t || !/^[a-f0-9]{32}$/.test(t)) {
+      t = hex(16);
+      try { localStorage.setItem(ANON_KEY, t); } catch (e) {}
+    }
+    return t;
+  }
+  anonToken();   // 提前生成，避免首次请求时才发现没有
+
   function lsGet(k, d) { try { return JSON.parse(localStorage.getItem(k) || 'null') || d; } catch (e) { return d; } }
   function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   function users() { return lsGet(UK, {}); }
@@ -203,13 +235,33 @@
     if (rel.indexOf('/api/') === 0) return 6000;
     return 0;
   }
+  /* v28：给「贵接口」请求统一加上匿名设备令牌（服务端双桶限流的令牌桶）。
+   * 只对 /api/ai/* 与 /api/asr/* 生效，其它接口不受影响。
+   * 注意保留调用方原有的 headers（Authorization 等）不被覆盖。 */
+  function withAnon(init) {
+    try {
+      var o = init || {};
+      var h = {};
+      if (o.headers) {
+        try {
+          if (typeof o.headers.forEach === 'function') o.headers.forEach(function (v, k) { h[k] = v; });
+          else Object.keys(o.headers).forEach(function (k) { h[k] = o.headers[k]; });
+        } catch (e) { h = {}; }
+      }
+      if (h['X-KB-Anon'] || h['x-kb-anon']) return Object.assign({}, o, { headers: h });
+      h['X-KB-Anon'] = anonToken();
+      return Object.assign({}, o, { headers: h });
+    } catch (e) { return init; }
+  }
+
   function fetchAsr(path, init) {
+    var init2 = withAnon(init);
     // 只有在本机打开时才尝试本地识别；其他设备直接用云端（不再白等 1.2 秒 / 不再报混合内容）
     var h = location.hostname;
-    if (h !== '127.0.0.1' && h !== 'localhost') return _fetch(ASR_CLOUD + path, init);
-    var local = _fetch(ASR_LOCAL + path, init);
+    if (h !== '127.0.0.1' && h !== 'localhost') return _fetch(ASR_CLOUD + path, init2);
+    var local = _fetch(ASR_LOCAL + path, init2);
     var timer = new Promise(function (_, rej) { setTimeout(function () { rej(new Error('local-timeout')); }, 1200); });
-    return Promise.race([local, timer]).catch(function () { return _fetch(ASR_CLOUD + path, init); });
+    return Promise.race([local, timer]).catch(function () { return _fetch(ASR_CLOUD + path, init2); });
   }
 
   window.fetch = function (input, init) {
@@ -219,6 +271,14 @@
       else if (input && input.url) url = String(input.url);
       rel = url;
       if (rel.indexOf('/api/asr/') === 0) return fetchAsr(rel, init);
+      /* v28：/api/ai/* 只补匿名令牌，不在此处 return。
+         刻意让它继续往下走到末尾的通用分支 —— 那里还有
+         /api/ai/chat 的响应格式兼容（把 choices[0].message.content 归一成 text）
+         和 timeoutFor 超时包装。在这里提前 return 会把它们一并绕过，
+         属于「顺手改坏」的典型。 */
+      if (rel.indexOf('/api/ai/') === 0) {
+        init = withAnon(init);
+      }
       if (rel.indexOf('/api/') === 0 && LOCAL_API.test(rel)) {
         var method = (init && init.method) ? String(init.method).toUpperCase() : 'GET';
         var bodyText = (init && typeof init.body === 'string') ? init.body : '';
@@ -448,7 +508,7 @@
               })
               .catch(function () { if (tip) tip.textContent = '保存失败：网络异常'; });
           });
-          /* 进入“家属守护”页时刷新一次 */
+          /* 进入"家属守护"页时刷新一次 */
           Array.prototype.forEach.call(document.querySelectorAll('button'), function (b) {
             if ((b.textContent || '').indexOf('家属守护') >= 0) b.addEventListener('click', function () { setTimeout(kbLoadNotify, 300); });
           });
@@ -475,7 +535,7 @@
 
     /* 7) 手机端易用性：每个弹窗加固定 ✕ 关闭键 + 点遮罩空白关闭 + 大点击区 + 底部安全区 */
     try {
-      /* 关闭浮层：优先点应用自己的“关闭/取消”按钮，保持应用的返回键记账平衡（否则会多退一次历史 → 浏览器退出） */
+      /* 关闭浮层：优先点应用自己的"关闭/取消"按钮，保持应用的返回键记账平衡（否则会多退一次历史 → 浏览器退出） */
       function kbCloseMask(m) {
         try {
           var cand = ['ucClose', 'authCancel', 'moreCancel', 'helpClose', 'resetCancel'];
@@ -556,7 +616,7 @@
       }
     } catch (e) {}
 
-    /* 9) 聊天体验：长回复自动把“开头”对齐到可视区顶部（豆包手感），短回复仍滚到底 */
+    /* 9) 聊天体验：长回复自动把"开头"对齐到可视区顶部（豆包手感），短回复仍滚到底 */
     try {
       function kbAlignReply(node) {
         try {
@@ -618,7 +678,7 @@
             var k = Math.min(1, (Date.now() - t0) / total);
             var n = Math.max(1, Math.floor(full.length * k));
             var shown = full.slice(0, n);
-            if (k >= 1) shown = full; else shown = shown + '▍';   /* 打字光标，增强“生成中”的感觉 */
+            if (k >= 1) shown = full; else shown = shown + '▍';   /* 打字光标，增强"生成中"的感觉 */
             if (shown !== body.textContent) body.textContent = shown;
             var now = Date.now();
             if (now - lastAlign > 150) { lastAlign = now; if (window.__kbAlignReply) window.__kbAlignReply(node); }
@@ -637,7 +697,7 @@
       window.__kbAlignReply = kbAlignReply;
     } catch (e) {}
 
-    /* 11) 兜底：脚本异常时不再白屏/像“闪退”，给出可点的“重新加载” */
+    /* 11) 兜底：脚本异常时不再白屏/像"闪退"，给出可点的"重新加载" */
     try {
       function kbShowRecovery(msg) {
         try {
@@ -662,7 +722,7 @@
       });
     } catch (e) {}
 
-    /* 12) 终极硬保护：绝不让任何代码把用户“带出网站” */
+    /* 12) 终极硬保护：绝不让任何代码把用户"带出网站" */
     try {
       if (!window.__kbBackGuard) {
         window.__kbBackGuard = true;
@@ -846,18 +906,32 @@
          挂到 window 后缓存键才真正随版本走。 */
       window.KB_BUILD = KB_BUILD;
       window.__kbVersionProbe = true;
+      /* v28 性能修复：原来为了读一个版本号，把**整个 700KB 的 index.html**
+         完整下载一遍（cache:no-store，强制绕过所有缓存）。
+         在社区弱网下这是一次实打实的流量浪费，而且会跟 kb.js 抢带宽 ——
+         老人等的就是这几秒。
+         现在用 Range 请求只取**前 2KB**（约 1/350 的流量）。
+         前提：下面这行版本声明必须待在文件最开头，所以放在 <head> 第一屏。
+         若服务器忽略 Range（返回 200 + 全文），代码也能兼容 —— 状态码判断即可。 */
       setTimeout(function () {
         try {
           if (location.href.indexOf('_probe') >= 0) return;
-          fetch(location.pathname + '?_probe=' + Date.now(), { cache: 'no-store' })
-            .then(function (r) { return r.ok ? r.text() : ''; })
+          /* 只有联网且不省流量时才做自检：老人常用 WiFi，但流量也可能是套餐内的 */
+          var conn = navigator.connection;
+          if (conn && (conn.saveData === true || /(^|-)2g$/.test(String(conn.effectiveType || '')))) return;
+          fetch(location.pathname + '?_probe=' + Date.now(), {
+            cache: 'no-store',
+            headers: { 'Range': 'bytes=0-2047' }
+          })
+            .then(function (r) { return r.text(); })
             .then(function (t) {
-              var mm = t && t.match(/KB_BUILD\s*=\s*(\d{8,})/);
+              if (!t) return;
+              var mm = t.match(/KB_BUILD\s*=\s*(\d{8,})/);
               if (mm && Number(mm[1]) > KB_BUILD && !document.getElementById('kbUpdateBar')) {
                 var d = document.createElement('div');
                 d.id = 'kbUpdateBar';
                 d.setAttribute('style', 'position:fixed;left:10px;right:10px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:150;background:#fff8e1;border:2px solid #f0a020;color:#6b4a00;border-radius:12px;padding:12px 14px;font-size:15px;line-height:1.6;box-shadow:0 6px 20px rgba(0,0,0,.25)');
-                d.innerHTML = '<b>发现新版本！</b>点右侧按钮刷新即可（只是刷新页面，不会退出网站）。 <button id="kbUpdateGo" style="margin-top:6px;min-height:44px;padding:8px 14px;border:none;border-radius:8px;background:#f0a020;color:#fff;font-size:15px;font-weight:700">立即更新</button>';
+                d.innerHTML = '<b>有新版本了！</b>点右侧按钮刷新即可（只是刷新页面，不会退出网站）。 <button id="kbUpdateGo" style="margin-top:6px;min-height:44px;padding:8px 14px;border:none;border-radius:8px;background:#f0a020;color:#fff;font-size:15px;font-weight:700">立即更新</button>';
                 document.body.appendChild(d);
                 document.getElementById('kbUpdateGo').addEventListener('click', function () {
                   var base = location.href.split('?')[0].split('#')[0];
@@ -869,10 +943,10 @@
               }
             }).catch(function () {});
         } catch (e) {}
-      }, 5000);
+      }, 6000);
     } catch (e) {}
 
-    /* 5) 把“云端账号”字样改准确（数据其实在本机） */
+    /* 5) 把"云端账号"字样改准确（数据其实在本机） */
     try {
       var ab = document.getElementById('accountBtn');
       if (ab) { ab.title = '登录或注册账号'; ab.setAttribute('aria-label', '登录或注册账号'); }
@@ -3086,7 +3160,7 @@ body.simple-mode .more-item { font-size: .95em; }
 .cp-insight.tone-danger .ci-go { color: var(--c-danger); }
 .cp-foot { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .cp-foot .btn { flex: 1; min-width: 140px; width: auto; }
-/* 驾驶舱在极简/家属模式下也保留（它是“实时监测”的核心入口），但收敛为精简形态 */
+/* 驾驶舱在极简/家属模式下也保留（它是"实时监测"的核心入口），但收敛为精简形态 */
 body.simple-mode #kbCockpit .cp-insights { display: none; }
 body.simple-mode #kbCockpit .cp-foot { display: none; }
 @media (max-width: 419px) {
@@ -3094,7 +3168,7 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
 }
 
 /* ==========================================================
- * v26 首次使用向导（社区调研第一天最关键：老人第一次打开必须有“人带路”）
+ * v26 首次使用向导（社区调研第一天最关键：老人第一次打开必须有"人带路"）
  * 设计：一次只做一件事、一个超大按钮、每步都出声、做完给掌声。
  * ========================================================== */
 .wiz-mask { position:fixed; inset:0; z-index:2147483005; background:rgba(10,26,24,.72);
@@ -5182,7 +5256,13 @@ EMC.Engine = (function () {
     { intent: 'health',    kw: ['血压', '血糖', '记一下', '记录血压', '记录血糖', '量血压', '量了血', '高压', '低压', '心率', '空腹', '餐后', '血是多少', '血压正常', '血糖正常', '测了', '今天量', '最近血', '血压飙了', '低压高', '高压高', '压高', '糖高了', '糖低了', '血糖低了', '健康', '健康档案', '身体', '身体怎么样', '健康状况', '健康问题', '健康记录', '体检'], w: 3 },
     { intent: 'refill',    kw: ['余量', '剩下几', '快吃完', '不够吃', '还够吃几天', '药快吃完', '补充', '余药', '还剩多少', '药还有', '够吃吗', '快没', '快完了', '剩多少', '剩的不多', '够不够'], w: 3 },
     { intent: 'report',    kw: ['周报', '这周总结', '本周总结', '本周小结', '周总结', '生成报告', '一周总结', '给我总结'], w: 3 },
-    { intent: 'sos',       kw: ['救命', '紧急求助', '打120', '呼叫家属', '联系家属', '求助', '120', '紧急情况', '快叫', '救我'], w: 4 }
+    /* v28 新增「统筹」意图：老人/家属真正想问的整体性问题。
+       为什么权重给 4（最高，仅次于紧急求助）：
+       「我今天该怎么办」「要注意什么」「整体怎么样」这类问题是社区调研里被问得最多的，
+       而它必须跨板块（用药+血压+依从+余药+不适+家属）综合判断，
+       不能落到任何单板块子智能体上，否则回答会答非所问、顾此失彼。 */
+    { intent: 'orchestrate', kw: ['怎么办', '注意什么', '要注意', '整体', '整体如何', '我最近怎么样', '最近怎么样', '看看情况', '今天要注意什么', '该注意什么', '需要注意什么', '我该怎么办', '该咋办', '帮我看看', '统筹', '安排一下', '优先级', '先做什么', '先干', '哪个先', '最要紧', '要紧吗', '严重吗', '要紧不', '帮我看看情况', '总结一下', '说说情况'], w: 4 },
+    { intent: 'sos',       kw: ['救命', '紧急求助', '打120', '呼叫家属', '联系家属', '求助', '120', '紧急情况', '快叫', '救我'], w: 5 }
   ];
 
   /* 口语/方言/错字归一化（命中 EMC.SYNONYMS 即替换为标准说法，提升方言命中率） */
@@ -5614,6 +5694,8 @@ EMC.Engine = (function () {
       report:   ['我的药还够吃几天', '帮我看看用药有没有风险|tab:risk'],
       record:   ['帮我看看用药有没有风险|tab:risk', '我的药还够吃几天', '给我生成这周总结|tab:data'],
       symptom:  ['记一下血压 135 88', '我漏服了会有什么风险|tab:risk'],
+      /* v28：统筹之后的追问应当继续深挖细节，而不是把用户又送回概览 */
+      orchestrate: ['记一下血压 135 88', '我今天还有什么药没吃|tab:meds', '帮我看看用药有没有风险|tab:risk'],
       greeting: ['我今天还有什么药没吃', '这个药一天吃几次'],
       sos:      ['呼叫家属|tab:guardian', '怎么记住按时吃药']
     };
@@ -6232,6 +6314,8 @@ EMC.Engine = (function () {
     reminder: '用药提醒助手', knowledge: '慢病知识答疑助手', risk: '用药风险筛查助手',
     record: '用药数据汇总助手', symptom: '症状与就医指引助手', greeting: '陪伴问候',
     health: '健康档案助手', refill: '余药管理助手', report: '周报生成助手', sos: '紧急求助助手',
+    /* v28：统筹助手（跨板块优先级决策） */
+    orchestrate: '健康统筹助手',
     fallback: '兜底应答'
   };
 
@@ -6275,7 +6359,7 @@ EMC.Engine = (function () {
     if (cond.length) L.push('慢病档案：' + cond.join('、') + '。');
     if (meds.length) L.push('当前用药：' + meds.join('；') + '。');
     /* v23：把用户填写的所有资料都纳入上下文 —— 血压/血糖记录、打卡依从、紧急联系人，
-       让大模型回答时能“查到”用户的真实情况，给出更贴合的建议 */
+       让大模型回答时能"查到"用户的真实情况，给出更贴合的建议 */
     var hp = Array.isArray(ctx.health) ? ctx.health : [];
     var bps = hp.filter(function (h) { return h.type === 'bp' && h.sys; });
     var gls = hp.filter(function (h) { return h.type === 'glu' && h.val; });
@@ -6295,20 +6379,50 @@ EMC.Engine = (function () {
     var fam = (ctx.guardian && Array.isArray(ctx.guardian.contacts)) ? ctx.guardian.contacts.length : 0;
     if (fam) L.push('已绑定紧急联系人 ' + fam + ' 位。');
     /* v24：实时态势注入——各版块数据汇成一句"当前形势"，
-       让大模型回答"我最近怎么样/帮我看看情况"这类综合问题时有据可依、分得清轻重 */
+       让大模型回答"我最近怎么样/帮我看看情况"这类综合问题时有据可依、分得清轻重
+       v28：改为**优先使用调用方算好的快照**（ctx.snap / ctx.insights）。
+       原实现在这里另起炉灶重算一遍，产生了三处和界面不一致的口径分歧：
+         ① 余药：这里按「剩余片数 ≤ 7」，看板按「按日剂量还能吃 < 7 天」，
+            结论常常相反（一天吃 8 次、剩 30 片的老太太实际只够 3 天，却报"充足"）；
+         ② 风险筛查：这里只传 mid/slots/note 三个字段，findings 里的药名是空的；
+         ③ 没有跨模块统筹结论，模型要自己从一堆原始数字里推断轻重。
+       现在统一走快照：界面显示什么，智能体就说什么。 */
     try {
-      var d0 = new Date();
-      var snapKey = d0.getFullYear() + '-' + ('0' + (d0.getMonth() + 1)).slice(-2) + '-' + ('0' + d0.getDate()).slice(-2);
-      var td = (ctx.records || []).filter(function (r) { return r.date === snapKey; });
-      var tTake = td.filter(function (r) { return r.status === 'taken'; }).length;
-      var tMiss = td.filter(function (r) { return r.status === 'missed'; }).length;
-      var tPend = td.filter(function (r) { return r.status === 'pending'; }).length;
-      if (td.length) L.push('今日实时态势：应服 ' + td.length + ' 次，已服 ' + tTake + '、漏服 ' + tMiss + '、待服 ' + tPend + '。');
-      var riskNow = screen((ctx.meds || []).map(function (m) { return { mid: m.mid, slots: m.slots, note: m.note }; }));
-      if (riskNow && riskNow.level) L.push('当前用药风险等级：' + riskNow.level + '。');
-      var lowNow = (ctx.meds || []).filter(function (m) { return typeof m.remain === 'number' && m.remain <= 7; });
-      if (lowNow.length) L.push('余药不足（7 天以内）的药品：' + lowNow.map(function (m) { return m.name || m.mid; }).join('、') + '。');
-      L.push('当用户问"我最近怎么样、帮我看看情况、整体如何"这类综合问题时，请基于以上各板块数据给一个温暖、简短、分轻重的总结，并明确提示最需要注意的一件事。');
+      var snapS = ctx.snap;
+      if (snapS) {
+        if (snapS.due) L.push('今日实时态势：应服 ' + snapS.due + ' 次，已服 ' + snapS.taken + '、漏服 ' + snapS.missed + '、待服 ' + snapS.pending + '。');
+        L.push('当前用药风险等级：' + snapS.risk + '（命中 ' + snapS.riskCount + ' 项）。');
+        if (snapS.low && snapS.low.length) {
+          L.push('按服用进度计算快用完的药品（不足 7 天用量）：' + snapS.low.map(function (m) { return m.name || m.mid; }).join('、') + '。');
+        } else {
+          L.push('余药充足：按每日服用进度计算，所有药都能吃满 7 天以上。');
+        }
+        L.push('近 7 天依从率 ' + snapS.rate + '%（连续按时 ' + (snapS.streak || 0) + ' 天）。');
+        if (snapS.healthBad) L.push('最近 3 次体征中有 ' + snapS.healthBad + ' 次异常，复诊时可把记录给医生看。');
+        if (snapS.contacts) L.push('已绑定紧急联系人 ' + snapS.contacts + ' 位。');
+        /* —— v28 新增：把已经排好优先级的统筹结论直接告诉模型 —— */
+        if (ctx.insights && ctx.insights.length) {
+          L.push('【综合统筹（按紧急程度排序，已由本地引擎算好，务必遵循这个顺序，不要自己重新排序）】');
+          for (var ii = 0; ii < ctx.insights.length; ii++) {
+            var ins = ctx.insights[ii];
+            var plain = String(ins.tx || '').replace(/<[^>]+>/g, '');   /* 去掉 <b> 再给模型看 */
+            L.push((ii + 1) + '. [' + (ins.tone === 'danger' ? '紧急' : ins.tone === 'warn' ? '需要注意' : ins.tone === 'info' ? '待办' : '正常') + '] ' + plain);
+          }
+          L.push('回答综合问题时，先说第 1 条，再说第 2 条，最多 3 条；语气要让人安心，不要吓人。');
+        }
+        L.push('当用户问"我最近怎么样、帮我看看情况、整体如何、我该怎么办、今天要注意什么"这类综合问题时，请严格按上面的【综合统筹】顺序作答，并明确告诉他现在最该做的一件事。');
+      } else {
+        /* 没拿到快照时的兜底（例如纯本地引擎路径）：保留旧的轻量推断 */
+        var d0 = new Date();
+        var snapKey = d0.getFullYear() + '-' + ('0' + (d0.getMonth() + 1)).slice(-2) + '-' + ('0' + d0.getDate()).slice(-2);
+        var td = (ctx.records || []).filter(function (r) { return r.date === snapKey; });
+        if (td.length) {
+          L.push('今日实时态势：应服 ' + td.length + ' 次，已服 ' +
+            td.filter(function (r) { return r.status === 'taken'; }).length + '、漏服 ' +
+            td.filter(function (r) { return r.status === 'missed'; }).length + '、待服 ' +
+            td.filter(function (r) { return r.status === 'pending'; }).length + '。');
+        }
+      }
     } catch (e) { /* 态势注入失败不影响主流程 */ }
     return L.join('\n');
   }
@@ -6497,6 +6611,10 @@ EMC.Engine = (function () {
       case 'health': out = await agentHealth(resolved, ctx); break;
       case 'refill': out = await agentRefill(ctx); break;
       case 'report': out = await agentReport(ctx); break;
+      /* v28：统筹（跨板块优先级决策）。两条路径都要挂 ——
+         断网时的 localChat 兜底同样需要统筹能力，否则一断网「我今天该怎么办」
+         就退化成普通知识问答，等于在调研现场最需要它的时候掉链子。 */
+      case 'orchestrate': out = agentOrchestrate(ctx); break;
       case 'sos': out = agentSos(ctx); break;
       case 'knowledge': out = agentKnowledge(resolved); break;
       default: out = agentKnowledge(resolved); intent = { intent: 'knowledge', score: 0, hits: [] };
@@ -6544,6 +6662,10 @@ EMC.Engine = (function () {
       case 'health': out = await agentHealth(resolved, ctx); break;
       case 'refill': out = await agentRefill(ctx); break;
       case 'report': out = await agentReport(ctx); break;
+      /* v28：统筹（跨板块优先级决策）。两条路径都要挂 ——
+         断网时的 localChat 兜底同样需要统筹能力，否则一断网「我今天该怎么办」
+         就退化成普通知识问答，等于在调研现场最需要它的时候掉链子。 */
+      case 'orchestrate': out = agentOrchestrate(ctx); break;
       case 'sos': out = agentSos(ctx); break;
       case 'knowledge': out = agentKnowledge(resolved); break;
       default: out = agentKnowledge(resolved); intent = { intent: 'knowledge', score: 0, hits: [] };
@@ -6562,6 +6684,152 @@ EMC.Engine = (function () {
     };
   }
 
+  /* ==========================================================
+   * v28 新增：**统筹智能体**（跨板块优先级决策）
+   * ==========================================================
+   * 【它解决什么】老人和家属真正会问的不是「降压药一天吃几次」，
+   *   而是「我今天该怎么办」「哪些事要紧」「先做哪个」。
+   *   这类问题必须横跨用药 / 血压 / 依从性 / 余药 / 不适 / 家属六块数据做权衡，
+   *   落到任何一个单板块子智能体上都会答非所问。
+   * 【设计要点】
+   *   ① 纯本地计算，不依赖大模型 —— 断网、社区 WiFi 不稳时照样能用；
+   *   ② 直接复用调用方算好的 ctx.snap / ctx.insights（与界面同一口径），
+   *      避免出现「界面上显示余药充足、AI 说余药不足」这种当场翻车；
+   *   ③ 输出的是**带执行入口的行动清单**，而不是一段劝告 ——
+   *      老人听完后能一键跳过去把该做的事做完，这才叫「统筹」。
+   * ========================================================== */
+  function agentOrchestrate(ctx) {
+    ctx = ctx || {};
+    var snap = ctx.snap;
+    /* 没有快照时（例如某些内部调用）就地算一份，保证永远有答案 */
+    if (!snap) {
+      try {
+        var keyO = fmtDate(new Date());
+        var tdO = (ctx.records || []).filter(function (r) { return r.date === keyO; });
+        var s7O = summary(ctx.records || [], ctx.meds || [], 7);
+        snap = {
+          due: tdO.length,
+          taken: tdO.filter(function (r) { return r.status === 'taken'; }).length,
+          missed: tdO.filter(function (r) { return r.status === 'missed'; }).length,
+          pending: tdO.filter(function (r) { return r.status === 'pending'; }).length,
+          rate: s7O.rate, streak: s7O.streak,
+          risk: (screen(ctx.meds || []).level) || '低风险',
+          riskCount: (screen(ctx.meds || []).count) || 0,
+          low: lowMedsIn(ctx.meds || []),
+          bpBad: (ctx.health || []).filter(function (h) { return h.type === 'bp' && h.sys; }).slice(-3)
+            .filter(function (h) { return bpStatus(h.sys, h.dia) !== 'normal'; }).length,
+          gluBad: (ctx.health || []).filter(function (h) { return h.type === 'glu' && h.val; }).slice(-3)
+            .filter(function (h) { return gluStatus(h.val, h.meal) !== 'normal'; }).length,
+          adrSev: (ctx.health || []).filter(function (h) { return h.type === 'adr' && h.val === 'severe'; }).length,
+          healthBad: 0, contacts: ((ctx.guardian || {}).contacts || []).length
+        };
+        snap.healthBad = snap.bpBad + snap.gluBad;
+      } catch (e) { snap = { due: 0, taken: 0, missed: 0, pending: 0, rate: 0, streak: 0, risk: '低风险', riskCount: 0, low: [], healthBad: 0, contacts: 0, adrSev: 0 }; }
+    }
+
+    /* —— 第一步：把所有事排成一张带优先级的清单 —— */
+    var todo = [];
+    function add(level, ic, title, why, go, goLabel) {
+      todo.push({ level: level, ic: ic, title: title, why: why, go: go, goLabel: goLabel || '去处理' });
+    }
+    if (snap.adrSev > 0) {
+      add(3, '🩺', '今天报告了明显不适', '身体已经在报警，这种事别拖，今天就联系医生或让家人陪着去', 'guardian', '联系家人');
+    }
+    if (snap.missed >= 1) {
+      add(3, '⏰', '今天有 ' + snap.missed + ' 次药没吃', '漏掉的药现在补上还来得及，但要看说明或问医生，别自己加倍', 'meds', '现在去补');
+    }
+    if (snap.risk === '高风险') {
+      add(3, '⚠️', '用药风险为高风险', '命中 ' + snap.riskCount + ' 项相互作用或重复用药规则，建议尽快请医生核对', 'risk', '看风险详情');
+    } else if (snap.risk === '中风险') {
+      add(2, '⚠️', '用药风险为中风险', '命中 ' + snap.riskCount + ' 项规则，有空看看是哪些药', 'risk', '看风险详情');
+    }
+    if (snap.pending > 0) {
+      add(2, '💊', '今天还有 ' + snap.pending + ' 次药没吃', '这是今天最该完成的事', 'meds', '去打卡');
+    }
+    if (snap.low && snap.low.length) {
+      add(2, '📦', snap.low[0].name + '等 ' + snap.low.length + ' 种药快吃完了',
+        '按现在的吃法，这些药撑不到 7 天，别等断药了才想起来', 'meds', '去补充');
+    }
+    if (snap.bpBad >= 2) {
+      add(2, '🩸', '最近血压有 ' + snap.bpBad + ' 次偏高', '连续偏高要重视，复诊时把记录带给医生', 'health', '记血压 / 看趋势');
+    }
+    if (snap.gluBad >= 2) {
+      add(2, '🩸', '最近血糖有 ' + snap.gluBad + ' 次异常', '注意饮食，必要时咨询医生', 'health', '记血糖');
+    }
+    if (snap.rate > 0 && snap.rate < 70) {
+      add(1, '📉', '这一周按时吃药只有 ' + snap.rate + '%', '可能提醒时间不合适，可以调成您方便的时候', 'guardian', '调提醒时间');
+    }
+    if (!snap.contacts) {
+      add(1, '👨‍👩‍👧', '还没绑紧急联系人', '万一不舒服，没人能第一时间知道', 'guardian', '去绑定');
+    }
+    if (!todo.length) {
+      add(0, '🌿', '目前没有要紧的事', '用药、血压、余量都正常，保持就好', 'data', '看我的数据');
+    }
+
+    /* —— 第二步：按紧急度排序 —— */
+    todo.sort(function (a, b) { return b.level - a.level; });
+    var urgent = todo.filter(function (t) { return t.level >= 3; });
+
+    /* —— 第三步：说人话 —— */
+    var L = [];
+    if (urgent.length) {
+      L.push('我把您的情况看了一遍，现在最要紧的是' + urgent.length + ' 件事：');
+    } else {
+      L.push('我把您的情况看了一遍，没有很急的事，按下面顺序安排就行：');
+    }
+    todo.slice(0, 4).forEach(function (t, i) {
+      L.push((i + 1) + '. ' + t.ic + ' ' + t.title + '。' + t.why + '。');
+    });
+    if (urgent.length === 1 && urgent[0].level === 3) {
+      L.push('别急，先做第 1 件事就好，做完其他的都不算晚。');
+    } else if (!todo.length || todo[0].level === 0) {
+      L.push('今天就这样，您做得挺好，需要的时候随时叫我。');
+    }
+
+    return {
+      text: L.join('\n'),
+      steps: [
+        '读取全局态势快照（用药/打卡/血压/血糖/余药/不适/家属，共 8 项）',
+        '把每一项转成待办并按紧急度排序',
+        '输出带执行入口的行动清单'
+      ],
+      action: null,
+      card: {
+        type: 'care', title: '今天该做什么', icon: '🧭',
+        tone: urgent.length ? 'danger' : (todo[0] && todo[0].level >= 2 ? 'warn' : 'ok'),
+        body: {
+          items: todo.slice(0, 4).map(function (t, i) {
+            return { k: (i + 1) + '. ' + t.ic, v: t.title };
+          })
+        },
+        note: '以上按紧急程度排序，数据来自您的用药与健康档案。仅供日常参考，具体用药调整请遵医嘱。',
+        actions: todo.slice(0, 3).map(function (t) {
+          return { label: t.goLabel, action: 'tab', target: t.go };
+        })
+      }
+    };
+  }
+
+  /* 余药不足判定：按「每天实际消耗」折算成天数，而不是直接看片数。
+   * 【为什么必须这么算】同样剩 30 片：一天吃 1 次的老太太能吃一个月，
+   * 一天吃 8 次的老太太只够 4 天。直接比较片数会把最危险的情况判成安全。
+   * 三处口径（kbSnapshot.lowMedsList / buildLlmSystem / agentOverviewLocal）
+   * 曾各写各的，本函数作为唯一实现。 */
+  function lowMedsIn(meds) {
+    var out = [];
+    var today = fmtDate(new Date());
+    (meds || []).forEach(function (m) {
+      if (typeof m.remain !== 'number') return;
+      /* 与看板 lowMedsList 保持一致：疗程已结束的药不再提示 */
+      if (m.end && today > String(m.end).slice(0, 10)) return;
+      var per = (Number(m.perTime) > 0 ? Number(m.perTime) : 1) *
+        (Number(m.freqTimes) > 0 ? Number(m.freqTimes) : ((m.slots || []).length || 1));
+      if (!per || per <= 0) per = 1;
+      if (Math.floor(m.remain / per) < 7) out.push(m);
+    });
+    return out;
+  }
+
   /* v24：本地跨模块综合研判（不依赖大模型）：把用药/健康/风险/余粮数据汇成一段温暖的人话总结 */
   function agentOverviewLocal(ctx) {
     ctx = ctx || {};
@@ -6576,7 +6844,9 @@ EMC.Engine = (function () {
     var pending = td.filter(function (r) { return r.status === 'pending'; }).length;
     var s7 = summary(recs, meds, 7);
     var res = screen(meds);
-    var low = meds.filter(function (m) { return typeof m.remain === 'number' && m.remain <= 7; });
+    /* v28：修正余药口径 —— 原来直接按「剩余片数 ≤ 7」判断，
+       与看板（按天算）不一致，一天吃多次药的人会被误判为充足。 */
+    var low = lowMedsIn(meds);
     var bps = hp.filter(function (h) { return h.type === 'bp' && h.sys; });
     var lastBp = bps.length ? bps[bps.length - 1] : null;
     var bpBad = bps.slice(-3).filter(function (h) { return bpStatus(h.sys, h.dia) !== 'normal'; }).length;
@@ -6616,6 +6886,8 @@ EMC.Engine = (function () {
   return {
     chat: chat, screen: screen, screenAdd: screenAdd, summary: summary, detectIntent: detectIntent,
     localChat: localChat, llmStatus: llmStatus,
+    /* v28：统筹能力对外暴露，供主动关怀/家属端直接调用 */
+    orchestrate: agentOrchestrate, lowMedsIn: lowMedsIn,
     drugOf: drugOf, drugByName: drugByName, fmtDate: fmtDate, levelName: levelName, nextDose: nextDose,
     medUsage: medUsage, nextDoseFull: nextDoseFull, medKnowledge: medKnowledge,
     bpStatus: bpStatus, gluStatus: gluStatus, healthTrend: healthTrend,
@@ -8424,7 +8696,7 @@ window.EMCStore = (function () {
           return r.summary || { adherence: 0, taken: 0, missed: 0, pending: 0, riskLevel: '未知' };
         });
       },
-      /* 云端账号不存在“本机演示数据”，为保持双 Store 接口对称提供同签名实现：
+      /* 云端账号不存在"本机演示数据"，为保持双 Store 接口对称提供同签名实现：
          不做任何删除动作，返回 false 由调用方提示用户。 */
       clearDemo: function () { return false; },
       /* 云端账号不存在"本机演示数据"，为保持双 Store 接口对称提供同签名实现：返回 false。 */
@@ -8909,6 +9181,7 @@ EMC.Care = (function () {
     bindMorePanel();   // v22 P1-12：低频入口聚合面板 + 帮助弹窗
     bindKbGuide();     // v24：图示操作手册（⚡入口，老人/家属双页签）
     bindCockpit();     // v24：智能体驾驶舱（数据总线订阅 + 实时态势）
+    bindCrossTabSync(); // v28：跨标签页/跨窗口实时同步（BroadcastChannel + storage + 回前台）
     bindWiz();         // v26：首次使用向导（社区调研第一天带路）
     wizAutoShow();     // v26：首次打开自动带路三步（已完成的老人不再打扰）
     BackGuard.init();  // v22 P1-16：pushState 哨兵 + popstate 返回键兜底
@@ -10120,6 +10393,16 @@ EMC.Care = (function () {
     MobileUX.scrollChatToBottom(true);
     announce('已收到，正在为您查');
     var ctx = { meds: medsForEngine(), records: S.records, todayPending: todayPending(), health: S.health, guardian: S.guardian, history: CHAT_HISTORY, profile: S.profile };
+    /* v28「统筹」关键改动：把**已经算好的全局态势快照**交给智能体。
+       为什么必须传而不让引擎自己算：
+         · buildLlmSystem 原本自己重新算一遍余药/风险，口径和看板不一致
+           （引擎按「剩余片数 ≤ 7」判断，看板按「还能吃几天 < 7」判断），
+           于是 AI 会说出和界面上显示矛盾的话，现场被家属当场质疑很难看；
+         · kbInsights 已经把用药/血压/依从/余药/不适综合成了按优先级排序的结论，
+           让智能体直接读结论，既快又不会漏掉轻重缓急。
+       引擎侧没有该函数的作用域（引擎是独立 IIFE），所以在组 ctx 时注入。 */
+    try { ctx.snap = kbSnapshot(); } catch (e) {}
+    try { ctx.insights = kbInsights(ctx.snap); } catch (e) {}
     var t0 = Date.now();
     var thinking = pushThinking('用药答疑');
     var res = null, failed = false, err = null;
@@ -10629,9 +10912,15 @@ EMC.Care = (function () {
   }
 
   /* 实时 tick：每 30 秒刷新态势；登录态且页面可见时每 ~90 秒静默拉一次云端数据
-     （家属在另一台设备代打卡/代录，老人这边最多 90 秒就看到 = 真正的信息共享） */
+  （家属在另一台设备代打卡/代录，老人这边最多 90 秒就看到 = 真正的信息共享） */
   var kbLiveLastSync = 0;
   var kbLiveSyncing = false;
+  /* v28：上一轮同步后各集合的指纹，用来判断「真的变了」而不是「每次都重渲染」 */
+  var kbSyncFp = { records: '', meds: '', health: '', guardian: '', settings: '' };
+  function kbFp(v) {
+    try { return JSON.stringify(v || null).length + ':' + String(JSON.stringify(v || null)).slice(-160); }
+    catch (e) { return ''; }
+  }
   async function kbLiveTick() {
     try {
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -10641,19 +10930,109 @@ EMC.Care = (function () {
         kbLiveLastSync = now;
         kbLiveSyncing = true;
         try {
+          /* ==========================================================
+           * v28「共享数据」关键修复：原来这里**只同步 records 和 meds**。
+           * 后果很实际：子女在自己手机上给老人量了血压、报了不适、
+           * 改了提醒时间、加了紧急联系人 —— 老人这台手机上**永远看不到**，
+           * 要等到重新登录才刷新。于是「家属远程照护」在演示时看着挺好，
+           * 实际用起来两边数据是脱节的。
+           * 现在同步扩到 5 类数据，并用指纹避免无变化时的无谓重绘。
+           * ========================================================== */
           var recs = await store.getRecords(14);
           var meds = await store.getMeds();
-          var changed = JSON.stringify(recs) !== JSON.stringify(S.records) || JSON.stringify(meds) !== JSON.stringify(S.meds);
-          if (changed) {
-            S.records = recs; S.meds = meds;
+          var health = await store.getHealth();
+          var fam = await store.getFamily();
+          var dirty = [];
+          if (kbFp(recs) !== kbSyncFp.records) {
+            kbSyncFp.records = kbFp(recs);
+            if (JSON.stringify(recs) !== JSON.stringify(S.records)) { S.records = recs; dirty.push('records'); }
+          }
+          if (kbFp(meds) !== kbSyncFp.meds) {
+            kbSyncFp.meds = kbFp(meds);
+            if (JSON.stringify(meds) !== JSON.stringify(S.meds)) { S.meds = meds; dirty.push('meds'); }
+          }
+          if (kbFp(health) !== kbSyncFp.health) {
+            kbSyncFp.health = kbFp(health);
+            if (JSON.stringify(health) !== JSON.stringify(S.health)) { S.health = health; dirty.push('health'); }
+          }
+          if (kbFp(fam) !== kbSyncFp.guardian) {
+            kbSyncFp.guardian = kbFp(fam);
+            /* 家人口径：S.guardian.contacts 对应后端 /api/family */
+            var curC = (S.guardian && S.guardian.contacts) || [];
+            if (JSON.stringify(fam) !== JSON.stringify(curC)) {
+              S.guardian = Object.assign({}, S.guardian, { contacts: fam || [] });
+              dirty.push('guardian');
+            }
+          }
+          if (dirty.length) {
             try { renderMeds(); renderHome(); renderOverview(); } catch (e2) {}
+            try { renderHealth(); } catch (e3) {}
+            try { renderGuardian(); } catch (e4) {}
             renderCockpit();
-            Bus.emit('sync', { records: true, meds: true });
+            /* 逐类发事件，让订阅者各自渲染（驾驶舱已订阅 meds/health/guardian） */
+            dirty.forEach(function (k) { try { Bus.emit(k === 'records' ? 'checkin' : k, { remote: true }); } catch (e5) {} });
+            Bus.emit('sync', { changed: dirty });
+            /* v28：远端有更新时明确告诉用户，而不是静默刷新让人以为没生效 */
+            try {
+              var names = { records: '服药记录', meds: '药品', health: '健康记录', guardian: '紧急联系人' };
+              toast('已同步子女那边的更新：' + dirty.map(function (k) { return names[k] || k; }).join('、'));
+            } catch (e6) {}
           }
         } catch (e) { /* 静默失败不影响本地使用 */ }
         kbLiveSyncing = false;
       }
     } catch (e) {}
+  }
+
+  /* ==========================================================
+   * v28 跨标签页 / 跨窗口实时同步（"共享数据"的另一半）
+   * 【要解决的场景】老人手机上开着两个标签，或者子女和老人共用一台平板。
+   *   原来一个标签打了卡，另一个标签要等 90 秒轮询才变 —— 在现场演示时
+   *   会出现「明明刚点了，怎么还是没记录」的尴尬。
+   * 【做法】三管齐下，互为兜底：
+   *   ① BroadcastChannel：同源标签页即时互通（现代浏览器）
+   *   ② storage 事件：老浏览器兜底（写入 localStorage 即触发其它标签的 storage）
+   *   ③ visibilitychange：从后台切回前台立刻同步一次（手机上最常见的操作）
+   * ========================================================== */
+  var kbChan = null;
+  try { if (typeof BroadcastChannel === 'function') kbChan = new BroadcastChannel('kangban-sync'); } catch (e) {}
+  var KB_SYNC_SKIP = false;   /* 收到远端广播时置位，避免「我发的又触发我自己的拉取」形成回环 */
+
+  function kbAnnounce(what) {
+    /* 只广播「发生了什么类型的变化」，不广播数据本身 —— 数据仍走服务端接口，
+       避免多标签之间传出敏感内容，也让逻辑与单标签完全一致。 */
+    try { if (kbChan) kbChan.postMessage({ what: what || 'data', t: Date.now() }); } catch (e) {}
+    /* storage 兜底：写一个瞬时 key，其它标签的 storage 事件会被触发 */
+    try { localStorage.setItem('kb_sync_ping', String(Date.now())); } catch (e) {}
+  }
+
+  function bindCrossTabSync() {
+    /* ① BroadcastChannel */
+    if (kbChan) {
+      kbChan.onmessage = function (ev) {
+        var d = ev && ev.data;
+        if (!d) return;
+        KB_SYNC_SKIP = true;
+        kbLiveLastSync = 0;          /* 立刻允许同步 */
+        setTimeout(function () { kbLiveTick(); }, 60);
+        setTimeout(function () { KB_SYNC_SKIP = false; }, 1200);
+      };
+    }
+    /* ② storage 事件（老浏览器 / BroadcastChannel 不可用时） */
+    window.addEventListener('storage', function (e) {
+      if (!e || e.key !== 'kb_sync_ping') return;
+      if (KB_SYNC_SKIP) return;
+      kbLiveLastSync = 0;
+      setTimeout(function () { kbLiveTick(); }, 60);
+    });
+    /* ③ 回到前台立刻同步（手机上切应用/切回来最频繁） */
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) return;
+      kbLiveLastSync = 0;
+      setTimeout(function () { kbLiveTick(); }, 120);
+    });
+    /* 页面卸载前也留一个 ping，让刚打开的其它标签立刻拉一次 */
+    window.addEventListener('pagehide', function () { kbAnnounce('bye'); });
   }
 
   function bindCockpit() {
@@ -11101,6 +11480,7 @@ EMC.Care = (function () {
     renderMeds(); renderData(); renderOverview(); renderHome();
     if (S.tab === 'guardian') renderGuardian();
     try { Bus.emit('checkin', { mid: r.mid, slot: r.slot, status: act }); } catch (e) {}   /* v24：打卡 → 驾驶舱/态势条立即联动 */
+  try { kbAnnounce('checkin'); } catch (e2) {}   /* v28：本机操作也通知其它标签页（家人同设备代打卡立刻可见） */
   }
 
   /* 用药反馈卡：连续按时激励 + 用法 + 下次用药 + 用药小知识（v6 §11 激励式反馈） */
@@ -11393,6 +11773,7 @@ EMC.Care = (function () {
     renderAll(); switchTab('meds');
     try { await ensureTodayRecords(); kbTrack('addmed'); } catch (e) {}
     try { Bus.emit('meds', { id: wasEdit ? editingMedId : S.picked }); } catch (e) {}   /* v24：药品变更 → 驾驶舱/态势条联动 */
+  try { kbAnnounce('meds'); } catch (e2) {}   /* v28：通知其它标签页 */
     V.speak(wasEdit ? '药品已更新' : '药品已添加，我会按时提醒您服用');
   }
   async function deleteMed(id) {
@@ -11400,6 +11781,7 @@ EMC.Care = (function () {
     S.records = await store.getRecords(14);
     renderAll();
     try { Bus.emit('meds', { id: id, deleted: true }); } catch (e) {}
+    try { kbAnnounce('meds'); } catch (e2) {}
   }
   async function refillMed(id) {
     var before = (S.meds.filter(function (m) { return m.id === id; })[0] || {}).remain;
@@ -11434,6 +11816,7 @@ EMC.Care = (function () {
     // D-01：先 await 落库返回的最新数组，再渲染，保证保存后立即刷新界面
     S.health = await store.addHealth(rec);
     try { Bus.emit('health', rec); } catch (e) {}   /* v24：健康记录 → 驾驶舱/态势条立即联动 */
+  try { kbAnnounce('health'); } catch (e2) {}   /* v28：子女在另一台设备量血压，这边立刻看到 */
   }
   function isAnomaly(h) {
     if (h.type === 'bp') return E.bpStatus(h.sys, h.dia) !== 'normal';
@@ -11615,6 +11998,7 @@ EMC.Care = (function () {
     $id('contactPhone').value = '';
     renderGuardian();
     try { Bus.emit('guardian', { contacts: S.guardian.contacts.length }); } catch (e) {}   /* v24：联系人变更 → 驾驶舱/态势条联动 */
+  try { kbAnnounce('guardian'); } catch (e2) {}   /* v28 */
   }
   async function renderGuardian() {
     // 紧急联系人 / 家属联系人（统一为 {id,name,relation,phone}，支持编辑/删除）
@@ -12825,10 +13209,14 @@ EMC.Care = (function () {
       '<div class="form-row"><label class="switch-row">老人模式（只保留用药计划、量血压、求助，字更大）' +
         '<input type="checkbox" id="ucSimple" ' + (S.settings.simpleMode === true ? 'checked' : '') + '></label></div>' +
       '<div class="notice-family" id="ucSimpleTip">开启后首页与助手页只显示要紧事，专业术语卡自动隐藏；随时可用顶栏的「退出」按钮退回完整界面；首页也有「老人模式 / 家属模式」入口。</div>' +
-      '<div class="form-row"><label>修改密码（留空则不修改）</label>' +
-        '<input id="ucPwd1" type="password" placeholder="新密码（至少 6 位）"></div>' +
-      '<div class="form-row"><input id="ucPwd2" type="password" placeholder="再次输入新密码"></div>' +
+      '<div class="form-row"><label>修改密码</label>' +
+        /* v28 安全：后端已要求校验旧密码（原先只要有 token 就能改密码，
+           token 一旦泄露就等于账号永久沦陷）。这里补上「当前密码」输入框。 */
+        '<input id="ucPwdOld" type="password" autocomplete="current-password" placeholder="当前密码（先填这个）"></div>' +
+      '<div class="form-row"><input id="ucPwd1" type="password" autocomplete="new-password" placeholder="新密码（至少 6 位）"></div>' +
+      '<div class="form-row"><input id="ucPwd2" type="password" autocomplete="new-password" placeholder="再次输入新密码"></div>' +
       '<button class="btn sm" id="ucPwdSave">保存密码</button>' +
+      '<div class="notice-family">都不填就不改密码。要改的话必须先填当前密码，这样别人就算拿到这台手机也改不了您的密码。</div>' +
       '<div class="form-row" style="margin-top:14px"><label class="switch-row">开启家属通报通知' +
         '<input type="checkbox" id="ucNotify" ' + (S.profile.notifyEnabled ? 'checked' : '') + '></label></div>' +
       '<div class="card-title" style="margin-top:14px">🎤 语音设置</div>' +
@@ -12861,13 +13249,17 @@ EMC.Care = (function () {
       '<button class="btn orange" id="ucLogout" style="margin-top:14px">退出登录（切换游客演示）</button>';
 
     $id('ucPwdSave').addEventListener('click', function () {
-      var p1 = val('ucPwd1'), p2 = val('ucPwd2');
+      var p0 = val('ucPwdOld'), p1 = val('ucPwd1'), p2 = val('ucPwd2');
       if (!p1 && !p2) { toast('未修改密码'); return; }
-      if (p1.length < 6) { toast('密码至少 6 位'); return; }
-      if (p1 !== p2) { toast('两次密码不一致'); return; }
-      store.setProfile({ password: p1 }).then(function (ok) {
-        if (ok) { toast('密码已更新'); $id('ucPwd1').value = ''; $id('ucPwd2').value = ''; }
-        else toast('密码更新失败，请重试');
+      /* v28：改密码必须带当前密码，与服务端校验对齐 */
+      if (!p0) { toast('请先填写当前密码'); try { $id('ucPwdOld').focus(); } catch (e) {} return; }
+      if (p1.length < 6) { toast('新密码至少 6 位'); return; }
+      if (p1 !== p2) { toast('两次输入的新密码不一致'); return; }
+      store.setProfile({ password: p1, oldPassword: p0 }).then(function (ok) {
+        if (ok) {
+          toast('密码已更新');
+          $id('ucPwdOld').value = ''; $id('ucPwd1').value = ''; $id('ucPwd2').value = '';
+        } else toast('密码更新失败：请确认当前密码是否正确');
       });
     });
       $id('ucNotify').addEventListener('change', function (e) {
@@ -13158,24 +13550,31 @@ EMC.Care = (function () {
     }
   }
 
-  /* ---------- v8 T04 主动关怀：今日待办 + 风险提醒（每日一次） ---------- */
+  /* ---------- v8 T04 主动关怀：今日待办 + 风险提醒（每日一次） ----------
+   * v28 升级为「统筹式主动关怀」：原来只在有漏服待办时说一句话，
+   * 且遇到「余药快没了 / 血压连续偏高 / 风险升级」这些同样紧急的事却不吭声。
+   * 现在复用统一的统筹器，保证「主动提醒」和「问它统筹」的答案完全一致，
+   * 不会出现「它不提醒我、但我问它却说很严重」的割裂感。 */
   function pushProactiveCare() {
     var key = E.fmtDate(new Date());
     if (carePushedKey === key) return;
-    var pending = todayPending();
-    if (!pending.length) { carePushedKey = key; return; }
-    var res = E.screen(medsForEngine());
-    var riskNote = (res.level === '高风险' || res.level === '中风险')
-      ? ('另：当前用药风险等级为 ' + res.level + '，如感不适请及时就医。') : '';
-    pushMsg('agent', '💡 小提醒：您今天还有 ' + pending.length + ' 项药没打卡，记得按时服用哦。' + riskNote, {
-      intentLabel: '主动关怀',
-      card: {
-        type: 'care', title: '今日待办', icon: '🗓️', tone: 'warn',
-        body: { items: [{ k: '待服', v: pending.length + ' 项' }] },
-        note: '服完后请在「用药管理」点「已服用」打卡。',
-        actions: [{ label: '去打卡', action: 'tab', target: 'meds' }]
-      }
+    var snap = null, ins = null;
+    try { snap = kbSnapshot(); ins = kbInsights(snap); } catch (e) {}
+    /* 没有任何需要处理的事 → 今天不再打扰老人 */
+    var needAction = snap && (snap.missed > 0 || snap.pending > 0 || snap.adrSev > 0 ||
+      snap.risk === '高风险' || snap.risk === '中风险' ||
+      (snap.low && snap.low.length) || snap.bpBad >= 2 || snap.gluBad >= 2);
+    if (!needAction) { carePushedKey = key; return; }
+
+    var plan = null;
+    try { plan = E.orchestrate({ snap: snap, insights: ins }); } catch (e) {}
+    if (!plan || !plan.text) { carePushedKey = key; return; }
+    var urgent = snap && (snap.adrSev > 0 || snap.missed > 0 || snap.risk === '高风险');
+    pushMsg('agent', '🧭 ' + plan.text, {
+      intentLabel: '主动关怀 · 健康统筹',
+      card: plan.card
     });
+    try { if (urgent) V.speak(plan.text.split('\n').slice(0, 2).join('。')); } catch (e) {}
     carePushedKey = key;
   }
 
