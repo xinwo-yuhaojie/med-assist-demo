@@ -4917,12 +4917,23 @@ EMC.HEALTH = {
   keepDays: 60
 };
 
-/* ---------- 9. SOS 附近医院占位信息（演示数据，可在本地替换为真实数据） ---------- */
-EMC.NEARBY_HOSPITALS = [
-  { name: '社区卫生服务中心（示范）', level: '基层', dist: '约 300 米', phone: '120' },
-  { name: '区人民医院急诊科（示范）', level: '三甲', dist: '约 2.4 公里', phone: '120' },
-  { name: '中医院老年病科（示范）', level: '三乙', dist: '约 3.1 公里', phone: '120' }
-];
+/* ==========================================================
+ * v34 移除「SOS 附近医院」演示数据
+ * ==========================================================
+ * 【为什么必须删】原来这里放的是**编造的占位数据**（注释自己都写着"演示数据，
+ *   可在本地替换为真实数据"）：三条杜撰的医院名，配上"约 300 米 / 2.4 公里 /
+ *   3.1 公里"这类看似精确的距离 —— 全部是编的。
+ *   （此处刻意不再复述那些假名，避免后来看代码的人误以为它们是真实机构。）
+ *
+ *   危险在于场景：SOS 弹窗恰恰出现在**老人身体不舒服、情况紧急**的时候。
+ *   此时给出一个看起来很具体、实际不存在的机构与距离，
+ *   老人可能真的跑去那家"约 300 米"的医院 —— 这是会误导急救的信息，
+ *   比没有信息更糟。它们的电话虽然都写着 120（正确），但名称与距离已足以误导。
+ *
+ *   处理：不再展示任何未经验证的机构信息。要接真实数据，
+ *   应该由服务端按用户实际位置查询并返回，而不是在前端写死占位。
+ * ========================================================== */
+EMC.NEARBY_HOSPITALS = [];
 
 /* 健康异常就医提示文案 */
 EMC.HEALTH_ADVICE = {
@@ -13439,30 +13450,73 @@ EMC.Care = (function () {
   }
 
   /* ---------- SOS 紧急求助弹窗 ---------- */
+  /* ==========================================================
+ * v34 SOS 紧急求助：**极简单页**
+ * ==========================================================
+ * 【原来的问题】弹窗里有三块内容：家属联系人、附近医院、拨打 120。
+ *   其中「附近医院」是编造的占位数据（已删除，见 EMC.NEARBY_HOSPITALS）。
+ *   更重要的是：老人在难受的时候，最需要的是**立刻做一件事**，
+ *   而不是在一个塞满文字的窗口里挑选项 —— 挑错一格就耽误了。
+ *
+ * 【现在只留三样，按重要性排序】
+ *   1. 拨打 120      —— 最红的按钮，最上面，最大。危急时的唯一正确动作
+ *   2. 呼叫家属      —— 一人一格，姓名+关系+电话，点一下就拨
+ *   3. 我没事，关掉  —— 误触兜底，永远保留
+ *   顺序即优先级：颜色越暖越靠前，不需要老人阅读任何说明。
+ *
+ * 【为什么保留入口而不是整个删掉】
+ *   老人模式的「三件事」是吃药 / 量血压 / 求助，求助是其中唯一的安全兜底 ——
+ *   万一吃药后不舒服，这里是最后一道防线。删掉弹窗里的冗余与假数据是对的，
+ *   但把入口也去掉会让调研现场介绍时点不动。
+ *   若确实要连入口一起移除，请明说（会同时移除老人模式的"求助"按钮）。
+ * ========================================================== */
   function openSos() {
     var contacts = S.guardian.contacts || [];
-    var h = EMC.NEARBY_HOSPITALS || [];
-    var mask = document.createElement('div'); mask.className = 'mask';
-    var contactsHtml = contacts.length ? contacts.map(function (c) {
-      return '<div class="sos-row"><div><b>' + esc(c.name) + '</b> <span class="muted">' + esc(c.relation || '') + '</span>' +
-        '<div class="muted small">☎ ' + esc(c.phone || '') + '</div></div>' +
-        '<a class="btn sm" href="tel:' + esc(c.phone || '') + '" style="text-decoration:none">📞 呼叫</a></div>';
-    }).join('') : '<div class="muted">尚未登记家属联系人，请到「家属守护」中添加。</div>';
-    var hospHtml = h.map(function (x) {
-      return '<div class="sos-row"><div><b>' + esc(x.name) + '</b> <span class="muted">' + esc(x.level) + ' · ' + esc(x.dist) + '</span></div>' +
-        '<span class="muted small">☎ ' + esc(x.phone) + '</span></div>';
+    var mask = document.createElement('div');
+    mask.className = 'mask';
+    mask.setAttribute('role', 'dialog');
+    mask.setAttribute('aria-modal', 'true');
+    mask.setAttribute('aria-label', '紧急求助');
+
+    /* 只保留有电话的联系人；没有电话的联系人列出来也无法拨打，不如不列 */
+    var callRows = contacts.filter(function (c) { return c && c.phone; }).map(function (c) {
+      return '<a class="sos-call" href="tel:' + esc(c.phone) + '">' +
+        '<span class="sc-n">' + esc(c.name || '家属') + '</span>' +
+        '<span class="sc-r">' + esc(c.relation || '家属') + '</span>' +
+        '<span class="sc-p">📞 ' + esc(c.phone) + '</span>' +
+        '</a>';
     }).join('');
-    mask.innerHTML = '<div class="dialog sos"><h3>🆘 紧急求助</h3>' +
-      '<div class="muted small">如情况危急请立即拨打 120</div>' +
-      '<div class="card-title" style="margin-top:12px">家属联系人</div>' + contactsHtml +
-      '<div class="card-title" style="margin-top:12px">附近医院（示意）</div>' + hospHtml +
-      '<div class="btn-row" style="margin-top:14px"><a class="btn" href="tel:120" style="text-decoration:none">📞 拨打 120</a>' +
-      '<button class="btn gray" id="sosClose">关闭</button></div></div>';
+
+    mask.innerHTML =
+      '<div class="dialog sos sos-lite">' +
+        '<h3 class="sos-h">🆘 需要帮助？</h3>' +
+        /* 第一选择：120，做成整块最大按钮，误触也不至于拨错 */
+        '<a class="sos-120" href="tel:120"><b>📞 拨打 120</b><small>情况危急时马上打</small></a>' +
+        (callRows
+          ? '<div class="sos-lab">或呼叫家人</div>' + callRows
+          : '<div class="sos-none">还没登记家人电话。<br>可先打 120，或到「守护」页添加联系人。</div>') +
+        '<button class="sos-close" id="sosClose">我没事，关掉</button>' +
+      '</div>';
+
     document.body.appendChild(mask);
-    /* 适老化：SOS 场景老人可能看不清屏幕，打开即语音引导（先打断可能正在循环的服药提醒） */
-    try { V.interrupt(); V.speak('已打开紧急求助。情况危急请马上拨打一百二十。下面有家属联系人，点一下就能打电话。'); } catch (e) {}
-    mask.querySelector('#sosClose').addEventListener('click', function () { document.body.removeChild(mask); });
-    mask.addEventListener('click', function (e) { if (e.target === mask) document.body.removeChild(mask); });
+    /* 适老化：老人可能看不清/听不清，弹出的瞬间先大声说一句该做什么。
+       先 interrupt 是为了打断可能正在循环的服药提醒播报。 */
+    try {
+      V.interrupt();
+      V.speak(contacts.length
+        ? '已打开紧急求助。最上面是拨打一百二零，最下面一格是家人的电话，点一下就能打。'
+        : '已打开紧急求助。最上面是拨打一百二十。');
+    } catch (e) {}
+    /* ESC 关闭兜底：老人若按了手机返回/主页键，不至于卡在遮罩后面 */
+    function close() { try { if (mask.parentNode) mask.parentNode.removeChild(mask); } catch (e) {} }
+    mask.querySelector('#sosClose').addEventListener('click', close);
+    mask.addEventListener('click', function (e) { if (e.target === mask) close(); });
+    document.addEventListener('keydown', function onEsc(e) {
+      if (e.key === 'Escape' || e.keyCode === 27) {
+        close();
+        document.removeEventListener('keydown', onEsc);
+      }
+    });
   }
 
   /* ---------- 账号 UI ---------- */

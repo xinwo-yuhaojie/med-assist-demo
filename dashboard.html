@@ -235,13 +235,13 @@
     <div id="p2" style="display:none">
       <div class="g-ic">🗂️</div>
       <h2>请选择看板</h2>
-      <p>两个看板看到的内容不同，按需选择</p>
+      <p>两个看板内容不同，请按需选择</p>
       <div class="picks">
         <button class="pick comm" id="pickComm">
           <span class="pi">🏘️</span>
           <span>
-            <span class="pt">社区治理看板</span>
-            <span class="pd">看汇总指标与居民使用情况，人名默认打码；点人名并输入人名密码可查看真实姓名。</span>
+            <span class="pt">社区治理看板<span class="lock">需密码</span></span>
+            <span class="pd">看汇总指标与居民使用情况，人名默认打码；点人名并输入密码可查看真实姓名。</span>
           </span>
         </button>
         <button class="pick mgr" id="pickMgr">
@@ -258,16 +258,16 @@
       </div>
     </div>
 
-    <!-- 第 3 步：管理者看板密码 -->
+    <!-- 第 3 步：所选看板的密码（两个看板共用这一个输入区） -->
     <div id="p3" style="display:none">
-      <div class="g-ic">🔑</div>
-      <h2>管理者看板</h2>
-      <p>该看板可查看<b>全量用户数据与真实姓名</b><br>请输入看板密码继续</p>
-      <input id="mgrPw" type="password" autocomplete="off" placeholder="管理者看板密码" aria-label="管理者看板密码">
+      <div class="g-ic" id="p3Icon">🔑</div>
+      <h2 id="p3Title">看板密码</h2>
+      <p id="p3Desc">—</p>
+      <input id="boardPw" type="password" autocomplete="off" placeholder="请输入密码" aria-label="看板密码">
       <div class="err" id="err3"></div>
       <div class="btns">
         <button class="c" id="back2">上一步</button>
-        <button class="o" id="okMgr">进入</button>
+        <button class="o" id="okBoard">进入</button>
       </div>
     </div>
   </div>
@@ -278,8 +278,8 @@
   <div class="nbox">
     <div class="nic">🔍</div>
     <h3>查看真实姓名</h3>
-    <div class="who">居民 <b id="ndTarget">—</b> 的真实姓名<br>需要人名密码</div>
-    <input id="namePw" type="password" autocomplete="off" placeholder="人名密码" aria-label="人名密码">
+    <div class="who">居民 <b id="ndTarget">—</b> 的真实姓名<br>请输入社区治理看板密码</div>
+    <input id="namePw" type="password" autocomplete="off" placeholder="看板密码" aria-label="人名密码">
     <div class="err" id="ndErr"></div>
     <div class="btns">
       <button class="c" id="ndCancel">取消</button>
@@ -334,7 +334,6 @@
       <h2>👥 居民明细</h2>
       <p class="h2-sub" id="userSub">全部账号的近 7 天用药情况</p>
       <div class="tip" id="nameTip" style="display:none"></div>
-      <div class="tip" id="mgrTip" style="display:none"></div>
       <div class="tip" id="commTip" style="display:none"></div>
       <div class="tb-scroll">
         <table id="tbl">
@@ -368,18 +367,22 @@
   var emb = location.search.indexOf('emb=') >= 0;
   if (emb) document.body.className = 'emb';
 
-  /* 当前状态：门禁密码 + 所选模式 + 管理者密码 */
-  var S = { gatePw: '', board: 'community', mgrPw: '' };
+  /* 当前状态：门禁密码 + 所选看板 + 该看板的密码 */
+  var S = { gatePw: '', board: '', boardPw: '' };
   try {
     S.gatePw = sessionStorage.getItem('kbAdminPw') || '';
-    S.board = sessionStorage.getItem('kbAdminBoard') || 'community';
-    S.mgrPw = sessionStorage.getItem('kbMgrPw') || '';
+    S.board = sessionStorage.getItem('kbAdminBoard') || '';
+    S.boardPw = sessionStorage.getItem('kbBoardPw') || '';
   } catch (e) {}
   function save() {
     try {
       sessionStorage.setItem('kbAdminPw', S.gatePw);
       sessionStorage.setItem('kbAdminBoard', S.board);
-      if (S.mgrPw) sessionStorage.setItem('kbMgrPw', S.mgrPw); else sessionStorage.removeItem('kbMgrPw');
+      if (S.boardPw) sessionStorage.setItem('kbBoardPw', S.boardPw);
+      else sessionStorage.removeItem('kbBoardPw');
+      /* v34：切看板时清掉旧密码，绝不把上一个看板的密码误发给另一个看板 */
+      sessionStorage.removeItem('kbMgrPw');
+      sessionStorage.removeItem('kbCommunityPw');
     } catch (e) {}
   }
 
@@ -407,44 +410,79 @@
     location.href = 'index.html';
   }
 
-  /* ---------- 第 1 步：验门禁 ---------- */
+  /* ==========================================================
+    * v34 门禁验证：用状态码区分"门禁错"与"门禁对但还没选看板"
+    * ==========================================================
+   * 【为什么不直接调 api()】
+   *   两个看板现在各自独立验密，所以在"还没选看板"的阶段去请求 stats，
+   *   后端必然因缺少看板密码返回 403。而 403 在正常流程里表示"看板密码不对"，
+   *   两者含义冲突，会把用户卡在第 1 步。
+   * 【利用现有语义巧妙区分】
+   *   401 = 门禁密码不对（没过关）
+   *   403 = 门禁过了，只是看板密码尚未提供（过关，进入第 2 步）
+   *   这样不用改后端，也不需要新增只验门禁的接口。
+   * ========================================================== */
   function verifyGate() {
     var v = $('pwd').value;
     fail('err', '');
     if (!v) { fail('err', '请输入密码'); return; }
     fail('err', '验证中…');
-    /* 只用门禁密码请求社区视图 —— 顺带验证密码本身，
-       不传 board/managerPw，确保这一关不可能拿到实名数据。 */
-    api({ password: v, board: 'community' }).then(function (j) {
-      if (!j) return;
-      S.gatePw = v; save();
-      step(2);
-      fail('err', '');
-    });
+    fetch(FC + '/api/admin/stats', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      cache: 'no-store', body: JSON.stringify({ password: v })
+    }).then(function (r) {
+      if (r.status === 401) { fail('err', '门禁密码不正确，请再试一次'); return null; }
+      if (r.status === 429) { fail('err', '尝试次数过多，请稍后再试'); return null; }
+      /* 200 = 旧版后端（没有看板密码这层），也视为门禁通过 */
+      if (r.ok || r.status === 403) {
+        S.gatePw = v; save();
+        step(2);
+        fail('err', '');
+        return null;
+      }
+      fail('err', '服务暂时不可用（' + r.status + '），请稍后重试');
+      return null;
+    }).catch(function () { fail('err', '网络不可用，请稍后重试'); });
   }
 
-  /* ---------- 第 2 步：选看板 ---------- */
-  function chooseComm() {
-    S.board = 'community'; S.mgrPw = ''; save();
-    fail('err2', ''); fail('err3', '');
-    enter();
-  }
-  function chooseMgr() {
+  /* ---------- 第 2/3 步：选看板 → 输该看板的密码 ---------- */
+  /* v34：两个看板**各自独立验密**，选完看板都要问密码。
+        共用同一个输入区，按所选看板换标题/说明/占位符，避免两份重复代码。 */
+  function askBoardPw(board) {
+    S.board = board; S.boardPw = '';
+    save();
     fail('err3', '');
+    if (board === 'manager') {
+      $('p3Icon').textContent = '🔑';
+      $('p3Title').textContent = '管理者看板';
+      $('p3Desc').innerHTML = '该看板可查看<b>全量用户数据与真实姓名</b><br>请输入管理者看板密码';
+      $('boardPw').placeholder = '管理者看板密码';
+    } else {
+      $('p3Icon').textContent = '🏘️';
+      $('p3Title').textContent = '社区治理看板';
+      $('p3Desc').innerHTML = '该看板人名默认<b>打码显示</b><br>请输入社区治理看板密码';
+      $('boardPw').placeholder = '社区治理看板密码';
+    }
+    $('boardPw').value = '';
     step(3);
-    setTimeout(function () { try { $('mgrPw').focus(); } catch (e) {} }, 60);
+    setTimeout(function () { try { $('boardPw').focus(); } catch (e) {} }, 60);
   }
-  function verifyMgr() {
-    var v = $('mgrPw').value;
+  function verifyBoard() {
+    var v = $('boardPw').value;
     fail('err3', '');
-    if (!v) { fail('err3', '请输入管理者看板密码'); return; }
+    if (!v) { fail('err3', '请输入看板密码'); return; }
     fail('err3', '验证中…');
-    api({ password: S.gatePw, board: 'manager', managerPw: v }).then(function (j) {
+    var body = { password: S.gatePw, board: S.board };
+    if (S.board === 'manager') body.managerPw = v; else body.communityPw = v;
+    api(body).then(function (j) {
       if (!j) return;
-      /* 后端只有在密码正确时才会回 mgrOk:true；
-         若被降级为社区视图，明确告诉用户"密码不对"，不要让人以为进了管理者看板。 */
-      if (!j.mgrOk) { fail('err3', '管理者看板密码不正确'); return; }
-      S.board = 'manager'; S.mgrPw = v; save();
+      /* 后端两个看板都是硬性验密：密码不对直接 403，不存在"降级进入"。
+         若返回视图与所选不一致，说明后端是旧包，明确提示而不是将错就错。 */
+      if (j.board !== S.board) {
+        fail('err3', '后端版本较旧，请重新上传最新部署包（fc-web.zip）');
+        return;
+      }
+      S.boardPw = v; save();
       enter();
     });
   }
@@ -455,10 +493,19 @@
       method: 'POST', headers: { 'content-type': 'application/json' },
       cache: 'no-store', body: JSON.stringify(body)
     }).then(function (r) {
-      if (r.status === 401) { routeErr('密码已失效，请重新输入门禁密码。'); return null; }
+      if (r.status === 401) { routeErr('门禁密码已失效，请重新输入。'); return null; }
       if (r.status === 429) { routeErr('尝试次数过多，请稍后再试。'); return null; }
-      if (!r.ok) throw new Error('http ' + r.status);
-      return r.json();
+      return r.json().catch(function () { return null; }).then(function (j) {
+        if (r.status === 403) {
+          /* 看板密码不对：停留在第 3 步就地提示，不把人踢回门禁重输一遍 */
+          var msg = (j && j.message) || '看板密码不正确';
+          if (main.style.display !== 'block') fail('err3', msg);
+          else { var gl = $('genLine'); if (gl) gl.textContent = msg; }
+          return null;
+        }
+        if (!r.ok) throw new Error('http ' + r.status);
+        return j;
+      });
     }).catch(function () {
       routeErr('网络不可用，请稍后重试。');
       return null;
@@ -468,7 +515,7 @@
     if (main.style.display === 'block') {
       var gl = $('genLine'); if (gl) gl.textContent = msg;
     } else {
-      step(1); fail('err', msg); fail('err3', msg);
+      fail('err', msg);
     }
   }
 
@@ -480,16 +527,16 @@
 
   /* ---------- 载入并渲染 ---------- */
   function load() {
+    if (!S.board) { gate.style.display = ''; main.style.display = 'none'; step(2); return; }
     var body = { password: S.gatePw, board: S.board };
-    if (S.board === 'manager') body.managerPw = S.mgrPw;
+    if (S.board === 'manager') body.managerPw = S.boardPw; else body.communityPw = S.boardPw;
     api(body).then(function (j) {
       if (!j) return;
-      /* 关键：以后端**实际生效**的视图为准，而不是我们请求的那个。
-         若管理者密码失效被降级，标题/徽章必须立刻改回社区视图，不能显示实名却挂着管理者标签。 */
-      var eff = (j.board === 'manager' && j.mgrOk) ? 'manager' : 'community';
-      S.board = eff;
-      if (eff === 'community') { S.mgrPw = ''; }
-      save();
+      /* 以**后端实际返回**的视图为准。两个看板都已硬性验密，j.board 必然等于
+         请求的 board；万一不一致（例如后端是旧包），以它为准重画，避免
+         出现"标题挂着社区、数据却是实名"的错位。 */
+      var eff = (j.board === 'manager') ? 'manager' : 'community';
+      if (eff !== S.board) { S.board = eff; save(); }
       render(j, eff);
     });
   }
@@ -512,28 +559,24 @@
       + (j.today ? ('（统计日 ' + j.today + '）') : '');
 
     /* —— 模式提示 —— */
-    var t1 = $('nameTip'), t2 = $('mgrTip'), t3 = $('commTip');
-    t1.style.display = 'none'; t2.style.display = 'none'; t3.style.display = 'none';
+    var t1 = $('nameTip'), t3 = $('commTip');
+    t1.style.display = 'none'; t3.style.display = 'none';
     if (isMgr) {
       $('userSub').textContent = '全部账号的近 7 天用药情况，真实姓名直接显示';
-      if (j.mgrDenied) {
-        t2.className = 'tip bad';
-        t2.innerHTML = '⚠️ <b>管理者看板密码未通过</b>，当前显示的是社区视图（人名已打码）。请返回重新输入看板密码。';
-        t2.style.display = '';
-      }
     } else {
-      $('userSub').textContent = '全部账号的近 7 天用药情况；人名默认打码，点击可输入人名密码查看';
-      if (j.namesMasked) {
-        t3.className = 'tip';
-        t3.innerHTML = '🔒 当前为<b>社区治理视图</b>，人名已打码。<b>点击表格里的人名</b>，输入人名密码即可查看该居民真实姓名（一次一个，不会批量泄露）。';
-        t3.style.display = '';
-      }
-      if (j.namesMasked && j.mgrDenied) {
-        /* 后端仍是旧包：既不认识 board 也不回 mgrOk */
-        t1.className = 'tip warn';
-        t1.innerHTML = '⚠️ 后端可能仍是旧版本（未返回视图标识）。如需管理者看板，请在 FC 控制台重新上传最新部署包（fc-web.zip）。';
-        t1.style.display = '';
-      }
+      $('userSub').textContent = '全部账号的近 7 天用药情况；人名默认打码，点击可查看真实姓名';
+      t3.className = 'tip';
+      t3.innerHTML = '🔒 当前为<b>社区治理看板</b>，人名已打码。<b>点击表格里的人名</b>，'
+        + '输入人名密码即可查看该居民真实姓名（一次一个，不会批量泄露）。';
+      t3.style.display = '';
+    }
+    /* v34 兼容旧后端：老包不认识 communityPw，进去后也不会回 namesMasked，
+       那样社区看板会显示实名却挂着"打码"的说明，属于严重误导，必须提示。 */
+    if (!isMgr && j.namesMasked !== true) {
+      t1.className = 'tip bad';
+      t1.innerHTML = '⚠️ <b>后端版本过旧</b>：未能识别"人名打码"机制，可能已显示真实姓名。'
+        + '请在 FC 控制台重新上传最新部署包（fc-web.zip）以恢复分级保护。';
+      t1.style.display = '';
     }
 
     /* —— 今日 / 近7天总览 —— */
@@ -681,15 +724,18 @@
   $('ok').addEventListener('click', verifyGate);
   $('pwd').addEventListener('keydown', function (e) { if (e.key === 'Enter') verifyGate(); });
   $('cancel').addEventListener('click', leave);
-  $('pickComm').addEventListener('click', chooseComm);
-  $('pickMgr').addEventListener('click', chooseMgr);
-  $('okMgr').addEventListener('click', verifyMgr);
-  $('mgrPw').addEventListener('keydown', function (e) { if (e.key === 'Enter') verifyMgr(); });
+  /* v34：两个看板都进"输密码"这一步，只是内容不同 */
+  $('pickComm').addEventListener('click', function () { askBoardPw('community'); });
+  $('pickMgr').addEventListener('click', function () { askBoardPw('manager'); });
+  $('okBoard').addEventListener('click', verifyBoard);
+  $('boardPw').addEventListener('keydown', function (e) { if (e.key === 'Enter') verifyBoard(); });
   $('back1').addEventListener('click', function () { fail('err2', ''); step(1); });
   $('back2').addEventListener('click', function () { fail('err3', ''); step(2); });
   $('btnRefresh').addEventListener('click', function () { load(); });
   $('btnSwitch').addEventListener('click', function () {
-    /* 切换看板：回门禁第2步重新选，已记住门禁密码不必重输 */
+    /* 切换看板：回第 2 步重新选。门禁密码已记住不必重输，
+       但**必须重新输该看板的密码** —— 两道门不共享。 */
+    S.boardPw = ''; save();
     step(2); fail('err2', ''); fail('err3', '');
     gate.style.display = ''; main.style.display = 'none';
   });
@@ -716,16 +762,13 @@
     if (el) { e.preventDefault(); openNameDlg(el); }
   });
 
-  /* —— 已通过门禁则跳过第 1 步 —— */
-  function boot() {
-    if (!S.gatePw) { step(1); return; }
-    step(2);
-  }
-  if (S.gatePw && S.board === 'manager' && S.mgrPw) {
-    /* 本会话上次就是管理者看板 → 直接进 */
+  /* —— 启动：已记住门禁+看板密码就直接进，否则从第 1 步开始 —— */
+  if (S.gatePw && S.board && S.boardPw) {
     gate.style.display = 'none'; main.style.display = 'block'; load();
+  } else if (S.gatePw) {
+    step(2);   /* 门禁还记得，直接让他选看板 */
   } else {
-    boot();
+    step(1);
   }
 })();
 </script>
