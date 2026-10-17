@@ -51,15 +51,21 @@
        style-src 'self' 'unsafe-inline' —— 样式同理
        base-uri 'self' / form-action 'self' —— 挡 <base> 劫持与表单外发
        object-src 'none'  —— 彻底禁掉 <object>/<embed>
+      media-src 'self' <函数计算域名> blob: data:
+                           —— v37 新增。千问语音经后端代理后是**跨源**音频
+                           （站点在 GitHub Pages、后端在函数计算，两个不同的域）。
+                           原来没写 media-src，它会回落到 default-src 'self'，
+                           于是跨源音频一律被拒，表现就是"听不到千问女声"。
+                           只额外放行自己的后端域名，范围仍然收得很紧。
      ========================================================== -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run http://127.0.0.1:* http://localhost:*; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run blob: data:; connect-src 'self' https://kangban-ai-cfcnpojddz.cn-beijing.fcapp.run http://127.0.0.1:* http://localhost:*; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="x-content-type-options" content="nosniff">
 <!-- v28：本行必须保持在文件最开头。
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101707;</script>
+<script>window.KB_BUILD=2026101708;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -286,6 +292,13 @@
   function timeoutFor(rel) {
     if (rel.indexOf('/api/asr/') === 0) return 0;
     if (rel.indexOf('/api/ai/chat') === 0) return 25000;
+    /* v37：语音合成必须单独放宽。
+     * 原来它落进下面的兜底 6 秒。实测热态合成只要 1.6~2.0 秒，看着够用；
+     * 但函数计算**冷启动**（空闲一阵后的第一个请求）会额外耗时几秒，
+     * 再叠加一次 CORS 预检往返，6 秒就会踩线 → 前端超时 → 静默降级成系统朗读，
+     * 现场只表现为"听不到千问女声"。给 15 秒，既扛得住冷启动，
+     * 又不至于久到老人干等（真失败时仍会及时回退）。 */
+    if (rel.indexOf('/api/ai/tts') === 0) return 15000;
     if (rel.indexOf('/api/') === 0) return 6000;
     return 0;
   }
@@ -1124,7 +1137,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101707;
+      var KB_BUILD = 2026101708;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -7788,7 +7801,10 @@ EMC.Voice = (function () {
           }
           throw e;
         }),
-      new Promise(function (_, rej) { setTimeout(function () { rej(new Error('云端语音超时')); }, 8000); })
+      /* v37：8 秒 → 15 秒，与 timeoutFor 里的 /api/ai/tts 保持一致。
+         两处必须一起改：外层 fetch 超时先到的话，这里根本轮不到；
+         只放宽其中一处症状照旧 —— 这与当初把 TTS 误设成 6 秒是同一个坑。 */
+      new Promise(function (_, rej) { setTimeout(function () { rej(new Error('云端语音超时')); }, 15000); })
     ]);
   }
   function speakCloud(text, opts) {
