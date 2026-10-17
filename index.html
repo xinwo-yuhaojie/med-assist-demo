@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101710;</script>
+<script>window.KB_BUILD=2026101801;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1137,7 +1137,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101710;
+      var KB_BUILD = 2026101801;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -9249,7 +9249,14 @@ window.EMCStore = (function () {
         return EMCAuth.api('/api/checkin', {
           method: 'POST',
           /* v13：代打卡标记透传，后端写入记录本身 */
-          body: { date: rec.date, mid: rec.mid, slot: rec.slot, status: rec.status, byFamily: rec.byFamily === true }
+          body: { date: rec.date, mid: rec.mid, slot: rec.slot, status: rec.status,
+                byFamily: rec.byFamily === true,
+                /* v38 必须透传 time：服务端只对 status='pending' 采用传入的 time，
+                   不传就用「生成这一刻」当时间。而 dueHour(r) 只读 r.time——
+                   于是登录态下 r.time 变成打开页面的时刻，到点闸门恒开：
+                   离服药时间还有十几个小时也能直接打卡，界面上显示的服药时间也是错的。
+                   （游客态走 LocalStore 保留 time，所以只有登录态坏。） */
+                time: (typeof rec.time === 'string') ? rec.time.slice(0, 5) : '' }
         }).then(function (r) {
           return { records: (r.records || []).map(mapRecFrom), med: r.med ? mapMedFrom(r.med) : null };
         });
@@ -12392,13 +12399,40 @@ EMC.Care = (function () {
   /* 统一处理打卡状态并同步余量（经 store）
    * act：taken / missed / pending；fromReminder：是否来自到点提醒弹窗（避免重复弹反馈卡） */
   async function doCheckin(r, act, fromReminder, byFamily) {
-    /* 到点闸门：没到时间的顿不能打卡、不能标漏服 */
+    /* ---------- v38 到点闸门 ----------
+     * 原实现：`act` 是 taken 或 missed 一律要求已到点，否则直接拒绝。
+     * 问题（真实场景，非理论）：早餐药时段 08:00，老人 07:00 就吃了饭吃了药，
+     *   结果**根本打不上卡**——只能干等到 8 点。而这段时间里家属端看到的是
+     *   「未按时服药」，把"按时吃了"误报成"漏服"，
+     *   而依从率恰恰是这个产品要监控的核心指标。
+     *
+     * 修正后的规则（区分两种意图）：
+     *   · 标「漏服」：必须等到点。没到时间不可能知道漏了，否则是凭空指控。
+     *   · 标「已服」：允许**提前 90 分钟**记录真实服药时间。
+     *     90 分钟覆盖了"早餐 07:00 吃 vs 08:00 时段""晚饭 17:30 吃 vs 18:30 时段"
+     *     这类最常见偏差；又不至于宽到能在下午就把晚上的药提前标掉、
+     *     导致该响的提醒被压掉。
+     *   · 家属代录：不受提前余量限制——家属是在**作证**，不是在猜。
+     */
     if (r.status === 'pending' && (act === 'taken' || act === 'missed') && !duePassed(r)) {
       var dh = dueHour(r); var dhh = Math.floor(dh); var dmi = Math.round((dh - dhh) * 60);
       var whenStr = r.time || (dhh + ':' + (dmi < 10 ? '0' : '') + dmi);
-      toast('这一顿还没到时间，' + whenStr + ' 后再来打卡');
-      try { V.speak('这一顿还没到时间，等到' + whenStr + '再来打卡'); } catch (e) {}
-      return;
+      var isProxyNote = (byFamily === true) || familyAssist;
+      var earlyOk = (act === 'taken')
+        && (isProxyNote || canTakeEarly(r));
+      if (!earlyOk) {
+        var tip = act === 'taken'
+          ? ('这一顿还没到时间，' + whenStr + ' 后再来打卡（提前 ' + EARLY_TAKE_MIN
+             + ' 分钟内可以先记）')
+          : ('这一顿还没到时间，' + whenStr + ' 后才能标记漏服');
+        toast(tip);
+        try { V.speak(tip); } catch (e) {}
+        return;
+      }
+      /* 提前记录：如实告知用的是真实服药时间，避免家属侧时间对不上 */
+      var earlyAt = new Date().toTimeString().slice(0, 5);
+      toast('已提前记录这次服药，服药时间 ' + earlyAt);
+      try { V.speak('好的，记下了，服药时间' + earlyAt); } catch (e) {}
     }
     /* v13 P1-2：代打卡标记。显式传 true 或当前处于家属协助模式，都算代录 */
     var isProxy = (byFamily === true) || familyAssist;
@@ -12510,7 +12544,21 @@ EMC.Care = (function () {
   function statusHtml(r) {
     if (r.status === 'taken') return '<span class="pill taken">已服用</span><button class="btn gray sm" data-act="pending" data-id="' + r.id + '" style="margin-top:6px">撤销</button>';
     if (r.status === 'missed') return '<span class="pill missed">已漏服</span><button class="btn gray sm" data-act="pending" data-id="' + r.id + '" style="margin-top:6px">撤销</button>';
-    if (!duePassed(r)) return '<span class="pill pending" style="opacity:.7">⏳ ' + esc(r.time || '') + ' 后可打卡</span>';
+    /* v38：到点前的渲染。
+       原实现一刀切 —— 未到点就只给一行"⏳ xx:xx 后可打卡"、**连按钮都不渲染**。
+       于是 doCheckin 里的闸门根本够不着：老人明明提前吃了药，
+       界面上却没有可点的东西，只能干等到点；而这段时间家属端会显示
+       "未按时服药"，把按时服用误报成漏服 —— 依从率正是本产品要监控的核心指标。
+       现在：落在提前余量内（canTakeEarly）时渲染「已服用」按钮，
+       并明确提示可提前记录；「漏服」依旧要到点才能标。 */
+    if (!duePassed(r)) {
+      if (canTakeEarly(r)) {
+        return '<button class="btn sm" data-act="taken" data-id="' + r.id + '">已服用</button>' +
+          '<span class="pill pending" style="opacity:.7;margin-top:6px">⏳ ' +
+          esc(r.time || '') + ' 前可提前记录</span>';
+      }
+      return '<span class="pill pending" style="opacity:.7">⏳ ' + esc(r.time || '') + ' 后可打卡</span>';
+    }
     return '<button class="btn sm" data-act="taken" data-id="' + r.id + '">已服用</button>' +
       '<button class="btn gray sm" data-act="missed" data-id="' + r.id + '">漏服了</button>';
   }
@@ -13813,6 +13861,15 @@ EMC.Care = (function () {
     return (sl && typeof sl.hour === 'number') ? sl.hour : 0;
   }
   function duePassed(r) { var n = new Date(); return (n.getHours() + n.getMinutes() / 60) >= dueHour(r); }
+  /* v38：允许「已服」提前记录的上限（分钟）。
+     90 分钟覆盖早餐/晚饭提前吃的常见偏差，又不至于宽到能提前把晚间的药标掉、
+     导致该响的提醒被压掉。家属代录不在此限——那是在作证，不是在猜。 */
+  var EARLY_TAKE_MIN = 90;
+  function canTakeEarly(r) {
+    var n = new Date();
+    var now = n.getHours() + n.getMinutes() / 60;
+    return (dueHour(r) - now) * 60 <= EARLY_TAKE_MIN;
+  }
   /* 今日用药任务自动同步：按药品清单（疗程内）补生成今天缺失的待打卡项 */
   async function ensureTodayRecords() {
     try {
