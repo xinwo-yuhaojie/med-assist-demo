@@ -59,7 +59,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101704;</script>
+<script>window.KB_BUILD=2026101705;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1124,7 +1124,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101704;
+      var KB_BUILD = 2026101705;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -8262,6 +8262,13 @@ EMC.Voice = (function () {
     asrEngineList: asrEngineList, probeLocalAsr: probeLocalAsr, localAsrInfo: localAsrInfo,
     asrEngineReady: asrEngineReady, asrEngineBlockReason: asrEngineBlockReason,
     localAsrSupported: localAsrSupported,
+    /* v37 补导出：下面三个原先是本 IIFE 的私有函数，但主脚本（用户中心、
+       本地识别入口）在调用它们 —— 作用域不通，直接 ReferenceError。
+       asrEngineRealLabel 让「点击已登录账号」整个用户中心渲染失败，
+       进而被全局 onerror 捕获、弹出"页面出了点小问题"的恢复遮罩。
+       注意：代码能通过语法检查、括号也配对，这类错误静态看不出来。 */
+    asrEngineRealLabel: asrEngineRealLabel, asrIsLocalRun: asrIsLocalRun,
+    asrPrivacyNote: asrPrivacyNote,
     recordAndTranscribe: recordAndTranscribe, transcribeBlob: transcribeBlob
   };
 })();
@@ -11226,7 +11233,7 @@ EMC.Care = (function () {
       var hh = location.hostname;
       name = (hh === '127.0.0.1' || hh === 'localhost') ? '本机模型' : '云端识别';
     }
-    asrTip('正在用' + name + '聆听，说完再点一次话筒…' + asrPrivacyNote());
+    asrTip('正在用' + name + '聆听，说完再点一次话筒…' + V.asrPrivacyNote());
     V.interrupt();
     recCtrl = V.recordAndTranscribe({
       onState: function (s) {
@@ -14124,7 +14131,7 @@ EMC.Care = (function () {
       '<div class="form-row"><label>语音识别引擎</label>' +
         '<div class="theme-row" id="ucAsrEngine">' +
           Object.keys(V.asrEngineList()).map(function (k) {
-            return '<button class="theme-opt' + ((S.settings.asrEngine || 'qwen3-0.6b') === k ? ' on' : '') + '" data-ae="' + k + '">' + asrEngineRealLabel(k) + '</button>';
+            return '<button class="theme-opt' + ((S.settings.asrEngine || 'qwen3-0.6b') === k ? ' on' : '') + '" data-ae="' + k + '">' + V.asrEngineRealLabel(k) + '</button>';
           }).join('') +
         '</div></div>' +
       '<div class="notice-family" id="ucAsrTip">正在检测识别引擎…</div>' +
@@ -14206,7 +14213,7 @@ EMC.Care = (function () {
         }
         /* v27：只有真的在本机推理时才提显卡/CPU；线上是云端识别，
            再写「本机推理设备」就是不实之词。 */
-        if (id !== 'browser' && info.available && info.device !== 'cloud' && asrIsLocalRun()) {
+        if (id !== 'browser' && info.available && info.device !== 'cloud' && V.asrIsLocalRun()) {
           txt += '（本机推理设备：' + (info.gpu ? '显卡 GPU' : 'CPU') + '）';
         }
         aeTip.textContent = txt;
