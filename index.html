@@ -59,7 +59,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101706;</script>
+<script>window.KB_BUILD=2026101707;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1124,7 +1124,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101706;
+      var KB_BUILD = 2026101707;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -1990,7 +1990,36 @@ body.fs-4 { --fs: 33px; }
 .filt { min-height: var(--tap); font-size: .82em; padding: 6px 14px; }
 .filt.on { background: var(--c-primary); color: var(--c-on-primary); border-color: var(--c-primary); }
 .notify-item { border-bottom: 1px dashed var(--c-border); padding: 8px 0; font-size: .85em; }
+/* v37：日志改成 <details> 可展开。用 summary 而不是自定义按钮，
+   因为它天然带键盘可达、读屏会念、点哪儿都能展开 —— 老人不需要学新交互。 */
+.notify-item > summary { cursor: pointer; list-style: none; padding: 4px 0; }
+.notify-item > summary::-webkit-details-marker { display: none; }
+.notify-item > summary::after {
+  content: '查看详情'; float: right; color: var(--c-primary);
+  font-weight: 700; font-size: .85em; white-space: nowrap;
+}
+.notify-item[open] > summary::after { content: '收起'; }
+.notify-item > summary:hover { background: var(--c-surface-2, rgba(0,0,0,.03)); }
 .notify-item .t { color: var(--c-text-sub); font-size: .8em; }
+/* 折叠时正文只留一行，展开后完整显示 —— 这正是"点开看具体内容"的落点 */
+.notify-item .c {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.notify-item[open] .c { white-space: normal; }
+.notify-item .d {
+  margin-top: 8px; padding: 10px 12px; border-radius: 8px;
+  background: var(--c-surface-2, rgba(0,0,0,.04));
+  line-height: 1.8; font-size: .95em;
+}
+.notify-item .d .full { white-space: pre-wrap; }
+/* 日期分组头，让"各个时间段"一眼可辨 */
+.notify-day {
+  position: sticky; top: 0; z-index: 2;
+  padding: 6px 0; margin-top: 4px;
+  font-size: .8em; font-weight: 700; color: var(--c-text-sub);
+  background: var(--c-bg, #fff);
+}
 
 .sos-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--c-border); flex-wrap: wrap; }
 .sos-row:last-child { border-bottom: 0; }
@@ -12938,12 +12967,45 @@ EMC.Care = (function () {
       ? (log.length <= NOTIFY_AUTO_LIMIT)
       : notifyFoldOverride;
     var shown = expanded ? log : log.slice(0, NOTIFY_PREVIEW);
+    /* v37：按日期分组 + 每条可点开看详情。
+     * 原来每条只有"时间 + 徽章 + content"三行，而云端数据里 content 是空的
+     * （服务端存的是 text），于是登录态下日志只剩一行壳子。
+     * 现在统一走 normalizeNotifyList，并且用原生 <details> 做展开 ——
+     * 老人点一下就能看到这条到底通报了什么、哪些通道成功、哪些失败。 */
+    var rows = normalizeNotifyList(shown);
+    var groups = [];
+    rows.forEach(function (n) {
+      var last = groups[groups.length - 1];
+      if (last && last.day === n.dayText) last.items.push(n);
+      else groups.push({ day: n.dayText || '无日期', items: [n] });
+    });
     $id('guardianNotify').innerHTML = log.length ?
-      shown.map(function (n) {
-        var badge = notifyBadge(n.status);
-        return '<div class="notify-item"><div class="t">' + esc(n.time || '') + ' <span class="nb ' + badge.cls + '">' + badge.text + '</span></div>' +
-          '<div>' + esc(n.content || '') + (n.to ? ' → ' + esc(n.to) : '') + '</div>' +
-          (n.detail ? '<div class="muted small">' + esc(n.detail) + '</div>' : '') + '</div>';
+      groups.map(function (g) {
+        return '<div class="notify-day">' + esc(g.day) + '·' + g.items.length + ' 条</div>' +
+          g.items.map(function (n) {
+            var badge = notifyBadge(n.status);
+            var one = (n.content || '').replace(/\s+/g, ' ').trim();
+            var body = [
+              n.channelName ? ('通道：' + n.channelName) : '',
+              n.to ? ('接收人：' + n.to) : ''
+            ].filter(Boolean).join('　　');
+            var sent = [];
+            if (n.okList.length) sent.push('✅ 成功：' + n.okList.join('、'));
+            if (n.failList.length) sent.push('⚠️ 失败：' + n.failList.join('、'));
+            return '<details class="notify-item"><summary>' +
+              '<div class="t">' + esc(n.timeText || n.time || '') +
+              ' <span class="nb ' + badge.cls + '">' + badge.text + '</span></div>' +
+              '<div class="c">' + esc(one || '（本条无正文）') + '</div>' +
+              '</summary><div class="d">' +
+              (body ? '<div class="muted small">' + esc(body) + '</div>' : '') +
+              '<div class="full">' + esc(n.content || '（无内容）')
+                  .replace(/\n/g, '<br>') + '</div>' +
+              (sent.length ? '<div class="muted small" style="margin-top:6px">'
+                  + sent.map(esc).join('<br>') + '</div>' : '') +
+              (n.detail ? '<div class="muted small" style="margin-top:6px">'
+                  + '原始结果：' + esc(n.detail) + '</div>' : '') +
+              '</div></details>';
+          }).join('');
       }).join('') +
       (!expanded ? '<div class="muted small" style="padding:8px 0;text-align:center">仅显示最近 ' +
         NOTIFY_PREVIEW + ' 条，共 ' + log.length + ' 条，点「展开全部」查看。</div>' : '')
@@ -13002,6 +13064,86 @@ EMC.Care = (function () {
       }
     }
   }
+  /* ==========================================================
+   * v37 通知日志归一化（云端/本地两条数据源统一成同一种形状）
+   * ==========================================================
+   * 【发现的真问题】云端 /api/notify 存的字段是 {id,time,channel,text,to,result}，
+   *   而界面渲染读的是 content / detail / status —— 三个字段云端**根本没有**。
+   *   结果：登录态下每条日志只有时间戳和一个徽章，正文是空的。
+   *   老人看到的就是"只是发条信息在这"，看不到到底通报了什么。
+   *   本地 store 早就是 content/detail/status，两边形状不一致，界面却共用一套渲染。
+   *
+   * 【同时修掉的时间显示】云端 time 是 ISO 串（2026-10-17T03:02:27.035Z），
+   *   直接 esc 出来是 UTC 原始文本，比本地时间差 8 小时，老人读不懂。
+   *   统一转成 "10-17 11:02" 并按日期分组，才能看出"各个时间段"。
+   */
+  var KB_CH_NAME = { email: '邮件', wechat: '企业微信', wxpush: '微信推送',
+                     'wxpush-admin': '微信推送', sms: '短信', all: '全部通道',
+                     missed: '漏服', weekly: '周报', demo: '演示' };
+  function kbNotifyTimeText(raw) {
+    if (!raw) return '';
+    var d = new Date(raw);
+    if (isNaN(d.getTime())) return String(raw);
+    var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    var today = E.fmtDate(new Date());
+    var day = E.fmtDate(d);
+    var hm = p2(d.getHours()) + ':' + p2(d.getMinutes());
+    var sec = p2(d.getSeconds());
+    if (day === today) return '今天 ' + hm;
+    return day.slice(5) + ' ' + hm;      /* 10-17 11:02 */
+  }
+  function kbNotifyDayText(raw) {
+    var d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    var today = E.fmtDate(new Date());
+    var day = E.fmtDate(d);
+    if (day === today) return '今天';
+    var y = new Date(); y.setDate(y.getDate() - 1);
+    if (day === E.fmtDate(y)) return '昨天';
+    return day;
+  }
+  /** 把任意来源的日志条目转成界面统一使用的形状 */
+  function normalizeNotifyItem(raw) {
+    var n = raw || {};
+    var content = (n.content != null && n.content !== '') ? n.content : (n.text || '');
+    var detail = (n.detail != null && n.detail !== '') ? n.detail : (n.result || '');
+    var status = n.status || '';
+    /* 云端只有 result 字符串（如 "email:a***@b.com:ok, sms:...:fail:..."），
+       从它推出状态，并拆成"成功/失败"两栏供详情展示。 */
+    var okList = [], failList = [];
+    if (detail && detail.indexOf(':') > 0) {
+      detail.split(/,\s*/).forEach(function (seg) {
+        var mm = seg.match(/^([a-z-]+):[^:]*:(ok|fail)(?::([\s\S]*))?$/);
+        if (!mm) return;
+        var chn = KB_CH_NAME[mm[1]] || mm[1];
+        if (mm[2] === 'ok') okList.push(chn);
+        else failList.push(chn + (mm[3] ? '（' + mm[3] + '）' : ''));
+      });
+    }
+    if (!status) {
+      if (okList.length) status = 'sent';
+      else if (failList.length) status = 'failed';
+      else status = detail ? 'sent' : 'demo-sent';
+    }
+    return {
+      id: n.id || '',
+      raw: n,
+      time: n.time || '',
+      timeText: kbNotifyTimeText(n.time),
+      dayText: kbNotifyDayText(n.time),
+      channel: n.channel || '',
+      channelName: KB_CH_NAME[n.channel] || n.channel || '',
+      to: n.to || '',
+      content: content,
+      detail: detail,
+      okList: okList, failList: failList,
+      status: status
+    };
+  }
+  function normalizeNotifyList(list) {
+    return (list || []).map(normalizeNotifyItem);
+  }
+
   function notifyBadge(status) {
     if (status === 'sent') return { cls: 'nb-sent', text: '已发送' };
     if (status === 'failed') return { cls: 'nb-fail', text: '失败' };
