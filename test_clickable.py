@@ -15,7 +15,7 @@ r"""
      必须用真实浏览器跑。本脚本就是为此存在。
 
 跑法：先起本地服务器，再执行
-     cd /d D:\网站专用\my-first-site
+     cd /d <项目目录>\my-first-site
      python -m http.server 8899
      python test_clickable.py
 """

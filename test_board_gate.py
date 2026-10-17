@@ -14,9 +14,12 @@
 
 用法：python test_board_gate.py
 """
-import sys, io, json
+import sys, io, json, os
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+# 由本文件位置推导，不写死盘符 —— 项目整体移动后仍然有效
+BASE = os.path.dirname(os.path.abspath(__file__))
 
 ADMIN_PW = "123456789"
 COMMUNITY_PW = "123123123"      # v34：社区治理看板密码（产品指定）
@@ -161,7 +164,7 @@ def main():
 
     print("\n=== 6. 前端：切换看板必须重输密码 ===")
     try:
-        src = open(r"D:\网站专用\my-first-site\dashboard.html", encoding="utf-8").read()
+        src = open(os.path.join(BASE, "dashboard.html"), encoding="utf-8").read()
         ok &= check("切看板时清空 boardPw", "S.boardPw = ''; save();" in src)
         ok &= check("无旧的 S.mgrPw 残留", "S.mgrPw" not in src)
         ok &= check("无已废弃的 j.mgrDenied 判断", "j.mgrDenied" not in src)
@@ -171,7 +174,7 @@ def main():
 
     print("\n=== 7. SOS：不再展示未经验证的医院信息 ===")
     try:
-        idx = open(r"D:\网站专用\my-first-site\index.html", encoding="utf-8").read()
+        idx = open(os.path.join(BASE, "index.html"), encoding="utf-8").read()
         ok &= check("'附近医院（示意）'已移除", "附近医院（示意）" not in idx)
         ok &= check("演示假医院名（示范）已移除", "（示范）" not in idx)
         ok &= check("NEARBY_HOSPITALS 已置空", "EMC.NEARBY_HOSPITALS = [];" in idx)

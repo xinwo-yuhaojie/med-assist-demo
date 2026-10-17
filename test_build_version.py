@@ -4,9 +4,10 @@
 因为 KB_BUILD 自 v32 起没升过，Service Worker 与"发现新版本"全靠它判断，
 号不动，用户就一直用带 bug 的旧缓存。修好代码 != 用户拿到新代码。
 检查：两处 KB_BUILD 一致 / 比 git 上次提交更大 / sw.js 版本非初始值。"""
-import io, re, sys, subprocess
+import io, os, re, sys, subprocess
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-ROOT = r"D:\网站专用\my-first-site"
+# 由本文件位置推导，不写死盘符 —— 整个项目目录一旦变动也不会失效
+ROOT = os.path.dirname(os.path.abspath(__file__))
 OK = True
 def ck(d, c):
     global OK

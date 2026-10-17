@@ -13,10 +13,11 @@
 
 用法：python test_escape.py
 """
-import sys, re, io
+import sys, os, re, io
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-SRC = r"D:\网站专用\my-first-site\index.html"
+# 由本文件位置推导，不写死盘符 —— 项目整体移动后仍然有效
+SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 src = io.open(SRC, encoding="utf-8").read()
 lines = src.split("\n")
 
