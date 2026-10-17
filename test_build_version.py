@@ -40,6 +40,17 @@ print("   VER = %s" % ver)
 ck("有版本号", ver != "无")
 ck("非初始值（否则旧缓存永不失效）", ver not in ("v1","v0",""))
 
+print("\n=== 4. 字符编码声明必须在前 1024 字节内 ===")
+# 浏览器只认前 1024 字节里的 charset 声明。原来的声明在第 1162 行（<body> 中段），
+# 会被忽略 -> 服务端不带 charset 时退回系统区域设置 -> 简体中文 Windows 上一片乱码。
+head = idx.encode("utf-8")[:1024]
+ck("前 1024 字节内有 <meta charset=utf-8>",
+   re.search(rb'<meta\s+charset=["\']?utf-8', head, re.I) is not None)
+allm = [(mm.start(), idx.count("\n", 0, mm.start()) + 1)
+        for mm in re.finditer(r'<meta\s+charset=["\']?utf-8', idx, re.I)]
+print("   全部 charset 声明(字节偏移,行号) = %s" % allm)
+ck("声明位置在 <head> 内（行号 < 100）", bool(allm) and allm[0][1] < 100)
+
 print("\n" + "="*50)
 print("全部通过" if OK else "有问题：代码改了但版本号没升，用户仍拿旧版！")
 print("="*50)

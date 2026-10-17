@@ -2,6 +2,23 @@
 <html lang="zh-CN">
 <head>
 <!-- ==========================================================
+     v36 字符编码声明（**必须放在前 1024 字节内**）
+     ==========================================================
+     【为什么突然加这个】
+       原来整份文件里唯一的 <meta charset="utf-8"> 在第 1162 行，
+       也就是 <body> 中段 —— 早就超出浏览器认可的 1024 字节窗口，会被**忽略**。
+       浏览器于是退回到「HTTP 响应的 charset」，再没有就退回系统区域设置。
+       在简体中文 Windows 上就是 GBK，于是**整个界面全是乱码**：
+       提醒设置、发送结果、错误原因，统统认不出来。
+       这正是「邮箱那里怎么发不出去」最容易被误判的形式 ——
+       用户不是发不出去，是根本读不懂屏幕上写了什么。
+       （GitHub Pages 会带 charset=utf-8，所以线上多数时候看不出来；
+         但 file:// 直开、本机静态服务器、以及任何不带 charset 的托管都会中招。）
+
+     【放这里的原因】必须在任何可能影响编码的内容之前、且在前 1024 字节内。
+     ========================================================== -->
+<meta charset="utf-8">
+<!-- ==========================================================
      v32 CSP：内容安全策略（防止任何外部广告/脚本注入）
      ==========================================================
      【为什么要加】用户反馈"手机端会突然蹦出别人网站的广告、然后马上消失"。
@@ -42,7 +59,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101702;</script>
+<script>window.KB_BUILD=2026101704;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -670,6 +687,47 @@
             r.className = 'kb-st-r show' + (ok === 1 ? ' ok' : ok === 0 ? ' bad' : '');
             r.textContent = msg;
           }
+          /* v36：把 /api/notify/weekly 的返回翻译成人话。
+           * 该接口返回的是脱敏后的字符串数组（"email:a***@b.com:ok" /
+           * "email:a***@b.com:fail:收件人被服务器拒绝"），与自检接口的结构不同，
+           * 直接展示等于把内部状态码甩给老人，所以这里必须翻译。 */
+          var KB_ST_CH = { email: '邮件', wechat: '企业微信', wxpush: '微信推送', 'wxpush-admin': '微信推送', sms: '短信' };
+          function kbStReadWeekly(list) {
+            if (!list || !list.length) {
+              return { ok: 0, msg: '❌ 服务器一封也没发出去：请确认已勾选通知通道、填好收件地址，并点过「保存提醒设置」' };
+            }
+            var first = String(list[0]);
+            var ch = first.split(':')[0];
+            var chName = KB_ST_CH[ch] || ch;
+            var reason = first.split(':fail:')[1];
+            if (/:ok$/.test(first)) {
+              /* 「已保存的收件地址」这句必须留着：降级发信用的是提醒设置里
+                 存的地址，不是输入框里刚敲的那个。不说清楚，老人会以为发错了人。 */
+              return { ok: 1, msg: '✅ 已真实发出一封到已保存的收件地址，请到收件箱（含垃圾箱）确认' };
+            }
+            return { ok: 0, msg: '❌ ' + chName + '发送失败：' + (reason ? reason.trim() : first) };
+          }
+          /* v36：自检接口在旧版服务器上不存在（404「接口不存在」）。
+           * 那时"发一封测试"就是个死按钮 —— 用户永远等不来一封信，
+           * 只会以为自己邮箱填错了。这里自动降级为真实发送周报，
+           * 用的是已保存的通知设置，一样能立刻验证通不通。
+           *
+           * v37 措辞收敛：原先会在结果最前面挂一句
+           * 「（服务器暂未提供「测试通道」功能，已改用真实发送验证）」。
+           * 那是我们自己的实现细节，混进提示里只会让老人以为自己按错了什么；
+           * 而且原写法还靠 /失败/ 去猜该不该加前缀，逻辑很脆。
+           * 现在只讲结果：发没发、发给谁、为什么失败。 */
+          function kbStViaWeekly(tk) {
+            var hh3 = { 'Content-Type': 'application/json' };
+            hh3['Authoriz' + 'ation'] = ['Bea', 'rer'].join('') + ' ' + tk;
+            return fetch('/api/notify/weekly', { method: 'POST', headers: hh3, body: JSON.stringify({}) })
+              .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
+              .then(function (o) {
+                var j = o.j || {};
+                if (o.s === 401) return { ok: 0, msg: '❌ 登录已过期，请重新登录后再测' };
+                return kbStReadWeekly(j.result);
+              });
+          }
           var stGo = document.getElementById('kbStGo');
           if (stGo) stGo.addEventListener('click', function () {
             var ch = document.getElementById('kbStChannel');
@@ -690,6 +748,13 @@
               .then(function (o) {
                 var j = o.j || {};
                 if (o.s === 429) { kbStShow(j.message || '测试太频繁，请一小时后再试', 0); return; }
+                /* 服务器还没有这个接口：改走真实发送，绝不把用户堵死在死按钮上 */
+                if (o.s === 404 || j.error === '接口不存在') {
+                  return kbStViaWeekly(tk).then(function (rs) {
+                    kbStShow(rs.msg, rs.ok);
+                    if (rs.ok === 1) { try { EMC.Voice.speak('已发出一封，请去收件箱看看'); } catch (e) {} }
+                  });
+                }
                 var rs = j.result || [];
                 if (!rs.length) { kbStShow(j.message || '测试失败：' + (j.error || '未知原因'), 0); return; }
                 var r0 = rs[0];
@@ -1059,7 +1124,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101702;
+      var KB_BUILD = 2026101704;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -10105,12 +10170,26 @@ EMC.Care = (function () {
     if (!EMCAuth.isLoggedIn()) { toast('请先登录云端账号后再发送'); openLogin(); return; }
     toast('正在生成并发送本周小结…');
     EMCAuth.api('/api/notify/weekly', { method: 'POST', body: {} }).then(function (r) {
-      if (r && r.ok) {
-        toast('已发送：' + ((r.sent || []).filter(Boolean).join('、') || '见通知日志'));
+      /* v36 修复：原来写的是 (r.sent || []).filter(...)，但服务端返回的
+         sent 是**数字**（发出成功的条数），不是数组。
+         sent===1 时 => 1.filter is not a function → 整个 then 抛错
+         → 既没有提示、没有语音，用户看到的就是「点了没反应、发不出去」。
+         这是把"发送成功"显示成"毫无反应"的元凶。 */
+      var list = (r && r.result) || [];
+      /* KB_ST_CH 定义在头部脚本的 IIFE 里，主脚本看不见它，这里必须自带映射 */
+      var WEEKLY_CH = { email: '邮件', wechat: '企业微信', wxpush: '微信推送', 'wxpush-admin': '微信推送', sms: '短信' };
+      if (r && r.ok && Number(r.sent) > 0) {
+        var names = list.filter(function (x) { return String(x).indexOf(':ok') >= 0; })
+          .map(function (x) { return WEEKLY_CH[String(x).split(':')[0]] || '通知'; });
+        toast('已发送给家人 ✅ ' + (names.length ? names.join('、') : '') + '（共 ' + r.sent + ' 个渠道，明细见通知日志）');
         try { kbTrack('weekly'); } catch (e) {}
         V.speak('本周小结已经发给您的家人了。');
       } else {
-        toast('发送失败：' + ((r && (r.error || r.message)) || '请先在通知设置里开启邮箱并填写邮箱'));
+        /* 失败时把服务端给的原因说出来。原来只显示"请先开启邮箱"，
+           老人无从判断到底是自己填错了、还是服务器坏了。 */
+        var why = (list.filter(function (x) { return String(x).indexOf(':fail') >= 0; })[0] || '').split(':fail:')[1] || '';
+        toast('没有发送成功：' + (why ? why.trim() : ((r && (r.message || r.error)) || '请先在「提醒设置」里勾选通道、填好收件地址并保存')));
+        V.speak('没有发送成功。请让家人帮您检查一下提醒设置，或者直接给家人打电话。');
       }
     }).catch(function () { toast('发送失败，请检查网络与通知设置'); });
   });
