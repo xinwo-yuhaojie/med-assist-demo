@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101801;</script>
+<script>window.KB_BUILD=2026101802;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1137,7 +1137,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101801;
+      var KB_BUILD = 2026101802;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -6859,7 +6859,22 @@ EMC.Engine = (function () {
       var aSev = adrs.filter(function (a) { return a.val === 'severe'; }).length;
       var aMild = adrs.filter(function (a) { return a.val === 'mild'; }).length;
       var la = adrs[adrs.length - 1];
-      L.push('不良反应自查：近期共反馈 ' + adrs.length + ' 次（轻微 ' + aMild + '、明显 ' + aSev + '）' + (la && la.note ? ('，最近一次 ' + la.date + '：' + la.note) : '') + '。回答时适度关心；若反馈明显不适，要勝其联系医生或家人。');
+              /* v38: symptom + suspected drug must reach the weekly report. */
+        var symCount = {};
+        adrs.forEach(function (a) {
+          var sy = (a.sym || a.note || '').trim();
+          if (!sy) return;
+          var dr = E.drugOf(a.mid);
+          var kk = sy + (dr ? '（疑似' + dr.name + '）' : '');
+          symCount[kk] = (symCount[kk] || 0) + 1;
+        });
+        var symTxt = Object.keys(symCount).map(function (kk) {
+          return kk + ' ' + symCount[kk] + ' 次';
+        }).join('、');
+        L.push('不良反应自查：近期共反馈 ' + adrs.length + ' 次（轻微 ' + aMild + '、明显 ' + aSev + '）' +
+          (symTxt ? ('；症状分布：' + symTxt) : '') +
+          (la && (la.sym || la.note) ? ('，最近一次 ' + la.date + '：' + (la.sym || la.note)) : '') +
+          '。回答时适度关心；若反馈明显不适，要勝其联系医生或家人。');
     }
     var recs = Array.isArray(ctx.records) ? ctx.records : [];
     var tk = recs.filter(function (r) { return r.status === 'taken'; }).length;
@@ -13808,10 +13823,17 @@ EMC.Care = (function () {
       '<div class="small muted" style="margin-top:10px">每天问一次，帮您盯住药物不良反应；结果会进健康档案和家属周报。</div></div>';
     document.body.appendChild(mask);
     function closeM() { if (document.body.contains(mask)) document.body.removeChild(mask); V.stop(); }
-    function saveAdr(val, note) {
+    function saveAdr(val, sym, mid) {
       var key = E.fmtDate(new Date());
       try { localStorage.setItem('kb_adr_done_v1', key); } catch (e) {}
-      store.addHealth({ type: 'adr', date: key, time: new Date().toTimeString().slice(0, 5), val: val, note: note || '' }).then(function (hs) {
+      /* v38：sym（症状）与 mid（关联药品）**独立成字段**，不再塞进 note。
+         之前症状混在备注里，3 年后只能看原始文本，没法统计
+         「头晕出现过几次、哪种药最可疑」—— 而这正是用药安全最该盯的。 */
+      store.addHealth({
+        type: 'adr', date: key, time: new Date().toTimeString().slice(0, 5),
+        val: val, sym: (sym || '').slice(0, 40), mid: (mid || '').slice(0, 60),
+        note: sym || ''
+      }).then(function (hs) {
         S.health = hs;
         if (S.tab === 'health') renderHealth();
       }).catch(function () {});
@@ -13831,7 +13853,53 @@ EMC.Care = (function () {
       body.querySelectorAll('.adr-sym').forEach(function (b) {
         b.addEventListener('click', function () {
           var sym = b.getAttribute('data-sym');
-          saveAdr(severe ? 'severe' : 'mild', sym);
+            askMedCause(sym, severe);   /* v38 */
+    /* v38：症状 -> 关联药品 第二步。
+       没有这一步，3 年档案里只有"头晕"，无法关联到具体药物，
+       也就做不了"这个药可能是原因"的提示 —— 而这正是用药安全最关键的一环。
+       适老化取舍：药品做成大字芯片、可不选、随时点「说不清」跳过，
+       不让老人卡在这一步。 */
+    function askMedCause(sym, severe) {
+      var body = mask.querySelector('.rem-body');
+      var names = (S.meds || []).map(function (m) {
+        var d = E.drugOf(m.mid);
+        return { mid: m.mid, label: d ? d.name : m.mid };
+      });
+      body.innerHTML = '<h3 class="rem-title">🩺 ' + esc(sym) + '，是哪个药引起的？</h3>' +
+        '<div class="small muted" style="margin-top:4px">记下来，家人和医生就能对症处理；不确定可以不选。</div>' +
+        '<div class="chips" style="margin-top:12px">' +
+        names.map(function (m) {
+          return '<button class="chip adr-mid" data-mid="' + esc(m.mid) + '">' + esc(m.label) + '</button>';
+        }).join('') +
+        '<button class="chip adr-mid" data-mid="">❓ 说不清</button></div>' +
+        '<div class="rem-actions" style="margin-top:14px">' +
+        '<button class="btn-lg" id="adrSkipMed">跳过</button>' +
+        '<button class="btn-lg" id="adrNoCause" style="background:#5cb85c;color:#fff">都不是</button></div>';
+      function finish(mid) {
+        saveAdr(severe ? 'severe' : 'mild', sym, mid);
+        closeM();
+        var dl = E.drugOf(mid);
+        var dlName = dl ? dl.name : '';
+        if (severe) {
+          V.speak('谢谢您告诉我。' + sym + (dlName ? '，可能和' + dlName + '有关' : '') +
+            '。建议今天就联系医生，或让家人陪您去。家人周报里也会看到。');
+          toast('已记录：明显不适（' + sym + (dlName ? ' · ' + dlName : '') + '）。建议联系医生');
+        } else {
+          V.speak('好的，' + sym + '属于轻微反应' + (dlName ? '，先留意一下' + dlName : '') +
+            '。多喝水多休息，如果明天还有，请告诉家人或医生。');
+          toast('已记录：轻微不适（' + sym + (dlName ? ' · ' + dlName : '') + '）');
+        }
+        try { guardianAutoCheck(true); } catch (e) {}
+      }
+      body.querySelectorAll('.adr-mid').forEach(function (b) {
+        b.addEventListener('click', function () { finish(b.getAttribute('data-mid') || ''); });
+      });
+      var skip = document.getElementById('adrSkipMed');
+      if (skip) skip.addEventListener('click', function () { finish(''); });
+      var nc = document.getElementById('adrNoCause');
+      if (nc) nc.addEventListener('click', function () { finish(''); });
+      V.speak(sym + '。是哪个药引起的？不确定可以点说不清。');
+    }
           closeM();
           if (severe) {
             V.speak('谢谢您告诉我。' + sym + '比较明显的话，建议今天就联系医生，或让家人陪您去。已经记入健康档案，家人周报里也会看到。');
