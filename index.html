@@ -7761,22 +7761,28 @@ EMC.Voice = (function () {
     ]).catch(function () { cloud.available = false; return false; });
   }
 
-  /* 云端合成：千问 TTS（温柔女声 Cherry）。首块≤26字先出声；播当前块时并行预合成下一块；
+  /* 云端合成：千问 TTS（音色可在用户中心切换）。首块≤26字先出声；播当前块时并行预合成下一块；
      同文本 1 小时缓存；被打断时丢弃在途任务；块间停 260ms 保持老人友好的节奏 */
   var cloudGen = 0;
   var ttsCache = Object.create(null);
   var ttsBusyNoted = false;
   function synthChunk(p) {
-    var hit = ttsCache[p];
+    /* v37 缓存键必须带上音色。
+       原来只用文本做键，于是用户从「温柔女声」切到「沉稳男声」后，
+       再说同一句话会直接命中旧缓存 —— 听起来还是女声，
+       表现就是"我明明选了男声，怎么没变"，最长要等 1 小时才生效。 */
+    var voiceNow = normalizeVoice(cfg.voice);
+    var key = voiceNow + ' ' + p;
+    var hit = ttsCache[key];
     if (hit && Date.now() < hit.exp) return Promise.resolve(hit.url);
-    /* v27 P0-3：合成请求同样加 8 秒上限（云端更慢，给宽一点），
+    /* v27 P0-3：合成请求同样加超时上限（云端更慢，给宽一点），
        超时按失败处理 → 自动回退浏览器朗读，绝不让界面卡在「正在播报」。 */
     return Promise.race([
       fetch('/api/ai/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify({ text: p, voice: normalizeVoice(cfg.voice) })
+        body: JSON.stringify({ text: p, voice: voiceNow })
       })
         .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('tts http ' + r.status)); })
         .then(function (j) {
@@ -7789,8 +7795,11 @@ EMC.Voice = (function () {
              streamUrl 由服务端代理转发，全程同源，这两道拦截都不存在。 */
           var use = j.streamUrl || j.url;
           if (!use) throw new Error('no audio url');
-          if (Object.keys(ttsCache).length > 60) ttsCache = Object.create(null);
-          ttsCache[p] = { url: use, exp: Date.now() + 3600000 };
+          /* 条目上限从 60 提到 120：键里多了音色，同样的句子会按音色各存一份，
+             60 的话实际只能缓存约 15 句，命中率被砍半。 */
+          if (Object.keys(ttsCache).length > 120) ttsCache = Object.create(null);
+          /* 必须用与读取时同一个 key（含音色），否则读新键、写旧键 = 永远不命中 */
+          ttsCache[key] = { url: use, exp: Date.now() + 3600000 };
           return use;
         })
         .catch(function (e) {
@@ -8861,7 +8870,12 @@ window.EMCStore = (function () {
         /* v8.1 语音设置：与 ApiStore 对称，游客态同样持久化 */
         ttsRate: (typeof s.ttsRate === 'number' ? s.ttsRate : (c.settings.ttsRate != null ? c.settings.ttsRate : 0.9)),
         ttsVolume: (typeof s.ttsVolume === 'number' ? s.ttsVolume : (c.settings.ttsVolume != null ? c.settings.ttsVolume : 1)),
-        ttsVoice: (s.ttsVoice === 'female' ? 'female' : (s.ttsVoice === 'std' ? 'std' : (c.settings.ttsVoice || 'std'))),
+        /* v37：原写法只认 'std' / 'female'，其余一律压成 'std'。
+           音色改成 Cherry/Serena/Ethan/Dylan 之后，用户在用户中心选了
+           "沉稳男声"，存回去却变成 'std' —— 刷新即丢失。
+           现在按字符串原样透传，由语音模块的 normalizeVoice 兜底
+           （认不出的值会落到默认音色，不会产生非法状态）。 */
+        ttsVoice: (typeof s.ttsVoice === 'string' && s.ttsVoice) ? s.ttsVoice : (c.settings.ttsVoice || 'Cherry'),
         asrContinue: (typeof s.asrContinue === 'boolean' ? s.asrContinue : (c.settings.asrContinue !== false)),
         cloudVoice: (typeof s.cloudVoice === 'boolean' ? s.cloudVoice : (c.settings.cloudVoice === true)),
         /* v14：识别引擎（browser / qwen3-0.6b / glm-nano）游客态同样持久化 */
@@ -9153,7 +9167,7 @@ window.EMCStore = (function () {
         /* v8.1 语音设置：容错回退，避免旧账号缺字段导致 undefined */
         ttsRate: (typeof s.ttsRate === 'number' ? s.ttsRate : 0.9),
         ttsVolume: (typeof s.ttsVolume === 'number' ? s.ttsVolume : 1),
-        ttsVoice: (s.ttsVoice === 'female' ? 'female' : 'std'),
+        ttsVoice: (typeof s.ttsVoice === 'string' && s.ttsVoice) ? s.ttsVoice : 'Cherry',
         asrContinue: (s.asrContinue !== false),
         cloudVoice: (localStorage.getItem('emc_v15_optout') === '1' ? (s.cloudVoice === true) : true),   /* v15：千问语音默认开，除非用户明确关闭过 */
         /* v14：识别引擎与云端开关对称透传，登录态刷新后不丢 */
@@ -9173,7 +9187,7 @@ window.EMCStore = (function () {
         /* v8.1 语音设置：与 mapSettingsFrom 对称透传，保证登录态刷新后不丢 */
         ttsRate: (typeof s.ttsRate === 'number' ? s.ttsRate : 0.9),
         ttsVolume: (typeof s.ttsVolume === 'number' ? s.ttsVolume : 1),
-        ttsVoice: (s.ttsVoice === 'female' ? 'female' : 'std'),
+        ttsVoice: (typeof s.ttsVoice === 'string' && s.ttsVoice) ? s.ttsVoice : 'Cherry',
         asrContinue: (s.asrContinue !== false),
         cloudVoice: (s.cloudVoice === true),
         /* v14：识别引擎与云端开关对称透传，登录态刷新后不丢 */
