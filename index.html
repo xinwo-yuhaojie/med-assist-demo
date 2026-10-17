@@ -59,7 +59,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101705;</script>
+<script>window.KB_BUILD=2026101706;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1124,7 +1124,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101705;
+      var KB_BUILD = 2026101706;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -7402,14 +7402,50 @@ EMC.Voice = (function () {
     } catch (e) {}
   }
 
-  /* 优先中文 voice；female 时优先明显女声 */
-  function pickVoice(forceFemale) {
+  /* ==========================================================
+   * v37 播报音色表
+   * ==========================================================
+   * 【原问题】界面上只有「标准 / 清晰女声」两档，而且**云端语音写死了 Cherry** ——
+   *   用户在用户中心怎么选都不影响千问音色，选了等于没选。
+   *   同时老设置值只有 'std' / 'female' 两个，承载不了"具体哪个音色"这件事。
+   * 【现在】音色用 DashScope 的真实音色名标识，每个都带一个"浏览器兜底性别"，
+   *   云端合成失败自动回退系统朗读时，听感仍尽量接近所选的音色。
+   *   老值 std / female 都映射到 Cherry —— 因为它们此前听到的就一直是 Cherry，
+   *   这样升级对用户是无感的。
+   */
+  var TTS_VOICES = [
+    { id: 'Cherry', label: '温柔女声', gender: 'female' },
+    { id: 'Serena', label: '亲切女声', gender: 'female' },
+    { id: 'Ethan',  label: '沉稳男声', gender: 'male' },
+    { id: 'Dylan',  label: '活力少年', gender: 'male' },
+  ];
+  function normalizeVoice(v) {
+    var s = String(v || '');
+    for (var i = 0; i < TTS_VOICES.length; i++) {
+      if (TTS_VOICES[i].id === s) return s;
+    }
+    return 'Cherry';   /* 老值 std/female 与一切未知值都落到默认音色 */
+  }
+  function voiceById(id) {
+    for (var i = 0; i < TTS_VOICES.length; i++) {
+      if (TTS_VOICES[i].id === id) return TTS_VOICES[i];
+    }
+    return TTS_VOICES[0];
+  }
+  function voiceList() { return TTS_VOICES.slice(); }
+
+  /* 优先中文 voice；wantFemale 时优先明显女声 */
+  function pickVoice(wantFemale) {
     var zh = voices.filter(function (v) { return /zh|CN|Chinese/i.test(v.lang + ' ' + v.name); });
-    if (forceFemale || cfg.voice === 'female') {
+    var female = wantFemale !== false && voiceById(cfg.voice).gender === 'female';
+    if (female) {
       var f = zh.filter(function (v) {
         return /female|女|婷|丫|小|莉|梅|huihui|yaoyao|xiaoxiao|ting|lili|yaoyao/i.test(v.name);
       });
       if (f[0]) return f[0];
+    } else if (zh.length) {
+      var m = zh.filter(function (v) { return /male|男|云|yunxi|kangkang/i.test(v.name); });
+      if (m[0]) return m[0];
     }
     return zh[0] || voices[0] || null;
   }
@@ -7548,7 +7584,7 @@ EMC.Voice = (function () {
     speaking = true;
     try {
       var u = new SpeechSynthesisUtterance(item.text);
-      var v = pickVoice(item.voicePref === 'female');
+      var v = pickVoice(voiceById(normalizeVoice(item.voicePref)).gender === 'female');
       if (v) u.voice = v;
       u.lang = 'zh-CN';
       u.rate = item.rate;
@@ -7625,7 +7661,7 @@ EMC.Voice = (function () {
     if (!segs.length) return false;
     var rate = (typeof opts.rate === 'number') ? clamp(opts.rate, 0.5, 1.3) : cfg.rate;
     var volume = (typeof opts.volume === 'number') ? clamp(opts.volume, 0, 1) : cfg.volume;
-    var voicePref = opts.voice || cfg.voice;
+    var voicePref = normalizeVoice(opts.voice || cfg.voice);
     segs.forEach(function (seg, i) {
       queue.push({
         text: seg, rate: rate, volume: volume, voicePref: voicePref,
@@ -7687,6 +7723,7 @@ EMC.Voice = (function () {
      同文本 1 小时缓存；被打断时丢弃在途任务；块间停 260ms 保持老人友好的节奏 */
   var cloudGen = 0;
   var ttsCache = Object.create(null);
+  var ttsBusyNoted = false;
   function synthChunk(p) {
     var hit = ttsCache[p];
     if (hit && Date.now() < hit.exp) return Promise.resolve(hit.url);
@@ -7697,14 +7734,30 @@ EMC.Voice = (function () {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify({ text: p, voice: 'Cherry' })
+        body: JSON.stringify({ text: p, voice: normalizeVoice(cfg.voice) })
       })
         .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('tts http ' + r.status)); })
         .then(function (j) {
-          if (!j || !j.url) throw new Error('no audio url');
+          if (!j) throw new Error('no audio');
+          /* v37 优先用同源代理地址。
+             千问返回的是 http 明文 OSS 直链，而站点跑在 https：
+             混合内容 + CSP media-src 回落到 'self'，两条都会让
+             audio.onerror 触发，然后**静默**改用系统朗读 ——
+             用户只觉得"又听不到千问女声"，界面还毫无提示。
+             streamUrl 由服务端代理转发，全程同源，这两道拦截都不存在。 */
+          var use = j.streamUrl || j.url;
+          if (!use) throw new Error('no audio url');
           if (Object.keys(ttsCache).length > 60) ttsCache = Object.create(null);
-          ttsCache[p] = { url: j.url, exp: Date.now() + 3600000 };
-          return j.url;
+          ttsCache[p] = { url: use, exp: Date.now() + 3600000 };
+          return use;
+        })
+        .catch(function (e) {
+          /* 上游 429 是常态（通义有 QPS 限制）。不能让用户以为是自己操作错了，
+             也不该每句话都弹提示 —— 只在首次记录，方便事后排查。 */
+          if (String(e && e.message).indexOf('tts http 429') >= 0) {
+            if (!ttsBusyNoted) { ttsBusyNoted = true; try { console.warn('[tts] 上游限流，改用本机朗读'); } catch (x) {} }
+          }
+          throw e;
         }),
       new Promise(function (_, rej) { setTimeout(function () { rej(new Error('云端语音超时')); }, 8000); })
     ]);
@@ -7792,7 +7845,7 @@ EMC.Voice = (function () {
     if (!o) return;
     if (typeof o.rate === 'number') cfg.rate = clamp(o.rate, 0.5, 1.3);
     if (typeof o.volume === 'number') cfg.volume = clamp(o.volume, 0, 1);
-    if (o.voice === 'std' || o.voice === 'female') cfg.voice = o.voice;
+    if (typeof o.voice === 'string') cfg.voice = normalizeVoice(o.voice);
     if (typeof o.continuous === 'boolean') cfg.continuous = o.continuous;
     if (typeof o.cloud === 'boolean') cfg.cloud = o.cloud;
     /* v14：识别引擎（browser / qwen3-0.6b / glm-nano） */
@@ -8269,6 +8322,8 @@ EMC.Voice = (function () {
        注意：代码能通过语法检查、括号也配对，这类错误静态看不出来。 */
     asrEngineRealLabel: asrEngineRealLabel, asrIsLocalRun: asrIsLocalRun,
     asrPrivacyNote: asrPrivacyNote,
+    /* v37: user center must render the voice list; main script cannot see TTS_VOICES */
+    ttsVoiceList: voiceList, normalizeTtsVoice: normalizeVoice,
     recordAndTranscribe: recordAndTranscribe, transcribeBlob: transcribeBlob
   };
 })();
@@ -14121,10 +14176,11 @@ EMC.Care = (function () {
         '<input type="range" id="ucRate" min="0.6" max="1.2" step="0.05" value="' + (S.settings.ttsRate || 0.9) + '"></div>' +
       '<div class="form-row"><label>播报音量（小　<span id="ucVolV"></span>　大）</label>' +
         '<input type="range" id="ucVol" min="0.3" max="1" step="0.1" value="' + (typeof S.settings.ttsVolume === 'number' ? S.settings.ttsVolume : 1) + '"></div>' +
-      '<div class="form-row"><label>播报音色</label>' +
+      '<div class="form-row"><label>播报音色（云端语音用；失败时自动改用手机自带）</label>' +
         '<div class="theme-row" id="ucVoice">' +
-        '<button class="theme-opt' + ((S.settings.ttsVoice || 'std') === 'std' ? ' on' : '') + '" data-vv="std">标准</button>' +
-        '<button class="theme-opt' + (S.settings.ttsVoice === 'female' ? ' on' : '') + '" data-vv="female">清晰女声</button>' +
+        (V.ttsVoiceList ? V.ttsVoiceList().map(function (v) {
+          return '<button class="theme-opt' + (V.normalizeTtsVoice(S.settings.ttsVoice) === v.id ? ' on' : '') + '" data-vv="' + v.id + '">' + esc(v.label) + '</button>';
+        }).join('') : '<span class="muted small">音色列表不可用</span>') +
         '</div></div>' +
       '<div class="form-row"><label class="switch-row">语音自动续听（长句子不断）' +
         '<input type="checkbox" id="ucCont" ' + (S.settings.asrContinue !== false ? 'checked' : '') + '></label></div>' +
@@ -14190,7 +14246,13 @@ EMC.Care = (function () {
           V.configure({ voice: v }); store.setSettings(S.settings);
           voiceRow.querySelectorAll('.theme-opt').forEach(function (x) { x.classList.remove('on'); });
           b.classList.add('on');
-          V.speak('已切换为' + (v === 'female' ? '清晰女声' : '标准音色'));
+          /* v37：确认语要按**所选音色的真实名字**念，不能再靠
+             v === 'female' 这种两档时代的判断 —— 现在音色是 Cherry/Ethan/... */
+          var vb = V.normalizeTtsVoice(v);
+          var vlabel = (V.ttsVoiceList ? V.ttsVoiceList() : []).filter(function (x) {
+            return x.id === vb;
+          })[0];
+          V.speak('已切换为' + (vlabel ? vlabel.label : '新音色'));
         });
       });
       var cont = $id('ucCont');

@@ -160,6 +160,7 @@ def main():
                    "var uc=document.getElementById('ucModal');"
                    "res(JSON.stringify({errs:window.__errs,recovery:ov.length>0,"
                    "uc:uc?uc.style.display:'no-modal',"
+                   "voices:(document.getElementById('ucVoice')||{children:[]}).children.length,"
                    "engines:(document.getElementById('ucAsrEngine')||{children:[]}).children.length,"
                    "tip:(document.getElementById('ucAsrTip')||{}).textContent}));},1500);});})()"
                    % json.dumps(token))
@@ -180,6 +181,8 @@ def main():
            "遮罩弹出，异常：%s" % (errs[0].get("msg") if errs else "?"))
         ck("零未捕获异常（跨作用域漏网函数的典型症状）", len(errs) == 0,
            "%d 个：%s" % (len(errs), errs[0].get("msg") if errs else ""))
+        ck("v37 播报音色选择器已按音色表渲染",
+                  (d.get("voices") or 0) >= 4, "voice buttons = %s" % d.get("voices"))
         ck("语音识别引擎列表已渲染", (d.get("engines") or 0) >= 2, d.get("engines"))
         ck("引擎说明文案非空", bool(d.get("tip")), str(d.get("tip"))[:80])
     finally:
