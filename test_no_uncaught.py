@@ -198,6 +198,7 @@ def steps(cdp, logged_in):
             return true;
           })()""")
         ck("更多面板内按钮零异常", not e, len(e)); show(e, "more"); errs.append(e)
+        errs += sos_step(cdp, "游客态")
         return errs
 
     print("")
@@ -248,6 +249,52 @@ def steps(cdp, logged_in):
         return true;
       })()""")
     ck("家属日志展开零异常", not e, len(e)); show(e, "log"); errs.append(e)
+    errs += sos_step(cdp, "登录态")
+    return errs
+
+
+def sos_step(cdp, who):
+    errs = []
+    """SOS 是安全关键功能，四个入口一个都不能少，且弹窗必须真渲染出来。
+    之前只点了顶栏几个按钮，紧急求助从来没被真正点过。"""
+    print("")
+    print("=== SOS 紧急求助·%s ===" % who)
+    ids = ["simpleSos", "guardSos", "btnSos"]
+    for sid in ids:
+        exists = cdp.ev("(function(){return !!document.getElementById(%s);})()"
+                        % json.dumps(sid), False)
+        if not exists:
+            ck("%s 入口存在" % sid, False, "元素缺失")
+            continue
+        e = sweep(cdp, """
+          (function(){
+            document.getElementById(%s).click();
+            return true;
+          })()
+        """ % json.dumps(sid))
+        d = cdp.ev("""
+          (function(){
+            var m=document.querySelector('.mask .dialog.sos');
+            var b=document.querySelector('.sos-120');
+            var c=document.getElementById('sosClose');
+            return JSON.stringify({
+              dialog: !!m,
+              tel120: b ? b.getAttribute('href') : '',
+              close: !!c
+            });
+          })()
+        """, False)
+        d = json.loads(d) if isinstance(d, str) else (d or {})
+        ok = d.get("dialog") and d.get("tel120") == "tel:120" and d.get("close") and not e
+        ck("%s -> 弹窗出现且含 tel:120、可关闭" % sid, ok,
+           "dialog=%s href=%s close=%s err=%d" % (d.get("dialog"), d.get("tel120"),
+                                                   d.get("close"), len(e)))
+        show(e, sid)
+        # 关掉，避免遮罩挡住后续点击
+        cdp.ev("(function(){var c=document.getElementById('sosClose');"
+               "if(c)c.click();return true;})()", False)
+        time.sleep(0.4)
+        errs += e
     return errs
 
 

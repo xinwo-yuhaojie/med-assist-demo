@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101709;</script>
+<script>window.KB_BUILD=2026101710;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -145,7 +145,7 @@
   }
   function R(obj, st) { return new Response(JSON.stringify(obj), { status: st || 200, headers: { 'content-type': 'application/json; charset=utf-8' } }); }
   function lastDays(n) { var o = [], d; for (var i = 0; i < n; i++) { d = new Date(Date.now() - i * 86400000); o.push(d.toISOString().slice(0, 10)); } return o; }
-  function emptyUser(p) { return { pass: { salt: '', hash: '' }, profile: { name: (p && p.name) || '', age: (p && p.age) || '', gender: (p && p.gender) || '', phone: (p && p.phone) || '', email: (p && p.email) || '', notifyEnabled: true, conditions: [] }, settings: { fontSize: 'A', tts: true, theme: null, remindTimes: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false }, notifySet: { channels: { email: false, wechat: false, sms: false }, email: '', wechatWebhook: '', smsPhone: '', familyEmail: '', overdueMinutes: 60 }, meds: [], records: [], health: [], family: [], notify: [] }; }
+  function emptyUser(p) { return { pass: { salt: '', hash: '' }, profile: { name: (p && p.name) || '', age: (p && p.age) || '', gender: (p && p.gender) || '', phone: (p && p.phone) || '', email: (p && p.email) || '', notifyEnabled: true, conditions: [] }, settings: { fontSize: 'A', tts: true, theme: null, remindTimes: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'Cherry', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false }, notifySet: { channels: { email: false, wechat: false, sms: false }, email: '', wechatWebhook: '', smsPhone: '', familyEmail: '', overdueMinutes: 60 }, meds: [], records: [], health: [], family: [], notify: [] }; }
   function pub(name, u) { return { id: name, username: name, name: u.profile.name || '', age: u.profile.age || '', phone: u.profile.phone || '', email: u.profile.email || '', notifyEnabled: u.profile.notifyEnabled !== false, conditions: u.profile.conditions || [], settings: u.settings || {}, family: u.family || [], notifySet: u.notifySet || {} }; }
   function cur() { var tk = localStorage.getItem('emc_token'); if (!tk) return null; var m = sess()[tk]; if (!m) return null; var us = users(); return us[m] ? { name: m, u: us[m] } : null; }
 
@@ -1137,7 +1137,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101709;
+      var KB_BUILD = 2026101710;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -8763,7 +8763,7 @@ window.EMCStore = (function () {
     function load() {
       if (cache) return cache;
       /* v15：cloudVoice 默认 true —— 千问真实语音优先，合成失败自动回退浏览器朗读；asrEngine 默认本地 Qwen3-ASR-0.6B */
-      var settings = Object.assign({ fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', /* v21 P2-5：极简模式开关（默认关） */ simpleMode: false }, lsLoad(KEY.settings, {}));
+      var settings = Object.assign({ fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'Cherry', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', /* v21 P2-5：极简模式开关（默认关） */ simpleMode: false }, lsLoad(KEY.settings, {}));
       // v15 一次性迁移：语音升级为「千问真实语音优先」；云端语音默认开启，未自定义语速时放慢到 0.85 更适合老人
       if (!lsLoad('emc_v15_migrated', false)) {
         settings.cloudVoice = true;
@@ -9159,7 +9159,7 @@ window.EMCStore = (function () {
     }
     function mapSettingsFrom(s) {
       /* v15：cloudVoice 默认 true（千问真实语音优先，失败自动回退浏览器），用户可在开关里关闭 */
-      if (!s) return { fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: defaultRemindTimes() };
+      if (!s) return { fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'Cherry', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: defaultRemindTimes() };
       var fs = 1;
       if (s.fontSize === 'A+') fs = 2; else if (s.fontSize === 'A++') fs = 3;
       return {
@@ -9698,7 +9698,7 @@ EMC.Care = (function () {
   /* ---------- 数据加载（统一经 store） ---------- */
   /* v20 默认兜底值：任一接口失败时按字段回退，保证 S 各字段结构完整，renderAll 不会因 undefined 崩 */
   var FALLBACK_SETTINGS = {
-    fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'std',
+    fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'Cherry',
     asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: ['08:00', '12:00', '18:00']
   };
   var FALLBACK_PROFILE = { name: '', age: '', gender: '', username: '', notifyEnabled: true };
@@ -9820,7 +9820,7 @@ EMC.Care = (function () {
     V.configure({
       rate: (typeof S.settings.ttsRate === 'number') ? S.settings.ttsRate : 0.9,
       volume: (typeof S.settings.ttsVolume === 'number') ? S.settings.ttsVolume : 1,
-      voice: S.settings.ttsVoice || 'std',
+      voice: S.settings.ttsVoice || 'Cherry',
       continuous: S.settings.asrContinue !== false,
       /* v14：默认关闭云端语音（避免调用付费 API）；用户显式开启后才走千问 */
       cloud: S.settings.cloudVoice === true,
