@@ -23,15 +23,29 @@ ck("两处存在且一致", bool(a) and bool(b) and a[0] == b[0])
 cur = int(a[0]) if a else 0
 
 print("\n=== 2. 必须比 git 上次提交更大（防忘记升版）===")
+# v37 修正：原先无条件要求「必须比上次大」。
+# 但只改了测试脚本、index.html/sw.js 没动时，这会**误报** ——
+# 而一个天天误报的守卫，人早晚会习惯性忽略，等于没有。
+# 正确判据：只有**发布文件真的变了**才要求升版本号。
+changed = subprocess.run(["git", "diff", "--name-only", "HEAD", "--",
+                          "index.html", "sw.js"],
+                         cwd=ROOT, capture_output=True, text=True,
+                         encoding="utf-8", errors="replace").stdout.strip()
 try:
-    out = subprocess.run(["git","show","HEAD:index.html"], cwd=ROOT,
+    out = subprocess.run(["git", "show", "HEAD:index.html"], cwd=ROOT,
         capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
     old = re.findall(r"window\.KB_BUILD=(\d+);", out)
     oldv = int(old[0]) if old else 0
-    print("   上次: %s   本次: %s" % (oldv, cur))
-    ck("已递增 (%d > %d)" % (cur, oldv), cur > oldv)
 except Exception as e:
-    print("   (跳过: %s)" % e)
+    oldv = 0
+    print("   (读取上次提交失败: %s)" % e)
+print("   上次: %d   本次: %d" % (oldv, cur))
+print("   发布文件是否改动: %s" % (changed.replace("\n", ", ") if changed else "否"))
+if changed:
+    ck("index.html/sw.js 有改动 -> 已升版 (%d > %d)" % (cur, oldv), cur > oldv)
+else:
+    ck("发布文件未改动 -> 无需升版（未误报，当前 %d >= 上次 %d）" % (cur, oldv),
+       cur >= oldv)
 
 print("\n=== 3. sw.js 缓存版本 ===")
 m = re.search(r"const VER = '([^']+)'", sw)
