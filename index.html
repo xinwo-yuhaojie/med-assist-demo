@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101802;</script>
+<script>window.KB_BUILD=2026101803;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1137,7 +1137,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101802;
+      var KB_BUILD = 2026101803;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -13926,17 +13926,32 @@ EMC.Care = (function () {
     var m3 = String((med && med.times && med.times[r.slot]) || '').match(/^([0-9]{1,2}):([0-9]{2})$/);
     if (m3) { var h3 = Number(m3[1]) + Number(m3[2]) / 60; if (h3 >= 0 && h3 < 24) return h3; }
     var sl = EMC.slotOf(r.slot);
-    return (sl && typeof sl.hour === 'number') ? sl.hour : 0;
+    if (sl && typeof sl.hour === 'number') return sl.hour;
+    /* v38 fix：三级兜底全取不到应到时间时，原来 return 0，
+       也就是「应到时间 = 午夜」，于是 duePassed 恒为真、到点闸门彻底失效，
+       而界面看不出任何异常（按钮照常显示，只是永远拦不住）。
+       改为返回 -1 表示「未知」，由 duePassed / canTakeEarly 按**放行**处理 ——
+       老人已经吃了药却不让打卡，比多提醒一次严重得多。
+       安全关键功能必须失败时偏向放行。 */
+    return -1;
   }
-  function duePassed(r) { var n = new Date(); return (n.getHours() + n.getMinutes() / 60) >= dueHour(r); }
+  /* 到点闸门：没到时间的顿不能打卡、不能标漏服 */
+  function duePassed(r) {
+    var dh = dueHour(r);
+    if (dh < 0) return true;                    /* 未知应到时间 -> 放行 */
+    var n = new Date();
+    return (n.getHours() + n.getMinutes() / 60) >= dh;
+  }
   /* v38：允许「已服」提前记录的上限（分钟）。
      90 分钟覆盖早餐/晚饭提前吃的常见偏差，又不至于宽到能提前把晚间的药标掉、
      导致该响的提醒被压掉。家属代录不在此限——那是在作证，不是在猜。 */
   var EARLY_TAKE_MIN = 90;
   function canTakeEarly(r) {
+    var dh = dueHour(r);
+    if (dh < 0) return true;                    /* 未知 -> 放行 */
     var n = new Date();
     var now = n.getHours() + n.getMinutes() / 60;
-    return (dueHour(r) - now) * 60 <= EARLY_TAKE_MIN;
+    return (dh - now) * 60 <= EARLY_TAKE_MIN;
   }
   /* 今日用药任务自动同步：按药品清单（疗程内）补生成今天缺失的待打卡项 */
   async function ensureTodayRecords() {
