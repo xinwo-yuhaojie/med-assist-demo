@@ -6862,7 +6862,12 @@ EMC.Engine = (function () {
               /* v38: symptom + suspected drug must reach the weekly report. */
         var symCount = {};
         adrs.forEach(function (a) {
-          var sy = (a.sym || a.note || '').trim();
+          /* 纵深防御：后端已过滤 sym 的字符集，这里再清一次。
+             这段文本会汇入大模型 system prompt —— 让自由文本能"逃出句子"
+             去下指令，就是提示词注入。症状只保留中文/字母/数字/少量标点。 */
+          var sy = String(a.sym || a.note || '')
+            .replace(/[^\u4e00-\u9fa5A-Za-z0-9\s,.;:!?()\-\uff0c\u3002]/g, '')
+            .replace(/\s+/g, ' ').trim().slice(0, 40);
           if (!sy) return;
           var dr = E.drugOf(a.mid);
           var kk = sy + (dr ? '（疑似' + dr.name + '）' : '');

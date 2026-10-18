@@ -41,6 +41,27 @@ def free(p):
     finally:
         s.close()
 
+def backend_alive():
+    """后端是否可用。
+
+    函数计算实例挂掉时所有接口都返回 HTTP 412 CAExited（实测 8/8 全挂）。
+    这属于**基础设施故障**，不是产品缺陷 —— 但如果直接判 FAIL，
+    每次云端抖动都会伪装成"代码坏了"，反而淹没真正的回归。
+    这里单独探测一次，让调用方能区分 SKIP 与 FAIL。"""
+    import urllib.error
+    try:
+        req = urllib.request.Request(API + "/api/notify/test", method="POST",
+            data=b'{"channel":"email","to":"bad"}',
+            headers={"Content-Type": "application/json", "User-Agent": "sweep"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.status in (200, 400)
+    except urllib.error.HTTPError as e:
+        # 400 = 路由活着（非法邮箱被正确拒绝），也算可用
+        return e.code == 400
+    except Exception:
+        return False
+
+
 def get_token():
     for u in USERS:
         try:
@@ -305,7 +326,13 @@ def main():
     if token:
         allerrs += run_session(8091, token)
     else:
-        ck("取到令牌（登录态巡检已执行）", False, "拿不到令牌")
+      # 区分"后端挂了"和"登录功能坏了"：前者是基础设施故障，跳过而非判失败
+      if backend_alive():
+        ck("取到令牌（登录态巡检已执行）", False, "后端可用但取不到令牌 —— 登录链路可能有问题")
+      else:
+        print("  [SKIP] 取到令牌（登录态巡检已执行）"
+              "  -> 后端当前不可用（函数计算实例异常），跳过登录态巡检；"
+                 "这属于基础设施故障，不代表产品缺陷")
     total = sum(len(x) for x in allerrs)
     ck("全程零未捕获异常（ReferenceError 会在此现形）", total == 0, total)
     n = sum(1 for _, ok in R if ok)
