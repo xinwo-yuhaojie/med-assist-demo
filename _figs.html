@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#fff; font-family:"Microsoft YaHei","PingFang SC",sans-serif; }
+
+  .fig { background:#fff; padding:28px 34px; margin-bottom:24px; }
+
+  /* ---------- 标题 ---------- */
+  .fig-t {
+    font-size:25px; font-weight:700; color:#1a3a5c;
+    text-align:center; margin-bottom:8px;
+  }
+  .fig-s {
+    font-size:16px; color:#5a7184; text-align:center; margin-bottom:26px;
+  }
+
+  /* ---------- 图一：四级触达阶梯 ---------- */
+  .ladder { display:flex; align-items:flex-end; gap:14px; justify-content:center; }
+  .step { width:186px; border-radius:8px 8px 0 0; padding:14px 12px 12px;
+          color:#fff; position:relative; text-align:center; }
+  .step .lv { font-size:14px; opacity:.9; letter-spacing:1px; }
+  .step .nm { font-size:20px; font-weight:700; margin:5px 0 3px; }
+  .step .ds { font-size:13px; opacity:.92; line-height:1.5; }
+  .step .tm { font-size:13px; margin-top:8px; padding-top:7px;
+              border-top:1px solid rgba(255,255,255,.35); }
+  .s1 { height:190px; background:#4a90c2; }
+  .s2 { height:230px; background:#3d7fb0; }
+  .s3 { height:270px; background:#2f6b96; }
+  .s4 { height:310px; background:#25577c; }
+  .arrow { align-self:center; font-size:26px; color:#9fb3c4; }
+
+  .verdict {
+    margin-top:22px; text-align:center; font-size:17px; color:#2f6b96;
+    border-top:2px dashed #c3d3de; padding-top:16px; line-height:1.7;
+  }
+  .verdict b { color:#c0392b; }
+
+  /* ---------- 图二：四层安全架构 ---------- */
+  .arch { display:flex; align-items:stretch; gap:18px; justify-content:center; }
+  .stack { width:430px; }
+  .layer {
+    border-radius:8px; padding:13px 16px; margin-bottom:9px;
+    border-left:6px solid; background:#f4f8fb;
+  }
+  .layer .t { font-size:19px; font-weight:700; color:#1a3a5c; }
+  .layer .d { font-size:13.5px; color:#4a6076; line-height:1.55; margin-top:3px; }
+  .layer .f { font-size:13px; color:#7b8ea0; margin-top:5px; font-style:italic; }
+  .L1 { border-color:#4a90c2; }
+  .L2 { border-color:#38a3a5; }
+  .L3 { border-color:#d4a24c; }
+  .L4 { border-color:#7a9a7e; }
+  .flow { margin-top:7px; font-size:12.5px; color:#93a5b3; text-align:right; }
+
+  .fallback { width:300px; border:2px dashed #c0392b; border-radius:8px;
+             padding:16px; background:#fdf3f2; align-self:center; }
+  .fallback .t { font-size:18px; font-weight:700; color:#c0392b; text-align:center;
+                 margin-bottom:10px; }
+  .fallback .n { font-size:14px; color:#7d4a44; line-height:1.8; }
+  .fallback .n span { color:#c0392b; font-weight:700; }
+  .nojudge { margin-top:12px; text-align:center; font-size:13.5px; color:#c0392b;
+             border-top:1px solid #e8c4c0; padding-top:10px; line-height:1.6; }
+
+  /* ---------- 图三：用药管理闭环 ---------- */
+  .cycle { display:flex; align-items:center; justify-content:center; gap:9px;
+           flex-wrap:nowrap; }
+  .node {
+    width:124px; border:2px solid #4a90c2; border-radius:8px; background:#f4f8fb;
+    padding:11px 8px; text-align:center;
+  }
+  .node .i { font-size:20px; }
+  .node .t { font-size:15px; font-weight:700; color:#1a3a5c; margin-top:3px; }
+  .node .d { font-size:12px; color:#5a7184; margin-top:3px; line-height:1.4; }
+  .na { color:#9fb3c4; font-size:22px; }
+  .loopback {
+    margin-top:14px; text-align:center; font-size:14.5px; color:#2f6b96;
+    background:#eef5fa; border-radius:8px; padding:11px; line-height:1.7;
+  }
+  .loopback b { color:#1a3a5c; }
+</style>
+</head>
+<body>
+
+<!-- ============ 图一 ============ -->
+<div class="fig" id="f1">
+  <div class="fig-t">用药提醒四级触达递进机制</div>
+  <div class="fig-s">从"到点提醒"到"判定漏服"，四级均无效才升级，避免过度打扰老人</div>
+  <div class="ladder">
+    <div class="step s1">
+      <div class="lv">第 1 级</div>
+      <div class="nm">弹窗提醒</div>
+      <div class="ds">到点自动弹出<br>大字体大字</div>
+      <div class="tm">即时</div>
+    </div>
+    <div class="arrow">›</div>
+    <div class="step s2">
+      <div class="lv">第 2 级</div>
+      <div class="nm">语音渐进催报</div>
+      <div class="ds">无人响应则语音<br>播报，音量可调</div>
+      <div class="tm">延迟数分钟</div>
+    </div>
+    <div class="arrow">›</div>
+    <div class="step s3">
+      <div class="lv">第 3 级</div>
+      <div class="nm">界面常驻提示条</div>
+      <div class="ds">顶部持续提示<br>直到完成打卡</div>
+      <div class="tm">持续显示</div>
+    </div>
+    <div class="arrow">›</div>
+    <div class="step s4">
+      <div class="lv">第 4 级</div>
+      <div class="nm">家属云端通报</div>
+      <div class="ds">推送至微信／<br>邮件／短信</div>
+      <div class="tm">超时后触发</div>
+    </div>
+  </div>
+  <div class="verdict">
+    四级均未响应 → 判定为<b>漏服</b>并计入依从率档案<br>
+    通报消息内置<b>签名确认链接</b>，家属一键即可代打卡，无需登录、当日有效
+  </div>
+</div>
+
+<!-- ============ 图二 ============ -->
+<div class="fig" id="f2">
+  <div class="fig-t">智能体四层安全架构与失效回退</div>
+  <div class="fig-s">纵向四层逐级校验，任一层失效均不降级为"自由发挥"</div>
+  <div class="arch">
+    <div class="stack">
+      <div class="layer L1">
+        <div class="t">第 1 层 · 提示词约束</div>
+        <div class="d">硬性禁止诊断、开方、建议增减停药；不确定时引导就医</div>
+        <div class="f">失效时：降级为固定话术，不编造内容</div>
+      </div>
+      <div class="flow">▼</div>
+      <div class="layer L2">
+        <div class="t">第 2 层 · 知识检索（RAG）</div>
+        <div class="d">1494 条中文药物手册 + 食物／草药相互作用 + Beers 老年慎用标准</div>
+        <div class="f">失效时：回退规则库答案，并标注"仅供参考"</div>
+      </div>
+      <div class="flow">▼</div>
+      <div class="layer L3">
+        <div class="t">第 3 层 · 规则引擎</div>
+        <div class="d">双向配伍冲突扫描、重复用药、疗程与剂量校验</div>
+        <div class="f">不依赖大模型，可用性由代码保证</div>
+      </div>
+      <div class="flow">▼</div>
+      <div class="layer L4">
+        <div class="t">第 4 层 · 人文关怀</div>
+        <div class="d">用药鼓励、情绪安抚、慢病宣教；禁止心理咨询诊疗</div>
+        <div class="f">周报与关怀任务由确定性代码生成</div>
+      </div>
+    </div>
+    <div class="fallback">
+      <div class="t">失效回退路径</div>
+      <div class="n">
+        大模型超时／限流／异常<br>
+        → <span>自动切换</span><br>
+        规则引擎／本地兜底文案<br><br>
+        老人侧<span>无感知</span><br>
+        服务<span>不中断</span>
+      </div>
+      <div class="nojudge">
+        宁可少答，不越界：<br>
+        一次拒答的危害远小于<br>一条错误的用药建议
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 图三 ============ -->
+<div class="fig" id="f3">
+  <div class="fig-t">用药管理全流程闭环</div>
+  <div class="fig-s">从建档到长期档案沉淀，五环节数据单向流动、逐环累积</div>
+  <div class="cycle">
+    <div class="node">
+      <div class="i">📋</div><div class="t">建档</div>
+      <div class="d">拍照／语音／文字<br>导入药品</div>
+    </div>
+    <div class="na">›</div>
+    <div class="node">
+      <div class="i">⚠️</div><div class="t">风险筛查</div>
+      <div class="d">相互作用／重复<br>用药／慎用告警</div>
+    </div>
+    <div class="na">›</div>
+    <div class="node">
+      <div class="i">⏰</div><div class="t">智能提醒</div>
+      <div class="d">四级触达递进<br>按时／漏服判定</div>
+    </div>
+    <div class="na">›</div>
+    <div class="node">
+      <div class="i">✅</div><div class="t">服药打卡</div>
+      <div class="d">库存自动扣减<br>余药不足预警</div>
+    </div>
+    <div class="na">›</div>
+    <div class="node">
+      <div class="i">📈</div><div class="t">档案沉淀</div>
+      <div class="d">每日依从率快照<br>按 3 年不可变留存</div>
+    </div>
+  </div>
+  <div class="loopback">
+    <b>反馈回路：</b>档案沉淀的依从率与不适症状分布 → 驱动家属端通报与社区治理看板 → 异常个体回溯调整用药方案 → 重新进入建档环节
+  </div>
+</div>
+
+</body>
+</html>
