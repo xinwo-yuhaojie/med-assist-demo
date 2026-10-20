@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102006;</script>
+<script>window.KB_BUILD=2026102007;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102006;
+      var KB_BUILD = 2026102007;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -9716,17 +9716,23 @@ function saveNotify() { lsSave(KEY.notify, cache.notify); } try { markLocalWrite
         return EMCAuth.api('/api/meds').then(function (r) { return (r.meds || []).map(mapMedFrom); });
       },
       addMed: function (med) {
+        /* v44：云端模式也要标记本地有变更。
+           否则 kbLiveTick 会把云端快照回填，刚加的药被覆盖掉。 */
+        try { markLocalWrite(); } catch (e) {}
         return EMCAuth.api('/api/meds', { method: 'POST', body: mapMedTo(med) }).then(function (r) { return (r.meds || []).map(mapMedFrom); });
       },
       updateMed: function (id, patch) {
+        try { markLocalWrite(); } catch (e) {}
         return EMCAuth.api('/api/meds/' + encodeURIComponent(id), { method: 'PUT', body: mapMedTo(patch) })
           .then(function (r) { return (r.meds || []).map(mapMedFrom); });
       },
       deleteMed: function (id) {
+        try { markLocalWrite(); } catch (e) {}
         return EMCAuth.api('/api/meds/' + encodeURIComponent(id), { method: 'DELETE' })
           .then(function (r) { return (r.meds || []).map(mapMedFrom); });
       },
       refillMed: function (id) {
+        try { markLocalWrite(); } catch (e) {}
         return EMCAuth.api('/api/meds/' + encodeURIComponent(id), { method: 'PUT', body: { refill: true } })
           .then(function (r) { return (r.meds || []).map(mapMedFrom); });
       },
@@ -9734,6 +9740,7 @@ function saveNotify() { lsSave(KEY.notify, cache.notify); } try { markLocalWrite
         return EMCAuth.api('/api/records?days=' + (days || 7)).then(function (r) { return (r.records || []).map(mapRecFrom); });
       },
       addCheckin: function (rec) {
+        try { markLocalWrite(); } catch (e) {}
         return EMCAuth.api('/api/checkin', {
           method: 'POST',
           /* v13：代打卡标记透传，后端写入记录本身 */
@@ -9753,6 +9760,7 @@ function saveNotify() { lsSave(KEY.notify, cache.notify); } try { markLocalWrite
         return EMCAuth.api('/api/health').then(function (r) { return r.health || []; });
       },
       addHealth: function (rec) {
+        try { markLocalWrite(); } catch (e) {}
         return EMCAuth.api('/api/health', { method: 'POST', body: rec }).then(function (r) { return r.health || []; });
       },
       /* v20：家属列表走 GET /api/family（后端已补齐该路由）；
