@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102005;</script>
+<script>window.KB_BUILD=2026102006;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102005;
+      var KB_BUILD = 2026102006;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -4679,21 +4679,21 @@ EMC.applyRemindTimes = function (times) {
 /* ---------- 2. 药品知识库（老年慢病常用药 22 种） ---------- */
 EMC.DRUGS = [
   {
-    id: 'amlodipine', name: '苯磺酸氨氯地平', alias: ['氨氯地平', '络活喜', '压氏达', '安内真', '苯硫酸氨水地平片'],
+    id: 'amlodipine', name: '苯磺酸氨氯地平', alias: ['氨氯地平', '络活喜', '压氏达', '安内真', '苯磺酸氨氯地平片'],
     cls: 'ccb', cat: '降压药', dose: '5mg / 次，每日 1 次', best: ['morning'],
     timing: '晨起固定时间服用，与进食无关，每天尽量同一时间。',
     caution: '常见踝部水肿、面部潮红、牙龈增生；长期服用注意口腔卫生，水肿持续加重需复诊。',
     tags: ['高血压', '降压', '血压']
   },
   {
-    id: 'nifedipine', name: '硝苯地平控释片', alias: ['硝苯地平', '拜新同', '控释片', '硕芬地平缓释片'],
+    id: 'nifedipine', name: '硝苯地平控释片', alias: ['硝苯地平', '拜新同', '控释片', '硝苯地平缓释片'],
     cls: 'ccb', cat: '降压药', dose: '30mg / 次，每日 1 次', best: ['morning'],
     timing: '整片吞服，不可掰开、嚼碎或研末，否则会破坏控释结构导致血压骤降。',
     caution: '服药后大便中可能出现不溶性外壳，属正常现象，不必惊慌。',
     tags: ['高血压', '降压', '血压']
   },
   {
-    id: 'valsartan', name: '缬沙坦', alias: ['代文', '缬沙坦胶囊', '沙坦类', '缬沙沟片'],
+    id: 'valsartan', name: '缬沙坦', alias: ['代文', '缬沙坦胶囊', '沙坦类', '缬沙坦片'],
     cls: 'arb', cat: '降压药', dose: '80mg / 次，每日 1 次', best: ['morning'],
     timing: '晨起服用，可与食物同服，固定时间效果最稳。',
     caution: '用药期间定期复查血钾与肾功能；与补钾药、螺内酯同用需医生评估。',
@@ -4714,7 +4714,7 @@ EMC.DRUGS = [
     tags: ['高血压', '冠心病', '心率', '心脏']
   },
   {
-    id: 'hydrochlorothiazide', name: '氢氯噻嗪', alias: ['噻嗪类', '利尿剂', '双氢克尿噻', '氢氯喆噈片'],
+    id: 'hydrochlorothiazide', name: '氢氯噻嗪', alias: ['噻嗪类', '利尿剂', '双氢克尿噻', '氢氯噻嗪片'],
     cls: 'diuretic', cat: '利尿降压药', dose: '12.5mg / 次，每日 1 次', best: ['morning'],
     timing: '早晨服用，避免夜间起夜影响睡眠与跌倒风险。',
     caution: '长期服用注意补钾与监测电解质，起身时动作宜慢，防止体位性低血压。',
@@ -4764,7 +4764,7 @@ EMC.DRUGS = [
     tags: ['血脂', '胆固醇', '斑块', '脑梗']
   },
   {
-    id: 'aspirin', name: '阿司匹林肠溶片', alias: ['阿司匹林', '拜阿司匹林', '肠溶阿司匹林', '阿司林肠溶片'],
+    id: 'aspirin', name: '阿司匹林肠溶片', alias: ['阿司匹林', '拜阿司匹林', '肠溶阿司匹林', '阿司匹林肠溶片'],
     cls: 'antiplatelet', cat: '抗血小板药', dose: '100mg / 次，每日 1 次', best: ['bedtime', 'morning'],
     timing: '肠溶片应空腹服用（餐前 30 分钟或睡前），整片吞服不可嚼碎。',
     caution: '注意黑便、牙龈出血、皮肤瘀斑；拔牙或手术前需告知医生；不可与布洛芬等止痛药自行同服。',
@@ -4792,7 +4792,7 @@ EMC.DRUGS = [
     tags: ['心衰', '强心']
   },
   {
-    id: 'isosorbide', name: '单硝酸异山梨酯', alias: ['依姆多', '欣康', '硝酸酯', '单工酸异山梠酯片'],
+    id: 'isosorbide', name: '单硝酸异山梨酯', alias: ['依姆多', '欣康', '硝酸酯', '单硝酸异山梨酯片'],
     cls: 'nitrate', cat: '冠心病用药', dose: '20mg / 次，每日 2 次', best: ['morning', 'evening'],
     timing: '早晚间隔 7-8 小时服用，留出"无药间隔"可减少耐药。',
     caution: '常见头痛、面部潮红，多可耐受；严禁与西地那非等治疗勃起功能障碍药物同用，可致严重低血压。',
@@ -4844,7 +4844,7 @@ EMC.DRUGS = [
     tags: ['过敏', '流鼻涕', '皮疹', '打喷嚏']
   },
   {
-    id: 'omeprazole', name: '奥美拉唑', alias: ['质子泵抑制剂', '洛赛克', '胃药', '雷贝拉唑', '泮托拉唑', '奥美拉唡肠溶胶囊'],
+    id: 'omeprazole', name: '奥美拉唑', alias: ['质子泵抑制剂', '洛赛克', '胃药', '雷贝拉唑', '泮托拉唑', '奥美拉唑肠溶胶囊'],
     cls: 'ppi', cat: '抑酸护胃药', dose: '20mg / 次，每日 1 次', best: ['morning'],
     timing: '早餐前 30 分钟空腹服用效果最佳。',
     caution: '长期服用需关注骨折、低镁与维生素 B12 缺乏风险；按需服用、定期评估停药时机。',
@@ -4865,7 +4865,7 @@ EMC.DRUGS = [
     tags: ['糖尿病', '降糖', '血糖', '磺胀']
   },
   {
-    id: 'irbesartan', name: '伦贝沙樿片', alias: ['伦贝沙樿', '科苏', '阿法斯'],
+    id: 'irbesartan', name: '厄贝沙坦片', alias: ['厄贝沙坦', '科苏', '阿法斯'],
     cls: 'arb', cat: '降压药', dose: '150mg / 次，每日 1 次', best: ['morning'],
     timing: '晨起固定时间服用，可与食物同服，固定时间效果最稳。',
     caution: '需定期监测血钾与肾功能；与保钾利尿剂（螺内酮）、补钾盐同用需医生评估；不建议与里福平同用。',
@@ -4879,7 +4879,7 @@ EMC.DRUGS = [
     tags: ['骨关节苯', '关节苯', '镇痛', '退热']
   },
   {
-    id: 'simvastatin', name: '辛例他滙片', alias: ['辛例他滙', '沙泰定'],
+    id: 'simvastatin', name: '辛伐他汀片', alias: ['辛伐他汀', '沙泰定'],
     cls: 'statin', cat: '调脂药', dose: '20mg / 次，每晚 1 次', best: ['bedtime'],
     timing: '晚间睡前服用，夜间胆固醇合成最活跃时降脂效果最好。',
     caution: '出现明显肌肉酸痛、疲力或尿色变深要及时就医查肌酶；避免大量饮酒与西柚汁；肝功能异常者慎用。',
@@ -4893,14 +4893,14 @@ EMC.DRUGS = [
     tags: ['慢性支气管炎', '咳嗽', '气喑', '平喘']
   },
   {
-    id: 'etoricoxib', name: '依托考昞片', alias: ['依托考昞', '万托克', 'COX-2'],
+    id: 'etoricoxib', name: '依托考昔片', alias: ['依托考昔', '万托克', 'COX-2'],
     cls: 'cox2', cat: '解热镇痛药（COX-2 削制剂）', dose: '60mg / 次，每日 1 次', best: ['evening'],
     timing: '餐后服用；相对传统 NSAIDs 胃肠耐受性更好，可连续使用。',
     caution: '仍有心血管风险（心梗、脑卒中），有心血管病史者须医生评估；避免与其他 NSAIDs 同用；注意水肿与血压变化。',
     tags: ['骨关节苯', '关节苯', '镇痛']
   },
   {
-    id: 'ureaclear', name: '尿毒清颇粒', alias: ['尿毒清'],
+    id: 'ureaclear', name: '尿毒清颗粒', alias: ['尿毒清'],
     cls: 'kidneyherb', cat: '慢性肾病用药（中成药）', dose: '5g / 次，每日 3 次（温水冲服）', best: ['morning', 'noon', 'evening'],
     timing: '温水冲服，饮后服用可减轻肠肠不适。',
     caution: '肾功能会随时间变化，需定期复查肌酸与尿蛋白；服药期间注意低盐低蛋白饮食；不适及时就医复诊。',
@@ -4914,7 +4914,7 @@ EMC.DRUGS = [
     tags: ['慢性肾病', '肾病', '蛋白泖', '透析']
   },
   {
-    id: 'telmisartan', name: '替米沙樿片', alias: ['替米沙樿', '美卡素'],
+    id: 'telmisartan', name: '替米沙坦片', alias: ['替米沙坦', '美卡素'],
     cls: 'arb', cat: '降压药', dose: '40mg / 次，每日 1 次', best: ['morning'],
     timing: '晨起固定时间服用，可与食物同服；服用后仍需规律监测血压。',
     caution: '双效降压，注意监测血压与血钾；与利尿剂合用注意电解质；不可与 ACEI 类联用。',
@@ -5467,14 +5467,14 @@ EMC.CHRONIC_DISEASES = [
     cls: ['ccb', 'arb', 'acei', 'betablocker', 'diuretic'],
     monitor: '血压（早晚各测 1 次，一般目标 <140/90 mmHg）、心率、有无头晕/踝部水肿',
     tips: '降压药要每天固定时间吃，不能凭感觉停；起床、起身慢一点防跌倒；每天盐 <5 克；若血压持续 >160/100 或伴头痛胸闷应及时就医。',
-    drugs: ['amlodipine', 'valsartan', 'benazepril', 'metoprolol', 'hydrochlorothiazide']
+    drugs: ['amlodipine', 'valsartan', 'benazepril', 'metoprolol', 'hydrochlorothiazide', 'irbesartan', 'telmisartan']
   },
   {
     key: 'diabetes', name: '2型糖尿病', icon: '🩸',
     cls: ['biguanide', 'agi', 'sulfonylurea'],
     monitor: '空腹血糖（一般 4.4-7.0 mmol/L）、餐后 2 小时血糖（<10 mmol/L）、糖化血红蛋白；有无心慌、出汗、手抖等低血糖表现',
     tips: '降糖药要跟着饭点走，漏餐时不要照常吃磺脲类；随身带糖块防低血糖；阿卡波糖需与第一口饭同服才有效；足部每日检查防溃疡。',
-    drugs: ['metformin', 'acarbose', 'glimepiride']
+    drugs: ['metformin', 'acarbose', 'glimepiride', 'gliclazide']
   },
   {
     key: 'chd', name: '冠心病', icon: '❤️',
@@ -5484,11 +5484,11 @@ EMC.CHRONIC_DISEASES = [
     drugs: ['isosorbide', 'metoprolol', 'aspirin', 'clopidogrel', 'nitroglycerin']
   },
   {
-    key: 'lipid', name: '高脂血症', icon: '🧈',
+    key: 'lipid', name: '高血脂', icon: '🧈',
     cls: ['statin'],
     monitor: '血脂四项（重点看低密度脂蛋白 LDL-C）、肝功能（用药 4-6 周后复查）、有无肌肉酸痛',
     tips: '他汀一般晚间服用效果更好；若出现明显肌肉酸痛、乏力或尿色变深要及时就医查肌酶；西柚汁会影响部分他汀代谢，尽量避免。',
-    drugs: ['atorvastatin']
+    drugs: ['atorvastatin', 'simvastatin']
   },
   {
     key: 'copd', name: '慢阻肺', icon: '🫁',
@@ -5516,7 +5516,7 @@ EMC.CHRONIC_DISEASES = [
     cls: ['diuretic', 'acei', 'arb'],
     monitor: '尿量、下肢水肿、血肌酐与 eGFR、血钾；体重短期快速增加提示水潴留',
     tips: '很多药需按肾功能减量，尤其是二甲双胍、部分抗生素；避免自行服用布洛芬等非甾体止痛药；利尿剂宜早晨服用以免夜尿跌倒；限盐并控制蛋白摄入量。',
-    drugs: ['furosemide']
+    drugs: ['furosemide', 'ureaclear', 'ketoacid']
   },
   {
     key: 'hypothyroid', name: '甲状腺功能减退（甲减）', icon: '🦋',
@@ -5524,6 +5524,38 @@ EMC.CHRONIC_DISEASES = [
     monitor: '促甲状腺激素 TSH 与游离 T4（每 6-12 个月复查）、有无怕冷、乏力、浮肿、便秘、心率偏慢',
     tips: '左甲状腺素需晨起空腹服用，与早餐间隔 30-60 分钟；钙片、铁剂、豆制品需间隔 4 小时；剂量调整后 6 周再复查，不要自行加减量。',
     drugs: ['levothyroxine']
+  },
+  {
+    key: 'osteoarthritis', name: '骨关节炎', icon: '🦠',
+    cls: ['nsaid', 'cox2', 'analgesic'],
+    monitor: '负重与活动后疼痛、活动度、有无僵直、关节肿胀积液',
+    tips: '非甾体抗炎药能缓解痛但会伤胃，应优先选择休息、减重、游泳等非药物措施；若同时用阿司匹林和激素类药，必须告知医生。',
+    drugs: ['ibuprofen', 'diclofenac', 'etoricoxib', 'paracetamol'],
+    alias: ['关节炎', '骨关节炎']
+  },
+  {
+    key: 'knee_osteoarthritis', name: '膝骨关节炎', icon: '🦿',
+    cls: ['nsaid', 'cox2', 'analgesic'],
+    monitor: '上下楼时膝痛、下楼需不停坐下休息、关节是否红肿热',
+    tips: '膝关节负重多，减肥、增加肌力、水温游泳很重要；上楼可用微斜梯或坐位缓冲避免膝体受力；一旦关节红得快、自发热或活动受限到尽快就医。',
+    drugs: ['ibuprofen', 'diclofenac', 'etoricoxib', 'paracetamol'],
+    alias: ['膝关节炎', '膝关节骨关节炎']
+  },
+  {
+    key: 'chronic_bronchitis', name: '慢性支气管炎', icon: '🫁',
+    cls: ['bronchodilator'],
+    monitor: '痰性咳嗽、痰量、喘息音与动作后气短；有无发烧、痰中带血',
+    tips: '平时做呼吸操练、多喝温水；屏每、烟雾、冷风是典型诱发因素；常用平喘药应在病重时按医嘱使用，不要自行加量。',
+    drugs: ['doxofylline'],
+    alias: ['慢性支气管炎', '老慢咳']
+  },
+  {
+    key: 'chronic_gastritis', name: '慢性胃炎', icon: '🫄',
+    cls: ['ppi', 'antacid'],
+    monitor: '上腹隐痛、胃酸、烧灼、饮食后不适；大便是否带血、是否体重下降',
+    tips: '抑酸药（PPI）通常在早餐前半小时服用，一次疗程之前用一次，不要随意停；避免辛辣刺激饮食、浓茶、酒精和过冷食物。',
+    drugs: ['omeprazole'],
+    alias: ['慢性活动性胃炎', '胃炎']
   },
   {
     key: 'other', name: '其他基础病', icon: '💊',
@@ -15839,8 +15871,8 @@ next.names.map(function (n) { return esc(n.name) + '（' + esc(n.dose) + '）'; 
     if (!q) return null;
     var i, d;
     /* v44：剂型归一化。
-       用户常录的是「苯硫酸氨水地平片」「硕芬地平缓释片」
-       这样带剂型的全称，而目录里的 name 是「硕芬地平控释片」。
+       用户常录的是「苯磺酸氨氯地平片」「硝苯地平缓释片」
+       这样带剂型的全称，而目录里的 name 是「硝苯地平控释片」。
        原来只有「双向包含」匹配，「缓释」与「控释」不同就比对不上，
        导致老人录入的药找不到推荐用药。
        现在额外做一次「剥掉剂型后缀」的比较。 */
