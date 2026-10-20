@@ -106,8 +106,26 @@ ck("\u6709\u8840\u538b\u7684\u8d26\u53f7\u663e\u793a\u4e86\u5747\u503c", len(bp_
 if bp_rows:
     print("     \u793a\u4f8b: " + bp_rows[0][:120])
     ck("\u6709\u300c\u6b21\u300d\u8ba1\u6570", "\u6b21" in bp_rows[0], bp_rows[0][:70])
-ck("\u504f\u9ad8\u6807\u8bb0\u51fa\u73b0", any("\u504f\u9ad8" in x for x in rows),
-   sum(1 for x in rows if "\u504f\u9ad8" in x))
+# 偏高标记改用**本地固定样本**验证：线上账号的 7 天均值会随新增记录变动，
+# 无法作为稳定断言（上一次运行就因此 FAIL，而产品未变）。
+_sp = os.path.join(ROOT, "_dash_s.js")
+_dash = io.open(os.path.join(ROOT, "dashboard.html"), encoding="utf-8").read()
+_mm = re.search(r"var rate = p\.rate7.*?return '<tr>.*?</tr>';", _dash, re.S)
+_js = ("function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')\n"
+       ".replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');}\n"
+       "var per = " + json.dumps(SAMPLE, ensure_ascii=False) + ";\n"
+       "function render(p, isMgr) {\n" + _mm.group(0) + "\n}\n"
+       "console.log(JSON.stringify(per.map(function(p){ return render(p,false); })));\n")
+io.open(_sp, "w", encoding="utf-8").write(_js)
+_rr = subprocess.run([r"D:\hclaw\node\node.exe", _sp], capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=60)
+try:
+    os.remove(_sp)
+except Exception:
+    pass
+_srows = json.loads(_rr.stdout.strip().splitlines()[-1]) if _rr.stdout.strip() else []
+ck("\u504f\u9ad8\u6807\u8bb0\u51fa\u73b0\uff08\u672c\u5730\u6837\u672c\uff09", any("\u504f\u9ad8" in x for x in _srows),
+   sum(1 for x in _srows if "\u504f\u9ad8" in x))
 ck("\u65e0\u6570\u636e\u7684\u8d26\u53f7\u663e\u793a \u2014", any("\u2014" in x for x in rows))
 ck("\u65e0 XSS\uff1a\u884c\u5185\u65e0 script \u6807\u7b7e", all("<script" not in x.lower() for x in rows))
 
