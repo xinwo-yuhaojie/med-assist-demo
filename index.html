@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102003;</script>
+<script>window.KB_BUILD=2026102005;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -135,6 +135,14 @@
   function norm(u) { return String(u || '').trim().toLowerCase().replace(/[\s\u0000-\u001f"'\\<>]/g, '').slice(0, 40); }
   function hashPw(pw, salt, strong) {
     var s = salt + '|' + pw;
+    /* v44（F-22 补）：极老账号兼容。
+       旧版 hashPw 在**不支持 crypto.subtle** 的浏览器里用 djb2 单轮哈希，
+       支持的则用 SHA-256。而现在 strong=false 返回的是 SHA-256，
+       所以那批 djb2 账号会**永远登不上**（旧格式比对不上）。
+       新增 'djb2' 模式：登录时在 SHA-256 不匹配后再试 djb2，
+       匹配则登录并透明升级为 PBKDF2（弱点只留在存量里，不再扩散）。 */
+    function fb0(x) { var h = 5381; for (var i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) >>> 0; return 'f' + h.toString(16); }
+    if (strong === 'djb2') return Promise.resolve(fb0(s));
     /* v44（F-22）：本机模式的口令哈希原来在**没有 crypto.subtle 时降级为
        djb2 单轮哈希**（见下方 fb）—— 无迭代、无内存硬化。老人本机模式的口令
        与医疗数据同放在 localStorage，拿到文件的人离线撞库成本极低。
@@ -215,16 +223,30 @@
         };
         if (okLogin) return proceed();
         return hashPw(String(body.password), u2.pass.salt, false).then(function (hOld) {
-          if (hOld !== u2.pass.hash) {
-            return R({ ok: false, message: '用户名或密码不正确' }, 401);
+          if (hOld === u2.pass.hash) {
+            /* 老格式账号登录成功 → 透明升级，避免下次还要走慢路径 */
+            var store2 = users();
+            if (store2[n2] && store2[n2].pass) {
+              store2[n2].pass.hash = hStrong;
+              lsSet(UK, store2);
+            }
+            return proceed();
           }
-          /* 老格式账号登录成功 → 透明升级，避免下次还要走慢路径 */
-          var store2 = users();
-          if (store2[n2] && store2[n2].pass) {
-            store2[n2].pass.hash = hStrong;
-            lsSet(UK, store2);
-          }
-          return proceed();
+          /* v44（F-22 补）：极老账号兜底。
+             旧版 hashPw 在**不支持 crypto.subtle** 的浏览器里用 djb2 单轮哈希，
+             而上面 strong=false 现在返回的是 SHA-256 → 这批账号比对不上、永远登不上。
+             最后再试一次 djb2；匹配则登录并升级为 PBKDF2。 */
+          return hashPw(String(body.password), u2.pass.salt, 'djb2').then(function (hDj) {
+            if (hDj !== u2.pass.hash) {
+              return R({ ok: false, message: '用户名或密码不正确' }, 401);
+            }
+            var store3 = users();
+            if (store3[n2] && store3[n2].pass) {
+              store3[n2].pass.hash = hStrong;
+              lsSet(UK, store3);
+            }
+            return proceed();
+          });
         });
       });
     }
@@ -259,7 +281,7 @@
         var id = body.mid || ('m' + rid(6));
         var r0m = (typeof body.remain === 'number') ? body.remain : ((typeof body.remaining === 'number') ? body.remaining : 30);
         var t0m = (typeof body.total === 'number' && body.total > 0) ? body.total : r0m;
-        u.meds.push({ mid: id, name: String(body.name || '').slice(0, 40), dose: String(body.dose || '').slice(0, 60), slots: Array.isArray(body.slots) ? body.slots.slice(0, 6) : [], remain: r0m, remaining: r0m, total: t0m, refillAt: t0m, perTime: (typeof body.perTime === 'number' && body.perTime > 0) ? Math.min(999, Math.round(body.perTime)) : 0, freqTimes: (typeof body.freqTimes === 'number' && body.freqTimes > 0) ? Math.min(12, Math.round(body.freqTimes)) : 0, times: (body.times && typeof body.times === 'object') ? body.times : {}, start: String(body.start || '').slice(0, 10), end: String(body.end || '').slice(0, 10), photo: (typeof body.photo === 'string' && body.photo.indexOf('data:image/') === 0 && body.photo.length <= 160000) ? body.photo : '', note: String(body.note || '').slice(0, 200), byFamily: body.byFamily === true, disease: String(body.disease || '').slice(0, 20) });
+        u.meds.push({ mid: id, name: String(body.name || '').slice(0, 40), dose: String(body.dose || '').slice(0, 60), slots: Array.isArray(body.slots) ? body.slots.slice(0, 6) : [], remain: r0m, remaining: r0m, total: t0m, refillAt: t0m, perTime: (typeof body.perTime === 'number' && body.perTime > 0) ? Math.min(999, Math.round(body.perTime)) : 0, freqTimes: (typeof body.freqTimes === 'number' && body.freqTimes > 0) ? Math.min(12, Math.round(body.freqTimes)) : 0, times: (body.times && typeof body.times === 'object') ? body.times : {}, start: String(body.start || '').slice(0, 10), end: String(body.end || '').slice(0, 10), photo: (typeof body.photo === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(body.photo) && body.photo.length <= 160000) ? body.photo : '', note: String(body.note || '').slice(0, 200), byFamily: body.byFamily === true, disease: String(body.disease || '').slice(0, 20) });
         save(); return R({ ok: true, meds: u.meds });
       }
       if (method === 'PUT') {
@@ -278,7 +300,7 @@
           if (body.times !== undefined) m.times = (body.times && typeof body.times === 'object') ? body.times : {};
           if (body.start !== undefined) m.start = String(body.start).slice(0, 10);
           if (body.end !== undefined) m.end = String(body.end).slice(0, 10);
-          if (body.photo !== undefined) m.photo = (typeof body.photo === 'string' && body.photo.indexOf('data:image/') === 0 && body.photo.length <= 160000) ? body.photo : '';
+          if (body.photo !== undefined) m.photo = (typeof body.photo === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(body.photo) && body.photo.length <= 160000) ? body.photo : '';
           if (body.byFamily !== undefined) m.byFamily = body.byFamily === true;
         }
         save(); return R({ ok: true, meds: u.meds });
@@ -1251,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102003;
+      var KB_BUILD = 2026102005;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -5664,7 +5686,16 @@ EMC.Chart = (function () {
     var w = opts.width || 520, h = opts.height || 250, padL = 50, padB = 40, padT = 18, padR = 14;
     var max = 0, min = 100;
     series.forEach(function (se) { se.data.forEach(function (v) { if (v > max) max = v; if (v < min) min = v; }); });
-    max = Math.ceil(max / 10) * 10; min = Math.floor(min / 10) * 10;
+    /* v44: support explicit Y-axis range (opts.yMin / opts.yMax).
+       The default was min=100, max=0 then rounded to multiples of 10, so a
+       risk score of 0~3 was plotted on a 0~100 scale - the line sat on the
+       bottom axis and looked like 'no data' at all. */
+    if (opts.yMax !== undefined && opts.yMax !== null) {
+      max = Number(opts.yMax);
+      min = (opts.yMin !== undefined && opts.yMin !== null) ? Number(opts.yMin) : 0;
+    } else {
+      max = Math.ceil(max / 10) * 10; min = Math.floor(min / 10) * 10;
+    }
     var plotW = w - padL - padR, plotH = h - padT - padB;
     var xAt = function (i) { return padL + plotW * (labels.length === 1 ? 0.5 : i / (labels.length - 1)); };
     var yAt = function (v) { return padT + plotH * (1 - (v - min) / (max - min || 1)); };
@@ -9473,7 +9504,7 @@ function saveNotify() { lsSave(KEY.notify, cache.notify); } try { markLocalWrite
         times: (b.times && typeof b.times === 'object') ? b.times : null,
         start: /^\d{4}-\d{2}-\d{2}$/.test(b.start || '') ? b.start : '',
         end: /^\d{4}-\d{2}-\d{2}$/.test(b.end || '') ? b.end : '',
-        photo: (typeof b.photo === 'string' && b.photo.indexOf('data:image/') === 0) ? b.photo.slice(0, 160000) : '',
+        photo: (typeof b.photo === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(b.photo)) ? b.photo.slice(0, 160000) : '',
         initRemain: r0,
         refillAt: b.refillAt == null ? r0 : b.refillAt,
         /* v13：家属代录标记 + 病种关联（后端缺字段时回落为未标记 / 未关联） */
@@ -9490,7 +9521,7 @@ function saveNotify() { lsSave(KEY.notify, cache.notify); } try { markLocalWrite
         freqTimes: (typeof m.freqTimes === 'number' && m.freqTimes > 0) ? m.freqTimes : 0,
         times: (m.times && typeof m.times === 'object') ? m.times : {},
         start: String(m.start || ''), end: String(m.end || ''),
-        photo: (typeof m.photo === 'string' && m.photo.indexOf('data:image/') === 0) ? m.photo.slice(0, 160000) : '',
+        photo: (typeof m.photo === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(m.photo)) ? m.photo.slice(0, 160000) : '',
         /* v13：把代录标记与病种关联透传给后端持久化 */
         byFamily: m.byFamily === true, disease: String(m.disease || ''),
         /* v20：备注（note）一并透传，避免云端模式下老人备注丢失 */
@@ -12977,7 +13008,7 @@ EMC.Care = (function () {
 
     var nextHtml = next
       ? ('<div class="cf-row">⏭️ 下一次用药：<b>' + esc(next.slot.label) + '（' + esc(next.slot.range) + '）</b>，请记得服用 ' +
-        esc(next.names.map(function (n) { return n.name + '（' + n.dose + '）'; }).join('、')) + '</div>')
+        esc(next.names.map(function (n) { return esc(n.name) + '（' + esc(n.dose) + '）'; }).join('、')) + '</div>')
       : '<div class="cf-row">⏭️ 今日用药已全部完成，好好休息 🌙</div>';
 
     var mask = document.createElement('div'); mask.className = 'mask';
@@ -14622,7 +14653,7 @@ next.names.map(function (n) { return esc(n.name) + '（' + esc(n.dose) + '）'; 
       '<div class="rem-list">' + names.map(function (n, ni) {
         var src = (items.length ? items[ni] : S.meds[ni]);
         var mm = src ? S.meds.filter(function (x) { return x.mid === src.mid; })[0] : null;
-        var ph = mm && typeof mm.photo === 'string' && mm.photo.indexOf('data:image/') === 0;
+        var ph = mm && typeof mm.photo === 'string' && !!safeImgSrc(mm.photo);
         /* v44（H1）：用 safeImgSrc 替代原先的 indexOf('data:image/') 判断。
        这里是**到点强提醒的全屏弹层**，用户必然触发，
        一个被派造的 photo 字段就能在这里注入事件处理器。 */
@@ -15624,7 +15655,24 @@ next.names.map(function (n) { return esc(n.name) + '（' + esc(n.dose) + '）'; 
     var series = E.riskSeries(S.records, S.health, 14);
     var labels = series.map(function (d) { return d.label; });
     var data = series.map(function (d) { return d.score; });
-    box.innerHTML = '<div class="chart-box">' + EMC.Chart.lines(labels, [{ name: '风险评分', data: data, color: '#B4402F' }], { height: 220 }) + '</div>' +
+    /* v44：量程与空态。
+       原来不传 yMax，曲线被画在 0~100 的量程上（评分只有 0~3），
+       曲线贴在底部几乎看不见，用户认为「没数据」。
+       现在显式给 0~max(3, 实际最大值) 的量程，并在无数据时说明原因。 */
+    var maxScore = 0;
+    series.forEach(function (d) { if (d.score > maxScore) maxScore = d.score; });
+    /* 近 14 天是否真的有任何记录 */
+    var recent = 0, missedTotal = 0, anomalyTotal = 0;
+    series.forEach(function (d) { missedTotal += d.missed || 0; anomalyTotal += d.anomalies || 0; if (d.score > 0) recent++; });
+    var hasAny = (S.records && S.records.length) || (S.health && S.health.length);
+    var chart = '<div class="chart-box">' + EMC.Chart.lines(labels, [{ name: '风险评分', data: data, color: '#B4402F' }], { height: 220, yMax: Math.max(3, maxScore) }) + '</div>';
+    var tip = '';
+    if (!hasAny) {
+      tip = '<div class="muted small" style="margin-top:6px">近 14 天还没有用药打卡或血压记录。开始打卡、录一次血压后，这里就会有趋势了。</div>';
+    } else if (recent === 0) {
+      tip = '<div class="muted small" style="margin-top:6px">近 14 天没有漏服，压力与血糖指标也都在正常范围——这是好事。</div>';
+    }
+    box.innerHTML = chart + tip +
       '<div class="small muted" style="margin-top:6px">评分越高代表当日漏服或指标异常越多（0 无 / 1 轻 / 2 中 / 3+ 重）。仅供趋势参考，不替代医生诊断。</div>';
   }
 

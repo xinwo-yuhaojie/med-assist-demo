@@ -32,7 +32,7 @@
  *   E. 只缓存基本响应（200 / 206），错误页与重定向不入缓存。
  * ========================================================== */
 
-const VER = 'v55';
+const VER = 'v57';
 const CACHE = 'kangban-' + VER;
 
 /* install 时预缓存：这些是「断网也必须能打开」的东西 */
@@ -66,6 +66,28 @@ self.addEventListener('activate', function (e) {
     await Promise.all(keys.map(function (k) {
       return (k.indexOf('kangban-') === 0 && k !== CACHE) ? caches.delete(k) : null;
     }));
+    /* v44（M3 续）：清理**本版本缓存里的存量 query 变体**。
+       v44 之前的 SW 写缓存时按**精确 req**（带 query）put，
+       所以同一个缓存里同时存在 './kb.js' 和 './kb.js?v=2026101901' 两份，
+       每次 KB_BUILD 升版又多一份 1MB+ 副本。
+       activate 只删**其它缓存名**，同版本内的旧 query 变体永远不淘汰；
+       而离线回退用 ignoreSearch 匹配时按插入顺序返回首个匹配 ——
+       存量旧变体可能排在裸键前面被返回，离线时拿到过期 kb.js。
+
+       现在：激活时把本缓存里带 query 的 .js/.css 键删掉（保留裸键与其它资源）。
+       运行时写入已统一改用裸 pathname 键，所以删掉后会由网络优先重新缓存。 */
+    try {
+      const c = await caches.open(CACHE);
+      const reqs = await c.keys();
+      for (const rq of reqs) {
+        try {
+          const u = new URL(rq.url);
+          if (u.search && (u.pathname.endsWith('.js') || u.pathname.endsWith('.css'))) {
+            await c.delete(rq);
+          }
+        } catch (err) { /* 单条失败不影响其它 */ }
+      }
+    } catch (err) { /* 缓存不可用就算了 */ }
     /* navigationPreload：文档请求交给浏览器预载，弱网首屏更快 */
     try {
       if (self.registration.navigationPreload) await self.registration.navigationPreload.enable();

@@ -340,6 +340,7 @@
           <thead><tr>
             <th>姓名</th><th>性别</th><th class="n">药品</th><th class="n">7天依从</th>
             <th class="n">今日漏服</th><th class="n">余药&lt;7天</th><th class="n">不适反馈</th>
+            <th class="n">血压(7天均值)</th><th class="n">血糖(7天均值)</th>
           </tr></thead>
           <tbody id="tbody"></tbody>
         </table>
@@ -675,6 +676,25 @@
         nmCell = '<span class="nm-mask" data-id="' + esc(p.id || '') + '" role="button" tabindex="0"'
           + ' title="点击查看真实姓名">' + esc(p.name) + '<span class="lk">🔒</span></span>';
       }
+      /* v44：血压 / 血糖两列（后端已返回 bpSys7/bpDia7/bpHigh/glu7/gluHigh 等字段，
+         这里之前完全没渲染 —— 数据在后端存着，看板上却看不见）。
+         显示的是近 7 天均值，偏高用红色标注，无数据显示 '—'。 */
+      var bpCell;
+      if (p.bpCount) {
+        bpCell = esc(String(p.bpSys7) + '/' + String(p.bpDia7))
+          + '<span class="n"> ·' + (p.bpCount || 0) + '次</span>'
+          + (p.bpHigh ? '<span class="warnflag">偏高</span>' : '');
+      } else {
+        bpCell = '<span class="muted">—</span>';
+      }
+      var gluCell;
+      if (p.gluCount) {
+        gluCell = esc(String(p.glu7))
+          + '<span class="n"> ·' + (p.gluCount || 0) + '次</span>'
+          + (p.gluHigh ? '<span class="warnflag">偏高</span>' : '');
+      } else {
+        gluCell = '<span class="muted">—</span>';
+      }
       return '<tr><td>' + nmCell + '</td>' +
         '<td>' + esc(p.gender || '—') + '</td>' +
         '<td class="n">' + (p.meds || 0) + '</td>' +
@@ -682,7 +702,9 @@
         '<td class="n' + (p.missedToday ? ' bad' : '') + '">' + (p.missedToday || 0) + '</td>' +
         '<td class="n' + (p.low ? ' bad' : '') + '">' + (p.low || 0) + '</td>' +
         '<td class="n' + (p.adrSevere ? ' bad' : (p.adrMild ? ' warn' : '')) + '">'
-          + ((p.adrMild || 0) + (p.adrSevere || 0)) + (p.adrSevere ? ('(明显' + p.adrSevere + ')') : '') + '</td></tr>';
+          + ((p.adrMild || 0) + (p.adrSevere || 0)) + (p.adrSevere ? ('(明显' + p.adrSevere + ')') : '') + '</td>' +
+        '<td class="n' + (p.bpHigh ? ' bad' : '') + '">' + bpCell + '</td>' +
+        '<td class="n' + (p.gluHigh ? ' bad' : '') + '">' + gluCell + '</td></tr>';
     }).join('');
     $('emptyTip').style.display = list.length ? 'none' : 'block';
 
