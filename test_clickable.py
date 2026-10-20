@@ -32,12 +32,37 @@ except ImportError:
 if not os.path.exists(CHROME):
     print("未找到 Chrome"); sys.exit(2)
 
-subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], capture_output=True)
+# 收尾用的 profile 标识：下面清理时**只**杀带这个标识的进程
+PROFILE_DIR = os.path.join(os.environ["TEMP"], "kb_click_test")
+
+def kill_own_chrome():
+    """只清理本脚本启动的 headless Chrome。
+
+    原来这里是 taskkill /F /IM chrome.exe —— 那会连**用户自己正在用的**
+    浏览器一起强杀，未保存的表单/标签页当场丢失。
+    改为按命令行里是否含本脚本的 profile 标识来精确匹配。
+    """
+    if not sys.platform.startswith("win"):
+        return
+    try:
+        ps = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | "
+             "Where-Object { $_.CommandLine -like '*kb_click_test*' }).ProcessId"],
+            capture_output=True, text=True, timeout=20)
+        for pid_s in (ps.stdout or "").split():
+            if pid_s.strip().isdigit():
+                subprocess.run(["taskkill", "/F", "/PID", pid_s.strip()],
+                               capture_output=True)
+    except Exception:
+        pass
+
+kill_own_chrome()
 time.sleep(1)
 proc = subprocess.Popen(
     [CHROME, "--headless=new", "--disable-gpu", "--no-sandbox",
      "--remote-debugging-port=%d" % PORT, "--remote-allow-origins=*",
-     "--user-data-dir=" + os.path.join(os.environ["TEMP"], "kb_click_test"), "about:blank"],
+     "--user-data-dir=" + PROFILE_DIR, "about:blank"],
     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 OK = True

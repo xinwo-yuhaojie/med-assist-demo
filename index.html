@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026101804;</script>
+<script>window.KB_BUILD=2026102003;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -133,8 +133,30 @@
   function rid(n) { var h = 'abcdefghijklmnopqrstuvwxyz0123456789', s = ''; for (var i = 0; i < n; i++) s += h[Math.floor(Math.random() * h.length)]; return s; }
   function hex(n) { var a = new Uint8Array(n); if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a); else for (var i = 0; i < n; i++) a[i] = Math.floor(Math.random() * 256); return Array.prototype.map.call(a, function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }
   function norm(u) { return String(u || '').trim().toLowerCase().replace(/[\s\u0000-\u001f"'\\<>]/g, '').slice(0, 40); }
-  function hashPw(pw, salt) {
+  function hashPw(pw, salt, strong) {
     var s = salt + '|' + pw;
+    /* v44（F-22）：本机模式的口令哈希原来在**没有 crypto.subtle 时降级为
+       djb2 单轮哈希**（见下方 fb）—— 无迭代、无内存硬化。老人本机模式的口令
+       与医疗数据同放在 localStorage，拿到文件的人离线撞库成本极低。
+       新增 PBKDF2-SHA256（12 万轮）路径，输出带 'pbkdf2$' 前缀用于区分格式：
+         · 注册 / 重置密码 传 strong=true，一律写强格式；
+         · 登录传 strong=true 先比对，不匹配再用 strong=false 比对老格式
+           （否则老账号会全部无法登录），成功后顺手升级为强格式。
+       PBKDF2 不可用时递归回落老实现，不会把用户挡在门外。 */
+    if (strong && window.crypto && crypto.subtle && crypto.subtle.importKey && window.TextEncoder) {
+      var enc0 = new TextEncoder();
+      return crypto.subtle.importKey('raw', enc0.encode(String(pw)), { name: 'PBKDF2' }, false, ['deriveBits'])
+        .then(function (key) {
+          return crypto.subtle.deriveBits(
+            { name: 'PBKDF2', salt: enc0.encode(String(salt)), iterations: 120000, hash: 'SHA-256' },
+            key, 256);
+        })
+        .then(function (buf) {
+          return 'pbkdf2$' + Array.prototype.map.call(new Uint8Array(buf),
+            function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+        })
+        .catch(function () { return hashPw(pw, salt, false); });
+    }
     function fb(x) { var h = 5381; for (var i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) >>> 0; return 'f' + h.toString(16); }
     if (window.crypto && crypto.subtle && crypto.subtle.digest && window.TextEncoder) {
       return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function (b) {
@@ -144,7 +166,19 @@
     return Promise.resolve(fb(s));
   }
   function R(obj, st) { return new Response(JSON.stringify(obj), { status: st || 200, headers: { 'content-type': 'application/json; charset=utf-8' } }); }
-  function lastDays(n) { var o = [], d; for (var i = 0; i < n; i++) { d = new Date(Date.now() - i * 86400000); o.push(d.toISOString().slice(0, 10)); } return o; }
+  /* v44：原来用 d.toISOString().slice(0,10)，那是 **UTC** 日期；
+     而记录写入用的是 fmtDate（本地时区）。北京时间 00:00-08:00 之间
+     toISOString 返回的是**前一天**，于是本机模式下日期白名单整体错位一天：
+     老人凌晨录入的服药记录查不到，漏服统计与依从率全部失真。
+     改为与 fmtDate 一致的本地日期拼接。 */
+  function lastDays(n) {
+    var o = [];
+    for (var i = 0; i < n; i++) {
+      var d = new Date(Date.now() - i * 86400000);
+      o.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
+    }
+    return o;
+  }
   function emptyUser(p) { return { pass: { salt: '', hash: '' }, profile: { name: (p && p.name) || '', age: (p && p.age) || '', gender: (p && p.gender) || '', phone: (p && p.phone) || '', email: (p && p.email) || '', notifyEnabled: true, conditions: [] }, settings: { fontSize: 'A', tts: true, theme: null, remindTimes: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'Cherry', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false }, notifySet: { channels: { email: false, wechat: false, sms: false }, email: '', wechatWebhook: '', smsPhone: '', familyEmail: '', overdueMinutes: 60 }, meds: [], records: [], health: [], family: [], notify: [] }; }
   function pub(name, u) { return { id: name, username: name, name: u.profile.name || '', age: u.profile.age || '', phone: u.profile.phone || '', email: u.profile.email || '', notifyEnabled: u.profile.notifyEnabled !== false, conditions: u.profile.conditions || [], settings: u.settings || {}, family: u.family || [], notifySet: u.notifySet || {} }; }
   function cur() { var tk = localStorage.getItem('emc_token'); if (!tk) return null; var m = sess()[tk]; if (!m) return null; var us = users(); return us[m] ? { name: m, u: us[m] } : null; }
@@ -161,7 +195,7 @@
       var us = users();
       if (us[n]) return R({ ok: false, message: '用户名已存在，请换一个' }, 409);
       var salt = hex(8);
-      return hashPw(String(body.password), salt).then(function (h) {
+      return hashPw(String(body.password), salt, true).then(function (h) {
         var uu = emptyUser(body); uu.pass = { salt: salt, hash: h };
         us[n] = uu; lsSet(UK, us);
         var tk = hex(16), ss = sess(); ss[tk] = n; lsSet(SK, ss);
@@ -171,10 +205,27 @@
     if (path === '/api/login' && method === 'POST') {
       var n2 = norm(body.username), u2 = users()[n2];
       if (!u2) return R({ ok: false, message: '用户名或密码不正确' }, 401);
-      return hashPw(String(body.password), u2.pass.salt).then(function (h) {
-        if (h !== u2.pass.hash) return R({ ok: false, message: '用户名或密码不正确' }, 401);
-        var tk = hex(16), ss = sess(); ss[tk] = n2; lsSet(SK, ss);
-        return R({ ok: true, token: tk, user: pub(n2, u2) });
+      /* v44（F-22）：先按 PBKDF2 强格式比对；不匹配再按老格式比对，
+         这样**老账号仍然能登录**，且登录成功后顺手把哈希升级为强格式。 */
+      return hashPw(String(body.password), u2.pass.salt, true).then(function (hStrong) {
+        var okLogin = (hStrong === u2.pass.hash);
+        var proceed = function () {
+          var tk = hex(16), ss = sess(); ss[tk] = n2; lsSet(SK, ss);
+          return R({ ok: true, token: tk, user: pub(n2, u2) });
+        };
+        if (okLogin) return proceed();
+        return hashPw(String(body.password), u2.pass.salt, false).then(function (hOld) {
+          if (hOld !== u2.pass.hash) {
+            return R({ ok: false, message: '用户名或密码不正确' }, 401);
+          }
+          /* 老格式账号登录成功 → 透明升级，避免下次还要走慢路径 */
+          var store2 = users();
+          if (store2[n2] && store2[n2].pass) {
+            store2[n2].pass.hash = hStrong;
+            lsSet(UK, store2);
+          }
+          return proceed();
+        });
       });
     }
     if (path === '/api/reset-password' && method === 'POST') {
@@ -182,7 +233,7 @@
       if (!u3 || !body.phone || String(body.phone) !== String(u3.profile.phone || '')) return R({ ok: false, message: '用户名与手机号不匹配' }, 400);
       if (!body.newPassword || String(body.newPassword).length < 6) return R({ ok: false, message: '新密码至少 6 位' }, 400);
       var salt3 = hex(8);
-      return hashPw(String(body.newPassword), salt3).then(function (h) { u3.pass = { salt: salt3, hash: h }; lsSet(UK, us3); return R({ ok: true }); });
+      return hashPw(String(body.newPassword), salt3, true).then(function (h) { u3.pass = { salt: salt3, hash: h }; lsSet(UK, us3); return R({ ok: true }); });
     }
 
     var c = cur();
@@ -321,14 +372,48 @@
     } catch (e) { return init; }
   }
 
+  /* v44（F-23）：本机识别通道（ASR_LOCAL = http://127.0.0.1:8790）有两重风险：
+     ① 录音 base64 走**明文 HTTP**，同机任何进程/其他用户会话理论上可截获；
+     ② 端口一旦被别的程序占用（而不是本项目的 asr-service），录音就会被发给它。
+     这里加一道**握手探测**：先请求本机的 status 接口，确认返回的是本项目
+     预期的结构（models/available 字段）才认为通道可信；否则一律走云端。
+     这挡不住"同机恶意进程嗅探明文流量"，但能挡住"端口被占导致录音外泄"这个
+     最现实的风险。彻底方案需要 asr-service 配合做 nonce 握手，
+     已在此标注为待办。 */
+  var _asrLocalOk = null;
+  var _asrLocalFailAt = 0;
+  /* v44（L1）：失败不再永久缓存。
+     原来一次瞬时失败（本机 asr-service 还在启动、status 偶发超时）
+     就会把整个会话的本机识别永久关掉，直到刷新才恢复。
+     现在：成功长期缓存；失败只冷却 30 秒，到期重试。 */
+  function checkAsrLocal() {
+    if (_asrLocalOk === true) return Promise.resolve(true);
+    if (_asrLocalOk === false && Date.now() - _asrLocalFailAt < 30000) {
+      return Promise.resolve(false);
+    }
+    return _fetch(ASR_LOCAL + '/api/asr/local/status', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var ok = !!(j && typeof j === 'object' && ('models' in j || 'available' in j));
+        _asrLocalOk = ok;
+        if (!ok) { try { console.warn('[asr] 127.0.0.1:8790 不是本项目的识别服务，已改走云端'); } catch (e) {} }
+        return ok;
+      })
+.catch(function () { _asrLocalOk = false; _asrLocalFailAt = Date.now(); return false; });
+  }
+
   function fetchAsr(path, init) {
     var init2 = withAnon(init);
     // 只有在本机打开时才尝试本地识别；其他设备直接用云端（不再白等 1.2 秒 / 不再报混合内容）
     var h = location.hostname;
     if (h !== '127.0.0.1' && h !== 'localhost') return _fetch(ASR_CLOUD + path, init2);
-    var local = _fetch(ASR_LOCAL + path, init2);
-    var timer = new Promise(function (_, rej) { setTimeout(function () { rej(new Error('local-timeout')); }, 1200); });
-    return Promise.race([local, timer]).catch(function () { return _fetch(ASR_CLOUD + path, init2); });
+    /* 先握手确认本机服务可信，再决定是否发送录音 */
+    return checkAsrLocal().then(function (ok) {
+      if (!ok) return _fetch(ASR_CLOUD + path, init2);
+      var local = _fetch(ASR_LOCAL + path, init2);
+      var timer = new Promise(function (_, rej) { setTimeout(function () { rej(new Error('local-timeout')); }, 1200); });
+      return Promise.race([local, timer]).catch(function () { return _fetch(ASR_CLOUD + path, init2); });
+    });
   }
 
   window.fetch = function (input, init) {
@@ -418,7 +503,7 @@
   function doExport() {
     var safeUsers = exportSanitize(lsGet(UK, {}));
     var n = Object.keys(safeUsers).length;
-    download('kangban-backup-' + new Date().toISOString().slice(0, 10) + '.json',
+    download('kangban-backup-' + fmtDate(new Date()) + '.json',
       JSON.stringify({
         v: 2,
         at: new Date().toISOString(),
@@ -440,10 +525,39 @@
           if (!confirm('确定导入吗？会覆盖本机现有的账号数据。')) return;
           /* v35：只导入资料，**忽略文件里的任何口令与 token**。
              否则拿到别人备份文件的人可以直接冒用其会话。 */
+          /* v44（F-24）：字段级白名单。v35 只是丢掉了 pass/token，
+             但 profile / settings 内部**整包照搬** —— 导入别人的备份文件
+             就能塞进任意字段。虽然当前多数字段在渲染处已转义、XSS 面较小，
+             但"渲染侧转义"这种约定一旦某处漏掉（本次审计就发现了 7 处漏的），
+             导入就是最短的注入路径。改为只接受已知字段并做长度/类型限制，
+             渲染侧就不再需要依赖这份默契。 */
+          var PROF_ALLOW = { name: 40, age: 10, gender: 8, phone: 20, username: 40 };
+          function pickFields(src, allow) {
+            var out = {};
+            if (!src || typeof src !== 'object') return out;
+            Object.keys(allow).forEach(function (k) {
+              var v = src[k];
+              if (v === undefined || v === null) return;
+              if (typeof v === 'object') return;                 // 不接受嵌套对象
+              out[k] = String(v).replace(/[\u0000-\u001f]/g, '').slice(0, allow[k]);
+            });
+            return out;
+          }
+          var SET_ALLOW = { fs: 3, voice: 6, theme: 20, ttsRate: 8, ttsVolume: 8, ttsVoice: 20,
+                            asrContinue: 6, cloudVoice: 6, asrEngine: 20, simpleMode: 6,
+                            dialectFollow: 6 };
           var users = {};
           Object.keys(j.users || {}).forEach(function (k) {
             var u = j.users[k] || {};
-            users[k] = { username: u.username || k, profile: u.profile || {}, settings: u.settings || {} };
+            if (typeof u !== 'object') return;
+            var prof = pickFields(u.profile, PROF_ALLOW);
+            prof.username = prof.username || norm(k) || String(k).slice(0, 40);
+            var set = pickFields(u.settings, SET_ALLOW);
+            /* remindTimes 单独走已有的归一化，避免把数组/垃圾值带进来 */
+            if (u.settings && typeof u.settings === 'object') {
+              set.remindTimes = normalizeRemindTimes(u.settings.remindTimes);
+            }
+            users[prof.username] = { username: prof.username, profile: prof, settings: set };
           });
           if (!Object.keys(users).length) throw new Error('文件里没有可导入的账号');
           lsSet(UK, users);
@@ -1137,7 +1251,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026101804;
+      var KB_BUILD = 2026102003;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -3848,7 +3962,13 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
         <div class="muted small">已接入子智能体：用药提醒、慢病知识答疑、用药风险筛查、健康档案、余药管理、周报生成、紧急求助。</div>
       </div>
       <div id="symptomCard"></div>
-      <div class="chat-scroll" id="chatScroll" aria-live="polite"></div>
+      <!-- v44（F-25）：aria-live 从滚动容器移到"新消息区"。
+     原来挂在 #chatScroll 上，而它是整个聊天列表的滚动容器 ——
+     容器内任何变化（追加消息、滚动、重新渲染）都会触发一次播报，
+     读屏用户会被反复打断。这里改为：容器本身不再 live，
+     新追加的消息节点才设 aria-live="polite"（见 appendChatRow）。 -->
+<div class="chat-scroll" id="chatScroll"></div>
+<div id="chatLive" aria-live="polite" aria-atomic="false" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap"></div>
       <!-- 快捷提问（对话空态展示，首次发言后自动收起） -->
       <div class="chips starters" id="chatStarters"></div>
       <div class="chips" id="chips"></div>
@@ -7435,7 +7555,34 @@ EMC.Voice = (function () {
 
   /* 语音配置：语速略慢(0.9)更适老；音量默认 1；音色 std/female；自动续听默认开
    * v14：cloud 默认 false（不调用付费云端 API，省钱）；asrEngine 默认本地 Qwen3-ASR-0.6B */
-  var cfg = { rate: 0.9, volume: 1, voice: 'std', continuous: true, cloud: false, asrEngine: 'qwen3-0.6b' };
+  var cfg = { rate: 0.9, volume: 1, voice: 'std', continuous: true, cloud: false, asrEngine: 'qwen3-0.6b',
+              dialectFollow: true };   // v43：默认开启方言跟随（不定义则恒为 falsy，方言功能会整个失效）
+
+  /* ---------- v43 方言跟随 ----------
+   * 【需求】老人用方言说话，智能体回答也要用方言说；识别不出就用普通话。
+   * 【为什么状态放在这里而不是 ASR 里就地传给 TTS】
+   *   识别发生在"老人说完"那一刻，回答要好几个环节之后才合成出来，
+   *   中间隔着规则解析 / AI 问答。所以必须把这次识别到的方言**记下来**，
+   *   由朗读环节去取，否则回答就会退回普通话。
+   * 【为什么要超时】
+   *   方言不该"粘"住。老人上午用四川话提问，下午改用普通话，
+   *   若一直沿用上午的方言，普通话提问也会被方言音色念出来，很怪。
+   *   所以设 10 分钟有效期，超时或显式说普通话就回到普通话。 */
+  var _diaState = { dialect: 'zh', label: '', at: 0 };
+  var DIALECT_TTL_MS = 10 * 60 * 1000;
+  function setSessionDialect(d, label) {
+    try {
+      _diaState.dialect = (typeof d === 'string' && d) ? d : 'zh';
+      _diaState.label = label || '';
+      _diaState.at = Date.now();
+    } catch (e) { /* 状态坏了也不能影响朗读 */ }
+  }
+  function currentDialect() {
+    /* 过期即视为普通话；另外用户若手动选了音色且关掉了方言跟随，也不带方言 */
+    if (Date.now() - _diaState.at > DIALECT_TTL_MS) return '';
+    if (!cfg.dialectFollow) return '';
+    return (_diaState.dialect && _diaState.dialect !== 'zh') ? _diaState.dialect : '';
+  }
 
   function clamp(v, lo, hi) { v = parseFloat(v); if (isNaN(v)) return lo; return Math.max(lo, Math.min(hi, v)); }
 
@@ -7792,50 +7939,104 @@ EMC.Voice = (function () {
        再说同一句话会直接命中旧缓存 —— 听起来还是女声，
        表现就是"我明明选了男声，怎么没变"，最长要等 1 小时才生效。 */
     var voiceNow = normalizeVoice(cfg.voice);
-    var key = voiceNow + ' ' + p;
+    /* v43：缓存键必须带上方言 —— 否则老人说完方言、下一句改说普通话，
+       会直接命中方言音色的旧缓存，听起来还是方言在念。
+       与上面「键里带音色」是同一类坑：不带区分维度就必然串味。
+       顺带把分隔符从历史遗留的 NUL(\x00) 换成 '|'：NUL 在 JS 里合法，
+       所以一直没报错，但这种字符若被拼进发往后端的 JSON，
+       在 C 系后端可能被当成字符串结束符，属于埋着的隐患。 */
+    var diaNow = currentDialect();
+    var key = voiceNow + '|' + (diaNow || 'zh') + '|' + p;
     var hit = ttsCache[key];
     if (hit && Date.now() < hit.exp) return Promise.resolve(hit.url);
     /* v27 P0-3：合成请求同样加超时上限（云端更慢，给宽一点），
        超时按失败处理 → 自动回退浏览器朗读，绝不让界面卡在「正在播报」。 */
-    return Promise.race([
-      fetch('/api/ai/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-        body: JSON.stringify({ text: p, voice: voiceNow })
+    /* v44：定时器必须显式清理。原来 `new Promise((_,rej)=>setTimeout(...))`
+       赛跑输掉之后，那个 setTimeout 仍会**挂满 15 秒**才触发（rejection 被
+       race 忽略所以不报错，但定时器和它捕获的 p/key 字符串真实存在）。
+       这是老人使用密度最高的路径 —— 一句回答拆成 <=26 字的多块、逐块预取，
+       一次完整回答就能攒下 5-15 个永不回收的定时器，长时间使用下持续累积。
+       同文件 aiChat 的超时（用 done/fail 主动 clearTimeout）本来就是对的，
+       这里漏了同一套处理。 */
+    var toT = null;
+    var timedOut = new Promise(function (_, rej) {
+      toT = setTimeout(function () { rej(new Error('云端语音超时')); }, 15000);
+    });
+    /* v44：登记取消句柄，用户点「停止播报」时由 stop() 统一 abort，
+       避免音频没人听却照样计费（详见 inflightTts 的说明）。 */
+    var acT = null;
+    if (typeof AbortController !== 'undefined') { acT = new AbortController(); }
+    var fetchInit = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ text: p, voice: voiceNow, dialect: diaNow || undefined })
+    };
+    if (acT) {
+      fetchInit.signal = acT.signal;
+      try { inflightTts.push(acT); } catch (e) {}
+    }
+    var real = fetch('/api/ai/tts', fetchInit)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('tts http ' + r.status)); })
+      .then(function (j) {
+        if (!j) throw new Error('no audio');
+        /* v37 优先用同源代理地址。
+           千问返回的是 http 明文 OSS 直链，而站点跑在 https：
+           混合内容 + CSP media-src 回落到 'self'，两条都会让
+           audio.onerror 触发，然后**静默**改用系统朗读 ——
+           用户只觉得"又听不到千问女声"，界面还毫无提示。
+           streamUrl 由服务端代理转发，全程同源，这两道拦截都不存在。 */
+        var use = j.streamUrl || j.url;
+        if (!use) throw new Error('no audio url');
+        /* v44：由"整体清空"改为**按过期时间淘汰**。原来超过 120 条就整表清零，
+           于是命中率周期性归零 —— 同一批常用语句反复付费重合成。
+           现在只删真正过期的，条目仍超上限时才做一次全清。 */
+        var nowT = Date.now(), over = 0;
+        for (var ck2 in ttsCache) {
+          if (!Object.prototype.hasOwnProperty.call(ttsCache, ck2)) continue;
+          if (nowT >= ttsCache[ck2].exp) delete ttsCache[ck2]; else over++;
+        }
+        if (over > 120) ttsCache = Object.create(null);
+        /* 必须用与读取时同一个 key（含音色与方言），否则读新键、写旧键 = 永远不命中 */
+        ttsCache[key] = { url: use, exp: Date.now() + 3600000 };
+        return use;
       })
-        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('tts http ' + r.status)); })
-        .then(function (j) {
-          if (!j) throw new Error('no audio');
-          /* v37 优先用同源代理地址。
-             千问返回的是 http 明文 OSS 直链，而站点跑在 https：
-             混合内容 + CSP media-src 回落到 'self'，两条都会让
-             audio.onerror 触发，然后**静默**改用系统朗读 ——
-             用户只觉得"又听不到千问女声"，界面还毫无提示。
-             streamUrl 由服务端代理转发，全程同源，这两道拦截都不存在。 */
-          var use = j.streamUrl || j.url;
-          if (!use) throw new Error('no audio url');
-          /* 条目上限从 60 提到 120：键里多了音色，同样的句子会按音色各存一份，
-             60 的话实际只能缓存约 15 句，命中率被砍半。 */
-          if (Object.keys(ttsCache).length > 120) ttsCache = Object.create(null);
-          /* 必须用与读取时同一个 key（含音色），否则读新键、写旧键 = 永远不命中 */
-          ttsCache[key] = { url: use, exp: Date.now() + 3600000 };
-          return use;
-        })
-        .catch(function (e) {
-          /* 上游 429 是常态（通义有 QPS 限制）。不能让用户以为是自己操作错了，
-             也不该每句话都弹提示 —— 只在首次记录，方便事后排查。 */
-          if (String(e && e.message).indexOf('tts http 429') >= 0) {
-            if (!ttsBusyNoted) { ttsBusyNoted = true; try { console.warn('[tts] 上游限流，改用本机朗读'); } catch (x) {} }
-          }
-          throw e;
-        }),
-      /* v37：8 秒 → 15 秒，与 timeoutFor 里的 /api/ai/tts 保持一致。
-         两处必须一起改：外层 fetch 超时先到的话，这里根本轮不到；
-         只放宽其中一处症状照旧 —— 这与当初把 TTS 误设成 6 秒是同一个坑。 */
-      new Promise(function (_, rej) { setTimeout(function () { rej(new Error('云端语音超时')); }, 15000); })
-    ]);
+      .catch(function (e) {
+        /* 上游 429 是常态（通义有 QPS 限制）。不能让用户以为是自己操作错了，
+           也不该每句话都弹提示 —— 只在首次记录，方便事后排查。 */
+        if (String(e && e.message).indexOf('tts http 429') >= 0) {
+          if (!ttsBusyNoted) { ttsBusyNoted = true; try { console.warn('[tts] 上游限流，改用本机朗读'); } catch (x) {} }
+        }
+        throw e;
+      });
+    /* v37：8 秒 → 15 秒，与 timeoutFor 里的 /api/ai/tts 保持一致。
+       两处必须一起改：外层 fetch 超时先到的话，这里根本轮不到；
+       只放宽其中一处症状照旧 —— 这与当初把 TTS 误设成 6 秒是同一个坑。 */
+    return Promise.race([real, timedOut]).then(
+      function (v) { if (toT) clearTimeout(toT); _dropTts(acT); return v; },
+      function (e) { if (toT) clearTimeout(toT); _dropTts(acT); throw e; }
+    );
   }
+  /* 从在途集合中摘除已结束的句柄，避免数组无限增长 */
+  function _dropTts(ac) {
+    if (!ac) return;
+    var k = inflightTts.indexOf(ac);
+    if (k >= 0) inflightTts.splice(k, 1);
+  }
+  /* v44：在途合成的取消句柄集合。
+     原来预取是"即发即忘"的 fetch：老人点「停止播报」或切页后，
+     stop() 只 cloudGen++ 并 pause() 音频，**不会取消已发出的 /api/ai/tts**。
+     那次合成的音频没人听，却照样计费 —— 而 TTS 是明确对用户收费的接口。
+     一次长回答最多浪费 4-5 块。这里登记 AbortController，stop() 时统一 abort。 */
+  var inflightTts = [];
+  function abortInflightTts() {
+    if (!inflightTts.length) return;
+    for (var i = 0; i < inflightTts.length; i++) {
+      try { inflightTts[i].abort(); } catch (e) {}
+    }
+    inflightTts = [];
+  }
+
   function speakCloud(text, opts) {
     opts = opts || {};
     var parts = cloudChunks(humanizeForTts(text), 26);
@@ -7904,6 +8105,9 @@ EMC.Voice = (function () {
     speaking = false;
     if (synth) { try { synth.cancel(); } catch (e) {} }
     if (cloud.audio) { try { cloud.audio.pause(); cloud.audio = null; } catch (e) {} }
+    /* v44：连在途的云端合成一起取消。原来的 stop 只停播放，
+       已发出但没人听的 /api/ai/tts 仍会跑完并计费。 */
+    try { abortInflightTts(); } catch (e) {}
     if (stateCb) stateCb(false);
   }
 
@@ -7924,12 +8128,15 @@ EMC.Voice = (function () {
     if (typeof o.cloud === 'boolean') cfg.cloud = o.cloud;
     /* v14：识别引擎（browser / qwen3-0.6b / glm-nano） */
     if (typeof o.asrEngine === 'string') cfg.asrEngine = normalizeEngine(o.asrEngine);
+    /* v43：方言跟随开关。关掉后无论识别到什么方言，朗读都固定用用户选的音色。 */
+    if (typeof o.dialectFollow === 'boolean') cfg.dialectFollow = o.dialectFollow;
   }
   function getConfig() {
     return {
       rate: cfg.rate, volume: cfg.volume, voice: cfg.voice,
       continuous: cfg.continuous,
       cloud: cfg.cloud === true,          // v14：默认关，避免调用付费 API
+      dialectFollow: cfg.dialectFollow !== false,   // v43：缺省按开启处理，避免老设置把功能悄悄关掉
       asrEngine: cfg.asrEngine
     };
   }
@@ -8239,6 +8446,10 @@ EMC.Voice = (function () {
         var j = res.j;
         if (j && j.ok) {
           var txt = String(j.text || '').trim();
+          /* v43：记下这次识别到的方言，后面朗读回答时据此选音色。
+             服务端判定为普通话时给的是 'zh'，currentDialect() 会据此
+             退回普通话音色 —— 即需求里的"识别不到就用普通话"。 */
+          setSessionDialect(j.dialect || 'zh', j.dialectLabel || '');
           cb.onResult && cb.onResult(txt, '');
           cb.onState && cb.onState('done');
           // 识别成功但没听出内容 ≠ 失败：交给调用方提示"没听清"，不再回退
@@ -8378,6 +8589,12 @@ EMC.Voice = (function () {
      * 便于「朗读本条回答」按钮与 QA 脚本复用同一套可读化与分句逻辑。 */
     humanizeForTts: humanizeForTts, splitSegments: splitSegments,
     configure: configure, getConfig: getConfig,
+    /* v43：对外提供方言状态的操作口子（清空 / 查询），
+       供用户中心开关关闭时立刻复位，以及现场排障时确认当前识别成了哪种方言。 */
+    resetDialect: function () { _diaState.dialect = 'zh'; _diaState.label = ''; _diaState.at = 0; },
+    dialectInfo: function () {
+      return { dialect: _diaState.dialect, label: _diaState.label, active: !!currentDialect() };
+    },
     /* v27：语音能力体检（现场 10 秒判断这台手机能不能出声） */
     selfTest: voiceSelfTest,
     dismissVoiceWarn: dismissVoiceWarn,
@@ -8454,6 +8671,9 @@ window.EMCAuth = (function () {
   var authTransition = false;   // 登录/登出/载入过程中的过渡态标志
   var graceUntil = 0;           // 令牌宽限期截止时间戳（ms）
   var lastUnauthorized = 0;     // 最近一次 401 时刻，用于 loadAll 结束后统一处理
+  /* v44：宽限期外的 401（真失效）。与 lastUnauthorized 分开记，
+     因为登录刚成功时旧请求也会 401，只看时间戳无法区分，会误踢刚登上的用户。 */
+  var lastUnauthorizedHard = false;
 
   /** 设置令牌（顺带开启宽限期，防止旧在途请求误清新令牌） */
   function setTokenGrace(token) {
@@ -8466,6 +8686,9 @@ window.EMCAuth = (function () {
 
   /** 统一处理 401：仅在确实无令牌且非过渡态时才触发登出回调（防重入） */
   function handle401() {
+    /* v44：过渡态/宽限期内**照样不清令牌**（登录刚成功时旧请求也会 401，
+       贸然清掉会把用户刚登上的号踢掉），但这次 401 已被 api() 记进
+       lastUnauthorizedHard，交给 endAuthTransition 统一裁决。 */
     if (authTransition) return false;      // 过渡态：静默，交由 loadAll 收尾统一处理
     if (inGrace()) return false;           // 宽限期内：视为旧请求，不清令牌
     if (!getToken()) return false;         // 本来就没令牌，无需再触发
@@ -8476,14 +8699,26 @@ window.EMCAuth = (function () {
 
   /** 供 app.js 在 loadAll 结束后调用：解除过渡态，并按需补一次登出处理 */
   function endAuthTransition() {
+    var wasHard = lastUnauthorizedHard;
     authTransition = false;
-    if (lastUnauthorized && !getToken() && typeof EMCAuth.onLogout === 'function') {
-      var cb = EMCAuth.onLogout;
-      lastUnauthorized = 0;
-      /* 延迟一拍，避免在 loadAll 的调用栈内同步重入 */
-      setTimeout(function () { cb(); }, 0);
-    }
     lastUnauthorized = 0;
+    lastUnauthorizedHard = false;
+    /* v44：原条件是 `lastUnauthorized && !getToken()`，而 handle401 在过渡态里
+       第一行就 return、**根本不会清 token** —— 于是 !getToken() 恒为假，
+       这条补救是**不可达的死代码**。后果不只是"不登出"：
+       令牌失效后界面永远停在"已登录"，并继续把 loadAll 的本地快照
+       当成真实数据显示（老人的用药/血压），而用户与家属都看不出异常。
+       现在改为：只要过渡期内收到过**宽限期外**的 401，就清令牌并登出。
+       宽限期内的假 401（登录后旧请求）由 lastUnauthorizedHard=false 排除，
+       所以不会误伤刚登录的用户。 */
+    if (wasHard && typeof EMCAuth.onLogout === 'function') {
+      var cb = EMCAuth.onLogout;
+      /* 延迟一拍，避免在 loadAll 的调用栈内同步重入 */
+      setTimeout(function () {
+        if (getToken()) setToken(null);
+        cb();
+      }, 0);
+    }
   }
 
   /**
@@ -8492,6 +8727,43 @@ window.EMCAuth = (function () {
    * @param {Object} opts { method, body }
    * @return {Promise<Object>} 解析后的 JSON（附加 _status 字段）
    */
+  /* ==========================================================
+   * v42：云端服务故障的显式提示（2026-10-19 加）
+   * ------------------------------------------------------------
+   * 【要解决的真实问题】函数实例启动失败时，用户打开网站"啥都点不了"，
+   *   而且**看不出任何原因**，只会以为是自己账号坏了。
+   * 【为什么之前没提示】阿里云网关在实例挂掉时**照样返回 HTTP 响应**
+   *   （412 CAExited / 502 / 504），所以走不到下面 api() 里 _status:0 的
+   *   "网络异常"分支；而它的响应体是 {RequestId, Code, Message} 这种形状，
+   *   没有 ok 字段、内容还是英文堆栈。业务代码只看到 r.ok 为假，
+   *   于是每个按钮都停在原地。
+   * 【节流】故障期间用户会连点，30 秒只弹一次，否则提示会糊满整个界面。
+   * ========================================================== */
+  var _sdWarned = 0, _sdBar = null;
+  function warnServiceDown(code) {
+    var now = Date.now();
+    if (now - _sdWarned < 30000) return;
+    _sdWarned = now;
+    if (typeof toast === 'function') {
+      toast('云端服务暂时不可用，正在恢复中，请稍后重试。');
+    }
+    if (_sdBar || !document.body) return;
+    var b = document.createElement('div');
+    b.className = 'service-down-bar';
+    b.setAttribute('role', 'status');
+    b.textContent = '云端服务暂时不可用（正在恢复），联网功能需要稍后才能使用。您的本机记录不会丢失。';
+    /* 内联样式而不写进 CSS：故障提示必须在任何样式表加载失败时也能显示出来 */
+    b.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483000;'
+      + 'background:#8a2b2b;color:#fff;padding:10px 14px;font-size:15px;'
+      + 'line-height:1.5;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.28)';
+    document.body.appendChild(b);
+    _sdBar = b;
+    setTimeout(function () {
+      if (b.parentNode) b.parentNode.removeChild(b);
+      _sdBar = null;
+    }, 60000);
+  }
+
   function api(path, opts) {
     opts = opts || {};
     var method = opts.method || 'GET';
@@ -8508,13 +8780,47 @@ window.EMCAuth = (function () {
         // 401 统一处理：清令牌并触发登出（带过渡态 / 宽限期 / 重入保护）
         if (res.status === 401) {
           lastUnauthorized = Date.now();
+          /* v44：同时记下"这次 401 是否为硬失效"。
+             登录刚成功时，**旧请求**也会返回 401（token 刚换掉），那属于宽限期内的
+             假 401，不能据此登出；而令牌真的过期/失效时同样落在过渡态里，
+             两者都发生在 authTransition=true 期间，光看时间戳区分不了。
+             不加这个标记，endAuthTransition 就只能靠 !getToken() 补救 —— 而它恒为假。 */
+          if (!inGrace()) lastUnauthorizedHard = true;
           handle401();
+        }
+        /* v42：识别云端函数网关级故障并翻译成人话。
+           【为什么不能按状态码硬判】后端有 5 处**业务性** 502/503
+           （语音合成失败、系统繁忙…），它们都带 ok:false，
+           一律报"服务不可用"是错的。网关错误与业务错误唯一可靠的差别
+           就是**有没有 ok 字段**：网关错误形如 {RequestId, Code, Message}。
+           所以下面只用这个特征判定，不会误伤业务错误。 */
+        if (data && typeof data.Code === 'string' && !('ok' in data)) {
+          data.ok = false;
+          data.serviceDown = true;
+          data.message = '云端服务正在恢复，暂时用不了。请稍后重试，您的本机记录不会丢失。';
+          try { warnServiceDown(data.Code); } catch (e) {}
         }
         data._status = res.status;
         return data;
       });
     }).catch(function (err) {
-      return { _status: 0, ok: false, error: '网络异常：' + (err && err.message ? err.message : err) };
+      var emsg = String((err && err.message) ? err.message : (err || ''));
+      /* v42：fetch 自身抛异常时也必须给出能理解的解释。
+         【实测踩到的坑，2026-10-19】云端函数挂掉时，前端**看不到** 412：
+         带 Authorization 头的请求会先发 CORS 预检（OPTIONS），预检拿不到
+         CORS 响应头 → 浏览器直接抛 "Failed to fetch"，
+         JS 层根本拿不到响应体 —— 上面那段「识别网关 Code」的分支压根不会执行。
+         也就是说，用户实际遇到的是这一条路径，而不是那条。
+         若不在这里提示，老人只看到「网络异常」四个字，
+         既不知道是服务挂了，也分不清是不是自己断网。 */
+      var netFail = /failed to fetch|networkerror|load failed|network request failed/i.test(emsg);
+      if (netFail) { try { warnServiceDown('fetch-failed'); } catch (e) {} }
+      return {
+        _status: 0, ok: false, serviceDown: netFail,
+        error: netFail
+          ? '云端服务暂时不可用或网络已断开，请检查网络后重试。您的本机记录不会丢失。'
+          : ('网络异常：' + emsg)
+      };
     });
   }
 
@@ -8783,7 +9089,7 @@ window.EMCStore = (function () {
     function load() {
       if (cache) return cache;
       /* v15：cloudVoice 默认 true —— 千问真实语音优先，合成失败自动回退浏览器朗读；asrEngine 默认本地 Qwen3-ASR-0.6B */
-      var settings = Object.assign({ fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'Cherry', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', /* v21 P2-5：极简模式开关（默认关） */ simpleMode: false }, lsLoad(KEY.settings, {}));
+      var settings = Object.assign({ fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'Cherry', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', /* v21 P2-5：极简模式开关（默认关） */ simpleMode: false, dialectFollow: true }, lsLoad(KEY.settings, {}));
       // v15 一次性迁移：语音升级为「千问真实语音优先」；云端语音默认开启，未自定义语速时放慢到 0.85 更适合老人
       if (!lsLoad('emc_v15_migrated', false)) {
         settings.cloudVoice = true;
@@ -8873,13 +9179,13 @@ window.EMCStore = (function () {
       return true;
     }
 
-    function saveMeds() { lsSave(KEY.meds, cache.meds); }
-    function saveRecords() { lsSave(KEY.records, cache.records); }
-    function saveHealth() { lsSave(KEY.health, cache.health); }
+function saveMeds() { lsSave(KEY.meds, cache.meds); } try { markLocalWrite(); } catch (e) {}
+function saveRecords() { lsSave(KEY.records, cache.records); } try { markLocalWrite(); } catch (e) {}
+function saveHealth() { lsSave(KEY.health, cache.health); } try { markLocalWrite(); } catch (e) {}
     function saveGuardian() { lsSave(KEY.guardian, cache.guardian); }
-    function saveProfile() { lsSave(KEY.profile, cache.profile); }
-    function saveSettings() { lsSave(KEY.settings, cache.settings); }
-    function saveNotify() { lsSave(KEY.notify, cache.notify); }
+function saveProfile() { lsSave(KEY.profile, cache.profile); } try { markLocalWrite(); } catch (e) {}
+function saveSettings() { lsSave(KEY.settings, cache.settings); } try { markLocalWrite(); } catch (e) {}
+function saveNotify() { lsSave(KEY.notify, cache.notify); } try { markLocalWrite(); } catch (e) {}
 
     /* ---- 接口实现 ---- */
     function getSettings() { return Promise.resolve(Object.assign({}, load().settings)); }
@@ -8903,7 +9209,10 @@ window.EMCStore = (function () {
         /* v21 P2-5：极简模式（与 asrEngine 同流程进白名单，游客态亦持久化） */
         simpleMode: (typeof s.simpleMode === 'boolean' ? s.simpleMode : (c.settings.simpleMode === true)),
         /* S-09：服药提醒时刻可自定义，游客态同样持久化 */
-        remindTimes: normalizeRemindTimes(s.remindTimes != null ? s.remindTimes : c.settings.remindTimes)
+        remindTimes: normalizeRemindTimes(s.remindTimes != null ? s.remindTimes : c.settings.remindTimes),
+        /* v44：补上方言跟随开关。此前三处白名单都漏了它，
+           用户在游客态关掉后同样会在刷新时静默回弹成开启。 */
+        dialectFollow: (typeof s.dialectFollow === 'boolean' ? s.dialectFollow : (c.settings.dialectFollow !== false))
       });
       saveSettings();
       return Promise.resolve(true);
@@ -9033,6 +9342,8 @@ window.EMCStore = (function () {
     }
     function getHealth() { return Promise.resolve(load().health.map(function (h) { return Object.assign({}, h); })); }
     function addHealth(rec) {
+  /* v44：标记本地写入，使进行中的后台同步放弃本轮回填（见 kbLiveTick） */
+  try { markLocalWrite(); } catch (e) {}
       var c = load();
       c.health.push(rec);
       var cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 60);
@@ -9043,6 +9354,11 @@ window.EMCStore = (function () {
     }
     function getFamily() { return Promise.resolve(load().guardian.contacts.map(function (x) { return Object.assign({}, x); })); }
     function addFamily(c0) {
+  /* v44（M2）：补写入标记。后台同步会回填 S.guardian.contacts，
+     而竞态护栏只在 kbLocalRev 变化时才放弃回填——
+     记录/health/meds 三个写路径都已补上，恰好家庭这一个漏了：
+     用户在同步窗口内增/改/删紧急联系人，会被旧快照静默覆盖。 */ 
+  try { markLocalWrite(); } catch (e) {}
       var c = load();
       if (c0.id) {
         var f = c.guardian.contacts.filter(function (x) { return x.id === c0.id; })[0];
@@ -9054,6 +9370,11 @@ window.EMCStore = (function () {
       return Promise.resolve(c.guardian.contacts.map(function (x) { return Object.assign({}, x); }));
     }
     function updateFamily(id, patch) {
+  /* v44（M2）：补写入标记。后台同步会回填 S.guardian.contacts，
+     而竞态护栏只在 kbLocalRev 变化时才放弃回填——
+     记录/health/meds 三个写路径都已补上，恰好家庭这一个漏了：
+     用户在同步窗口内增/改/删紧急联系人，会被旧快照静默覆盖。 */ 
+  try { markLocalWrite(); } catch (e) {}
       var c = load();
       var f = c.guardian.contacts.filter(function (x) { return x.id === id; })[0];
       if (f) {
@@ -9065,6 +9386,11 @@ window.EMCStore = (function () {
       return Promise.resolve(c.guardian.contacts.map(function (x) { return Object.assign({}, x); }));
     }
     function deleteFamily(id) {
+  /* v44（M2）：补写入标记。后台同步会回填 S.guardian.contacts，
+     而竞态护栏只在 kbLocalRev 变化时才放弃回填——
+     记录/health/meds 三个写路径都已补上，恰好家庭这一个漏了：
+     用户在同步窗口内增/改/删紧急联系人，会被旧快照静默覆盖。 */ 
+  try { markLocalWrite(); } catch (e) {}
       var c = load();
       c.guardian.contacts = c.guardian.contacts.filter(function (x) { return x.id !== id; });
       saveGuardian();
@@ -9179,9 +9505,12 @@ window.EMCStore = (function () {
     }
     function mapSettingsFrom(s) {
       /* v15：cloudVoice 默认 true（千问真实语音优先，失败自动回退浏览器），用户可在开关里关闭 */
-      if (!s) return { fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'Cherry', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: defaultRemindTimes() };
+      if (!s) return { fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'Cherry', asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: defaultRemindTimes(), dialectFollow: true };
       var fs = 1;
       if (s.fontSize === 'A+') fs = 2; else if (s.fontSize === 'A++') fs = 3;
+      /* v44：补第 4 档。原来只认到 'A++'，第 4 档（特大字）读回来会落回 fs=1，
+         对视力障碍老人等于"选了特大字却变最小字"，且没有任何提示。 */
+      else if (s.fontSize === 'A+++') fs = 4;
       return {
         fs: fs, voice: !!s.tts, theme: (s.theme || null),
         /* v8.1 语音设置：容错回退，避免旧账号缺字段导致 undefined */
@@ -9195,11 +9524,18 @@ window.EMCStore = (function () {
         /* v21 P2-5：极简模式，登录态刷新后不丢 */
         simpleMode: (s.simpleMode === true),
         /* S-09：旧账号无 remindTimes 时回落默认值，避免 undefined 进入提醒逻辑 */
-        remindTimes: normalizeRemindTimes(s.remindTimes)
+        remindTimes: normalizeRemindTimes(s.remindTimes),
+        /* v44：补读 dialectFollow。此前 mapSettingsFrom / mapSettingsTo /
+           LocalStore.setSettings 三处白名单**都**漏了这个字段，
+           于是用户关掉「识别到方言时用方言回答」后，写入时被剥掉、
+           刷新后读回 undefined → `!== false` 判为开启 → **静默回弹**。 */
+        dialectFollow: (s.dialectFollow !== false)
       };
     }
     function mapSettingsTo(s) {
-      var map = ['', 'A', 'A+', 'A++'];
+      /* v44：补第 4 档。原来只有 4 个元素（索引 0-3），map[4] 是 undefined，
+         落到 `|| 'A'` —— 存的是"特大字"，读回来却变成最小字。 */
+      var map = ['', 'A', 'A+', 'A++', 'A+++'];
       return {
         /* S-09：提醒时刻透传（此前硬编码 defaultRemindTimes()，等于永远无法自定义） */
         fontSize: map[s.fs] || 'A', tts: !!s.voice, theme: (s.theme || null),
@@ -9213,7 +9549,9 @@ window.EMCStore = (function () {
         /* v14：识别引擎与云端开关对称透传，登录态刷新后不丢 */
         asrEngine: (typeof s.asrEngine === 'string' ? s.asrEngine : 'qwen3-0.6b'),
         /* v21 P2-5：极简模式对称透传 */
-        simpleMode: (s.simpleMode === true)
+        simpleMode: (s.simpleMode === true),
+        /* v44：与 mapSettingsFrom 对称，补上此前遗漏的方言跟随开关 */
+        dialectFollow: (s.dialectFollow !== false)
       };
     }
 
@@ -9511,6 +9849,33 @@ EMC.Care = (function () {
   var BY_FAMILY_TAG = '由家属代录';
   var reminderShown = {};
   var remindCounts = {};   /* 漏服递增多提醒：{n 已提醒次数, last 上次时刻} */
+  /* v44：这三个对象都以「日期+时段」为键，而**跨天从不清空**。
+     老人常常整日不关页面，于是每过一天、每个时段各多一条，
+     三个对象缓慢无界增长；更实际的问题是：万一同一浏览器不关过夜，
+     第二天 reminderShown 里残留的旧键已不参与判断，但内存一直在涨。
+     这里在渲染/检查提醒前顺手清掉非今天与已过期的键。 */
+  function pruneReminderState() {
+    try {
+      var today = E.fmtDate(new Date());
+      var nowT = Date.now();
+      /* 直接引用变量而不是 window[name]：这两个是 IIFE 内的局部 var，
+         挂不到 window 上（第一版就是这么写错的，等于什么都没清）。 */
+      var maps = [reminderShown, remindCounts];
+      for (var mi = 0; mi < maps.length; mi++) {
+        var o = maps[mi];
+        if (!o) continue;
+        for (var k in o) {
+          if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
+          /* 键形如 '2026-10-19morning'，取前 10 位即日期 */
+          if (String(k).slice(0, 10) !== today) delete o[k];
+        }
+      }
+      for (var sk in snoozeUntil) {
+        if (!Object.prototype.hasOwnProperty.call(snoozeUntil, sk)) continue;
+        if (Number(snoozeUntil[sk] || 0) <= nowT) delete snoozeUntil[sk];
+      }
+    } catch (e) { /* 清理失败不影响提醒主流程 */ }
+  }
   /* D-12 / S-13：「稍后提醒」冷静期。key = 'YYYY-MM-DD'+slotKey，值 = 到期时间戳。
    * 老人点「稍后提醒」/ ESC / ✕ 关闭后，同一时段在到期前不再自动弹出。 */
   var snoozeUntil = {};
@@ -9584,6 +9949,20 @@ EMC.Care = (function () {
  *   两者都能阻止属性截断；单引号常被遗忘是因为多数属性用双引号，
  *   但代码里也有单引号属性的写法，且未来新增代码容易踩坑。
  * ========================================================== */
+  /* v44（H1）：药品照片 src 的**唯一白名单函数**。
+     之前只在 showImportPreview 里做了严格校验，而另外两处渲染点
+     （今日计划视图的 plan-photo、到点强提醒全屏弹层的 rem-photo）
+     仍只用 `indexOf('data:image/') === 0` 这个极弱判断 —— 它不排除引号，
+     一个 `data:image/png" onerror="alert(1)` 就能闭合属性、注入事件处理器。
+     而页面 CSP 的 script-src 含 'unsafe-inline'，恰好挡不住属性注入；
+     提醒弹层还是全屏 modal，用户必然触发。
+     现在三处统一走这个函数，不再各写一套。 */
+  function safeImgSrc(v) {
+    var s = String(v || '');
+    if (!/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/.test(s)) return '';
+    if (s.length > 400000) return '';
+    return s;
+  }
   function esc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;')
@@ -9726,7 +10105,15 @@ EMC.Care = (function () {
   /* v20 默认兜底值：任一接口失败时按字段回退，保证 S 各字段结构完整，renderAll 不会因 undefined 崩 */
   var FALLBACK_SETTINGS = {
     fs: 1, voice: true, theme: null, ttsRate: 0.9, ttsVolume: 1, ttsVoice: 'Cherry',
-    asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false, remindTimes: ['08:00', '12:00', '18:00']
+    /* v44：remindTimes 原先是**数组** ['08:00','12:00','18:00']，与全站其它地方
+       用的对象 {morning,noon,evening,bedtime} 不是一回事。
+       normalizeRemindTimes 里 `typeof t !== 'object'` 会把数组一并放行，
+       接着按 morning/noon/... 逐键取到的全是 undefined，又回落默认值 ——
+       表面无害，实则这里拿到的永远是"默认值"而非兜底值，是个定时炸弹。
+       同时补上 dialectFollow（此前也漏了）。 */
+    asrContinue: true, cloudVoice: true, asrEngine: 'qwen3-0.6b', simpleMode: false,
+    remindTimes: { morning: '08:00', noon: '12:00', evening: '18:00', bedtime: '21:00' },
+    dialectFollow: true
   };
   var FALLBACK_PROFILE = { name: '', age: '', gender: '', username: '', notifyEnabled: true };
 
@@ -9852,7 +10239,10 @@ EMC.Care = (function () {
       /* v14：默认关闭云端语音（避免调用付费 API）；用户显式开启后才走千问 */
       cloud: S.settings.cloudVoice === true,
       /* v14：识别引擎，默认本地 Qwen3-ASR-0.6B；本地不可用自动回退浏览器 */
-      asrEngine: S.settings.asrEngine || 'qwen3-0.6b'
+      asrEngine: S.settings.asrEngine || 'qwen3-0.6b',
+      /* v43：方言跟随默认开。写 `!== false` 而不是 `=== true`，
+         这样老用户本地没有这个字段时也能用上方言，而不是被当成"关闭"。 */
+      dialectFollow: S.settings.dialectFollow !== false
     });
     /* v27：语音模块（独立 IIFE）需要弹提示，通过 window.__kbToast 桥接到这里的 toast */
     window.__kbToast = toast;
@@ -10214,6 +10604,42 @@ EMC.Care = (function () {
     document.querySelectorAll('[data-tab]').forEach(function (b) {
       b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
     });
+    /* v44（F-14）：底部导航补**方向键**切换。
+       role="tablist" 已经声明了 tab 语义，但键盘用户只能一个一个 Tab 过去，
+       读屏也会按 ARIA 规范期待左右方向键能在 tab 间移动（roving tabindex）。
+       这里补上 ← → ↑ ↓ / Home / End，并只让当前选中的 tab 进入 Tab 序列，
+       与 ARIA 规范一致。结构上不引入 role="tabpanel"（那要给 8 个面板
+       逐一补 id 与 role，改动面大而收益有限），先解决键盘可达性。 */
+    try {
+      var tabList = document.querySelector('[role="tablist"]');
+      if (tabList) {
+        tabList.addEventListener('keydown', function (e) {
+          var keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
+          if (keys.indexOf(e.key) < 0) return;
+          var tabs = Array.prototype.slice.call(tabList.querySelectorAll('[role="tab"]'));
+          if (!tabs.length) return;
+          e.preventDefault();
+          var cur = tabs.indexOf(document.activeElement);
+          if (cur < 0) cur = Math.max(0, tabs.findIndex(function (t) { return t.classList.contains('on'); }));
+          var next = cur;
+          if (e.key === 'Home') next = 0;
+          else if (e.key === 'End') next = tabs.length - 1;
+          else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (cur + 1) % tabs.length;
+          else next = (cur - 1 + tabs.length) % tabs.length;
+          var t = tabs[next];
+          try { switchTab(t.getAttribute('data-tab')); } catch (x) {}
+          try { t.focus(); } catch (x2) {}
+        });
+        /* roving tabindex：只有当前 tab 可 Tab 进入 */
+        var syncTabIndex = function () {
+          Array.prototype.slice.call(tabList.querySelectorAll('[role="tab"]')).forEach(function (t) {
+            t.setAttribute('tabindex', t.classList.contains('on') ? '0' : '-1');
+          });
+        };
+        syncTabIndex();
+        tabList.addEventListener('click', function () { setTimeout(syncTabIndex, 0); });
+      }
+    } catch (e) { /* 键盘增强失败不影响点击切换 */ }
     var fs = $id('btnFs');
     fs.addEventListener('click', function () {
       /* v19 P0-5：4 档循环（小/中/大/特大），并语音+Toast 播报当前档位 */
@@ -10468,7 +10894,9 @@ EMC.Care = (function () {
           ? '<span class="pill pending" style="opacity:.7">⏳ ' + esc(r.time || '') + ' 后可打卡</span>'
           : '<button class="btn sm" style="background:#2e7d32;color:#fff" data-sp-taken="' + r.id + '">✅ 已服用</button><button class="btn sm gray" data-sp-missed="' + r.id + '">没吃</button>');
       var mm2 = S.meds.filter(function (x) { return x.mid === r.mid; })[0];
-      var ph2 = mm2 && typeof mm2.photo === 'string' && mm2.photo.indexOf('data:image/') === 0 ? '<img class="plan-photo" src="' + mm2.photo + '" alt="药盒照片">' : '';
+      /* v44（H1）：用白名单后的值拼接，不要用原始 mm2.photo */
+      var ph2v = mm2 ? safeImgSrc(mm2.photo) : '';
+      var ph2 = ph2v ? '<img class="plan-photo" src="' + ph2v + '" alt="药盒照片">' : '';
       return '<div class="plan-item"><span class="plan-time">' + esc(r.time || '—') + '</span>' + ph2 + '<span class="plan-name">' + esc(nm) + '</span>' + st + '</div>';
     }).join('');
     box.querySelectorAll('[data-sp-taken]').forEach(function (b) {
@@ -11792,6 +12220,20 @@ EMC.Care = (function () {
       return n + ':' + (h >>> 0);
     } catch (e) { return ''; }
   }
+  /* v44：本地写入标记。
+     90 秒后台同步原本是「拉回来整体替换」S.records / S.meds / S.health，
+     没有任何在途写保护。于是慢网下出现这个真实可复现的丢数据场景：
+       ① 用户点「已服用」→ 立刻回显记录成功；
+       ② 1 秒前就发出的 getRecords 此刻才返回，里面**没有**刚写的这条；
+       ③ 整体替换 → 刚记的那一条在界面上凭空消失，
+          要等下一个 90 秒同步或刷新页面才可能回来。
+     老人会以为"没记上"，于是重复点击、反复确认。
+     现在用单调递增的版本号：同步开始时取快照，结束时若版本已变，
+     说明期间有本地写入，本次**放弃回填**，等下一轮 —— 宁可晚 90 秒，
+     也不能用旧数据覆盖用户刚写的内容。 */
+  var kbLocalRev = 0;
+  function markLocalWrite() { try { kbLocalRev++; } catch (e) {} }
+
   async function kbLiveTick() {
     try {
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -11800,6 +12242,7 @@ EMC.Care = (function () {
       if (!kbLiveSyncing && EMCAuth.isLoggedIn() && now - kbLiveLastSync > 90000) {
         kbLiveLastSync = now;
         kbLiveSyncing = true;
+        var revAtStart = kbLocalRev;
         try {
           /* ==========================================================
            * v28「共享数据」关键修复：原来这里**只同步 records 和 meds**。
@@ -11813,6 +12256,15 @@ EMC.Care = (function () {
           var meds = await store.getMeds();
           var health = await store.getHealth();
           var fam = await store.getFamily();
+          /* v44：同步期间发生过本地写入 → 本轮放弃回填。
+             这几个请求是一路并发发出去的，用户完全可能在它们返回之前
+             又点了一次「已服用」或改了药。此时拿回来的快照**不含**那次写入，
+             整体替换就会把用户刚写的内容抹掉。 */
+          if (kbLocalRev !== revAtStart) {
+            try { console.info('[sync] 同步期间有本地写入，本轮放弃回填以免覆盖刚写的内容'); } catch (e) {}
+            kbLiveSyncing = false;
+            return;
+          }
           var dirty = [];
           /* v35：指纹只算一次并存进局部变量复用（原来整体调了两遍） */
           var fpR = kbFp(recs);
@@ -11841,9 +12293,17 @@ EMC.Care = (function () {
             }
           }
           if (dirty.length) {
-            try { renderMeds(); renderHome(); renderOverview(); } catch (e2) {}
-            try { renderHealth(); } catch (e3) {}
-            try { renderGuardian(); } catch (e4) {}
+            /* v44：渲染失败必须留痕，而且**不能算作"已同步"**。
+               原来四个渲染调用各包一个空 catch(e2){}：万一某处抛错，
+               数据其实已经拉到本地了，但界面没更新 —— 而紧接着那句
+               toast('已同步子女那边的更新：…') 照样会弹。
+               于是出现"提示说已同步、界面却没变"，老人和家属都会以为
+               数据没同步过来，反复刷新。更糟的是现场根本查不到原因
+               （异常被吞、连 console 都没有）。 */
+            var renderFailed = [];
+            try { renderMeds(); renderHome(); renderOverview(); } catch (e2) { renderFailed.push('main:' + (e2 && e2.message)); }
+            try { renderHealth(); } catch (e3) { renderFailed.push('health:' + (e3 && e3.message)); }
+            try { renderGuardian(); } catch (e4) { renderFailed.push('guardian:' + (e4 && e4.message)); }
             renderCockpit();
             /* 逐类发事件，让订阅者各自渲染（驾驶舱已订阅 meds/health/guardian） */
             dirty.forEach(function (k) { try { Bus.emit(k === 'records' ? 'checkin' : k, { remote: true }); } catch (e5) {} });
@@ -11851,7 +12311,13 @@ EMC.Care = (function () {
             /* v28：远端有更新时明确告诉用户，而不是静默刷新让人以为没生效 */
             try {
               var names = { records: '服药记录', meds: '药品', health: '健康记录', guardian: '紧急联系人' };
-              toast('已同步子女那边的更新：' + dirty.map(function (k) { return names[k] || k; }).join('、'));
+              if (renderFailed.length) {
+                /* 渲染失败时不说"已同步" —— 界面确实没变，撒谎比不提示更糟 */
+                try { console.warn('[sync] 渲染失败', renderFailed); } catch (e) {}
+                toast('已收到更新，但界面没能刷新，请下拉刷新一下页面');
+              } else {
+                toast('已同步子女那边的更新：' + dirty.map(function (k) { return names[k] || k; }).join('、'));
+              }
             } catch (e6) {}
           }
         } catch (e) { /* 静默失败不影响本地使用 */ }
@@ -12247,7 +12713,7 @@ EMC.Care = (function () {
       alert.innerHTML = lowMeds.length ? '<div class="refill-alert">🔔 余药不足：' +
         lowMeds.map(function (m) {
           var dr = E.drugOf(m.mid), days = Math.floor(m.remain / ((m.slots || []).length || 1));
-          return (dr ? dr.name : m.mid) + (m.remain <= 0 ? ' 已吃完' : ' 还可约 ' + Math.max(1, days) + ' 天');
+          return (dr ? dr.name : esc(m.mid)) + (m.remain <= 0 ? ' 已吃完' : ' 还可约 ' + Math.max(1, days) + ' 天');
         }).join('；') + '，请及时补充。</div>' : '';
     }
 
@@ -12261,7 +12727,7 @@ EMC.Care = (function () {
         '　<span class="muted">' + slot.range + '</span><span class="cnt">' + done + ' / ' + items.length + ' 已处理</span></div>';
       items.forEach(function (r) {
         var dr = E.drugOf(r.mid);
-        html += '<div class="med-item"><div class="info"><div class="nm">' + (dr ? dr.name : r.mid) + '</div>' +
+        html += '<div class="med-item"><div class="info"><div class="nm">' + (dr ? dr.name : esc(r.mid)) + '</div>' +
           '<div class="ds">' + (dr ? dr.dose : '') + (r.note ? ' · ' + esc(r.note) : '') + '</div></div>' +
           '<div class="actions">' + statusHtml(r) + '</div></div>';
       });
@@ -12315,12 +12781,12 @@ EMC.Care = (function () {
       var cdz = dk ? EMC.chronicOf(dk) : null;
       var disHtml = cdz ? ' <span class="pill dis-tag">' + esc(cdz.icon + ' ' + cdz.name) + '</span>' : '';
       var famHtml = m.byFamily ? ' <span class="pill fam-tag">' + esc(BY_FAMILY_TAG) + '</span>' : '';
-      return '<div class="med-row"><div class="info"><div class="nm">' + (dr ? dr.name : m.mid) + disHtml + famHtml + '</div>' +
+      return '<div class="med-row"><div class="info"><div class="nm">' + (dr ? dr.name : esc(m.mid)) + disHtml + famHtml + '</div>' +
         '<div class="ds">每次 ' + perN + ' 片/粒 · 每日 ' + freqN + ' 次 · ' + m.slots.map(function (s) {
           var tv = m.times && m.times[s];
-          return EMC.slotOf(s).label + (tv ? ' ' + tv : '');
+          return EMC.slotOf(s).label + (tv ? ' ' + esc(tv) : '');
         }).join('、') +
-        (m.start || m.end ? ' · 疗程 ' + (m.start || '现在') + ' ~ ' + (m.end || '长期') : '') +
+        (m.start || m.end ? ' · 疗程 ' + esc(m.start || '现在') + ' ~ ' + esc(m.end || '长期') : '') +
         (m.note ? ' · ' + esc(m.note) : '') + '</div>' + adhHtml +
         '<div class="rem-row">' + remHtml + warn + refillBtn + guideBtn + '</div></div>' +
         editBtn +
@@ -12342,7 +12808,7 @@ EMC.Care = (function () {
         var freqN2 = (typeof g.freqTimes === 'number' && g.freqTimes > 0) ? g.freqTimes : ((g.slots || []).length || 1);
         var msg = (E.medKnowledge ? (E.medKnowledge(g.mid) || '') : '') || ((g.name || '') + '，请按医嘱服用');
         msg += '。您目前的用法是：每次 ' + perN2 + ' 片，每日 ' + freqN2 + ' 次' +
-          (g.slots && g.slots.length ? '，主要在' + g.slots.map(function (s) { var tv = g.times && g.times[s]; return EMC.slotOf(s).label + (tv ? ' ' + tv + ' 左右' : ''); }).join('、') + '服用' : '') + '。' +
+          (g.slots && g.slots.length ? '，主要在' + g.slots.map(function (s) { var tv = g.times && g.times[s]; return EMC.slotOf(s).label + (tv ? ' ' + esc(tv) + ' 左右' : ''); }).join('、') + '服用' : '') + '。' +
         (g.start || g.end ? ('这个药的服用日期是从 ' + (g.start || '现在') + ' 到 ' + (g.end || '长期') + '。') : '') +
           (typeof g.remain === 'number' ? ('现在还剩 ' + g.remain + ' 片，约够吃 ' + Math.ceil(g.remain / (perN2 * freqN2)) + ' 天' + (g.remain <= perN2 * freqN2 * 7 ? '，请提前补充。' : '。')) : '');
         V.speak(msg);
@@ -12419,6 +12885,8 @@ EMC.Care = (function () {
   /* 统一处理打卡状态并同步余量（经 store）
    * act：taken / missed / pending；fromReminder：是否来自到点提醒弹窗（避免重复弹反馈卡） */
   async function doCheckin(r, act, fromReminder, byFamily) {
+  /* v44：标记本地写入，使进行中的后台同步放弃本轮回填（见 kbLiveTick） */
+  try { markLocalWrite(); } catch (e) {}
     /* ---------- v38 到点闸门 ----------
      * 原实现：`act` 是 taken 或 missed 一律要求已到点，否则直接拒绝。
      * 问题（真实场景，非理论）：早餐药时段 08:00，老人 07:00 就吃了饭吃了药，
@@ -12709,6 +13177,8 @@ EMC.Care = (function () {
     try { V.speak('提醒一下：这个药和您现在的药可能有相互作用，建议先问医生或药师。您可以点取消添加，或者仍然添加。'); } catch (e) {}
   }
   async function saveMedCore() {
+  /* v44：标记本地写入，使进行中的后台同步放弃本轮回填（见 kbLiveTick） */
+  try { markLocalWrite(); } catch (e) {}
     if (!S.picked) { alert('请先搜索并选择药品'); return; }
     var boxes = document.querySelectorAll('#medSlots input:checked');
     var slots = [];
@@ -13747,7 +14217,7 @@ EMC.Care = (function () {
       rows.map(function (r) {
         var dr = E.drugOf(r.mid);
         var st = r.status === 'taken' ? '<span class="pill taken">已服</span>' : (r.status === 'missed' ? '<span class="pill missed">漏服</span>' : '<span class="pill pending">待服</span>');
-        return '<tr><td>' + r.date + '</td><td>' + EMC.slotOf(r.slot).label + '</td><td>' + (dr ? dr.name : r.mid) + '</td><td>' + st + '</td><td>' + (r.time || '-') + '</td></tr>';
+        return '<tr><td>' + esc(r.date) + '</td><td>' + EMC.slotOf(r.slot).label + '</td><td>' + (dr ? dr.name : r.mid) + '</td><td>' + st + '</td><td>' + (r.time || '-') + '</td></tr>';
       }).join('') + '</tbody></table></div>' +
       '<div class="small muted" style="margin-top:8px">数据保存在本机浏览器（游客）或云端账号（登录）中，可导出为 CSV 用于调研统计，也可提供给社区医生参考。</div></div>';
   }
@@ -13820,7 +14290,7 @@ EMC.Care = (function () {
     mask.className = 'reminder-full adr-mask';
     mask.setAttribute('role', 'dialog'); mask.setAttribute('aria-modal', 'true');
     mask.innerHTML = '<button class="rem-close" id="adrClose" aria-label="稍后再问">✕ 稍后</button>' +
-      '<div class="rem-body"><h3 class="rem-title">🩺 今天吃药后，身体有没有不舒服？' + (addr === '您' ? '' : ('，' + addr)) + '</h3>' +
+      '<div class="rem-body"><h3 class="rem-title">🩺 今天吃药后，身体有没有不舒服？' + (addr === '您' ? '' : ('，' + esc(addr))) + '</h3>' +
       '<div class="rem-actions" style="margin-top:14px">' +
       '<button class="btn-lg" id="adrNone">😊 没有不舒服</button>' +
       '<button class="btn-lg" id="adrMild" style="background:#f0a020;color:#fff">😐 有一点</button>' +
@@ -13828,26 +14298,48 @@ EMC.Care = (function () {
       '<div class="small muted" style="margin-top:10px">每天问一次，帮您盯住药物不良反应；结果会进健康档案和家属周报。</div></div>';
     document.body.appendChild(mask);
     function closeM() { if (document.body.contains(mask)) document.body.removeChild(mask); V.stop(); }
+    /* v44：把"已记上/没记上"的真相交给调用方，别再一律说成功。
+       原来在请求发出**之前**就写 kb_adr_done_v1，而写入失败被空 catch 吞掉，
+       三重后果：① 老人听到"已记录"，库里其实什么都没有，事后无人复查；
+       ② 静默无提示；③ 标记已生效 → 当天再也不会被问一次，
+       不良反应监测被整段跳过，家属周报里也不会出现。
+       不良反应是本产品最不该丢的数据，宁可如实告知也不要谎报。 */
     function saveAdr(val, sym, mid) {
       var key = E.fmtDate(new Date());
-      try { localStorage.setItem('kb_adr_done_v1', key); } catch (e) {}
       /* v38：sym（症状）与 mid（关联药品）**独立成字段**，不再塞进 note。
          之前症状混在备注里，3 年后只能看原始文本，没法统计
          「头晕出现过几次、哪种药最可疑」—— 而这正是用药安全最该盯的。 */
-      store.addHealth({
+      return store.addHealth({
         type: 'adr', date: key, time: new Date().toTimeString().slice(0, 5),
         val: val, sym: (sym || '').slice(0, 40), mid: (mid || '').slice(0, 60),
         note: sym || ''
       }).then(function (hs) {
         S.health = hs;
         if (S.tab === 'health') renderHealth();
-      }).catch(function () {});
+        try { localStorage.setItem('kb_adr_done_v1', key); } catch (e) {}
+        return { ok: true };
+      }).catch(function (err) {
+        /* 没记上就必须让用户知道，并且保证下次还能被询问 */
+        try { localStorage.removeItem('kb_adr_done_v1'); } catch (e) {}
+        try { console.warn('[adr] 记录失败', err); } catch (e) {}
+        try { if (window.__kbToast) window.__kbToast('这条不舒服没能记上，请稍后再试，或告诉家里人'); } catch (e) {}
+        return { ok: false, err: err };
+      });
+    }
+    /* 统一播报：按真实结果说话 */
+    function adrSaid(okMsg, r) {
+      var failMsg = '不好意思，刚才没能记上。请稍后再试一次，或者告诉家里人。';
+      if (r && typeof r.then === 'function') {
+        r.then(function (res) { V.speak(res && res.ok ? okMsg : failMsg); });
+      } else {
+        V.speak(okMsg);
+      }
     }
     document.getElementById('adrClose').addEventListener('click', function () { closeM(); });
     document.getElementById('adrNone').addEventListener('click', function () {
-      saveAdr('none');
+      var r = saveAdr('none');
       closeM();
-      V.speak((addr === '您' ? '好的' : addr + '，好的') + '，没有不舒服就好。今天也请按时吃药，明天我再接着问您。');
+      adrSaid((addr === '您' ? '好的' : addr + '，好的') + '，没有不舒服就好。今天也请按时吃药，明天我再接着问您。', r);
     });
     function askSymptom(severe) {
       var body = mask.querySelector('.rem-body');
@@ -13881,20 +14373,37 @@ EMC.Care = (function () {
         '<button class="btn-lg" id="adrSkipMed">跳过</button>' +
         '<button class="btn-lg" id="adrNoCause" style="background:#5cb85c;color:#fff">都不是</button></div>';
       function finish(mid) {
-        saveAdr(severe ? 'severe' : 'mild', sym, mid);
+        var r = saveAdr(severe ? 'severe' : 'mild', sym, mid);
         closeM();
         var dl = E.drugOf(mid);
         var dlName = dl ? dl.name : '';
+        var okText, sayText;
         if (severe) {
-          V.speak('谢谢您告诉我。' + sym + (dlName ? '，可能和' + dlName + '有关' : '') +
-            '。建议今天就联系医生，或让家人陪您去。家人周报里也会看到。');
-          toast('已记录：明显不适（' + sym + (dlName ? ' · ' + dlName : '') + '）。建议联系医生');
+          okText = '已记录：明显不适（' + sym + (dlName ? ' · ' + dlName : '') + '）。建议联系医生';
+          sayText = '谢谢您告诉我。' + sym + (dlName ? '，可能和' + dlName + '有关' : '') +
+            '。建议今天就联系医生，或让家人陪您去。家人周报里也会看到。';
         } else {
-          V.speak('好的，' + sym + '属于轻微反应' + (dlName ? '，先留意一下' + dlName : '') +
-            '。多喝水多休息，如果明天还有，请告诉家人或医生。');
-          toast('已记录：轻微不适（' + sym + (dlName ? ' · ' + dlName : '') + '）');
+          okText = '已记录：轻微不适（' + sym + (dlName ? ' · ' + dlName : '') + '）';
+          sayText = '好的，' + sym + '属于轻微反应' + (dlName ? '，先留意一下' + dlName : '') +
+            '。多喝水多休息，如果明天还有，请告诉家人或医生。';
         }
-        try { guardianAutoCheck(true); } catch (e) {}
+        function showOk() {
+          V.speak(sayText);
+          toast(okText);
+          /* v44：家属自动核对只在真的记上之后做，
+             否则家属侧会被"自动对齐"到一条并不存在的不适记录上。 */
+          try { guardianAutoCheck(true); } catch (e) {}
+        }
+        /* v44：文案跟着真实结果走。原来 toast 无条件写"已记录…"
+           并立即提醒联系医生 —— 保存失败时这是对老人的误导。 */
+        if (r && typeof r.then === 'function') {
+          r.then(function (res) {
+            if (res && res.ok) { showOk(); return; }
+            V.speak('不好意思，刚才没能记上。请稍后再试一次，或者告诉家里人。');
+          });
+        } else {
+          showOk();
+        }
       }
       body.querySelectorAll('.adr-mid').forEach(function (b) {
         b.addEventListener('click', function () { finish(b.getAttribute('data-mid') || ''); });
@@ -13987,11 +14496,39 @@ EMC.Care = (function () {
     try { fetch('/api/track', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ evt: evt }), cache: 'no-store' }).catch(function () {}); } catch (e) {}
   }
 
+  /* v44：时刻窗口判定。
+     原来直接用 Math.abs(hh - t) <= 1.2，而 hh 只在 0..24 上取值，
+     于是 23:50 与 00:10 这类**跨午夜**的相邻时刻差值高达 23.6，恒不成立 ——
+     深夜/凌晨剂型被彻底静默。
+     改用循环分钟差：取 |d| 与 24-|d| 的较小者。 */
+  function hourNear(hh, target) {
+    var d = Math.abs(hh - target);
+    return Math.min(d, 24 - d) <= 1.2;
+  }
+
   function checkReminder() {
     var now = new Date(), hh = now.getHours() + now.getMinutes() / 60;
     var key = E.fmtDate(now);
+    /* v44：先清掉昨天与已过期的提醒状态，避免长开页面时无界增长 */
+    pruneReminderState();
     EMC.SLOTS_USER.forEach(function (slot) {
-      if (Math.abs(hh - slot.remindHour) > 1.2) return;
+      var slotHit = hourNear(hh, slot.remindHour);
+      /* v44：原来这里是 `if (Math.abs(hh - slot.remindHour) > 1.2) return;`，
+         等于让「时段默认时刻」一票否决 —— 老人把某药单独设成 09:00、
+         而「早上」时段默认 07:00（差 2h）时，那个药**永远不会被提醒**：
+         该吃的药彻底静默，而家属端仍按 pending 统计，反过来误报漏服。
+         现在改为**并集**：时段默认窗口命中，或该时段下任一药品的
+         自定义时刻落在窗口内，都进入提醒判定。 */
+      if (!slotHit) {
+        for (var mi = 0; mi < S.meds.length; mi++) {
+          var m0 = S.meds[mi];
+          var ct0 = m0 && m0.times && m0.times[slot.key];
+          if (!ct0) continue;
+          var p0 = String(ct0).split(':');
+          if (hourNear(hh, (Number(p0[0]) || 0) + (Number(p0[1]) || 0) / 60)) { slotHit = true; break; }
+        }
+      }
+      if (!slotHit) return;
       var sk = key + slot.key;
       // D-12 / S-13：用户点过「稍后提醒」后，本时段在 snoozeUntil 之前不再重复弹
       if (snoozeUntil[sk] && Date.now() < snoozeUntil[sk]) return;
@@ -14009,7 +14546,7 @@ EMC.Care = (function () {
         if (!ct) return true;
         var hm = String(ct).split(':');
         var ch = (Number(hm[0]) || 0) + (Number(hm[1]) || 0) / 60;
-        return Math.abs(hh - ch) <= 1.2;
+        return hourNear(hh, ch);   // v44：循环差，跨午夜不再恒不成立
       });
       if (!items.length) return;
       rc.n++; rc.last = Date.now();
@@ -14061,7 +14598,8 @@ EMC.Care = (function () {
     var next = E.nextDoseFull({ meds: ctxMeds });
     var footer = next
       ? ('📅 今日剩余还需服用：' + next.slot.label + ' ' +
-        next.names.map(function (n) { return n.name + '（' + n.dose + '）'; }).join('、'))
+    /* v44: footer 里的药名/剂量用 esc - 存储型 XSS（同弹层列表项已用 esc，仅 footer 漏） */
+next.names.map(function (n) { return esc(n.name) + '（' + esc(n.dose) + '）'; }).join('、'))
       : '📅 今日用药已全部完成，您做得非常好！';
     var addr = addressText();
     var speakText = (addr === '您' ? '该吃药了。' : addr + '，该吃药了。') + nameList.join('，') + '。请按时服用，服完后点击已服用。' +
@@ -14078,13 +14616,17 @@ EMC.Care = (function () {
     // D-12 需求 3：关闭按钮改为带文字的明显按钮（不再是易被漏找的无文字小 ✕）
     mask.innerHTML = '<button class="rem-close" id="remClose" title="关闭并在 10 分钟内不再提醒" ' +
       'aria-label="关闭提醒，10 分钟内不再提醒">✕ 关闭</button>' +
-      '<div class="rem-body"><h3 class="rem-title">⏰ 该吃药啦' + (addr === '您' ? '' : ('，' + addr)) + (repeatN >= 2 ? ('（第' + repeatN + '次提醒）') : '') + '</h3>' +
+      /* v44（M1）：同上，addr 需要转义 */
+      '<div class="rem-body"><h3 class="rem-title">⏰ 该吃药啦' + (addr === '您' ? '' : ('，' + esc(addr))) + (repeatN >= 2 ? ('（第' + repeatN + '次提醒）') : '') + '</h3>' +
       '<div class="muted">当前时段：' + slot.icon + ' ' + slot.label + '　' + slot.range + '</div>' +
       '<div class="rem-list">' + names.map(function (n, ni) {
         var src = (items.length ? items[ni] : S.meds[ni]);
         var mm = src ? S.meds.filter(function (x) { return x.mid === src.mid; })[0] : null;
         var ph = mm && typeof mm.photo === 'string' && mm.photo.indexOf('data:image/') === 0;
-        return '<div>' + (ph ? '<img class="rem-photo" src="' + mm.photo + '" alt="药盒照片">' : '') + '· ' + esc(n) + '</div>';
+        /* v44（H1）：用 safeImgSrc 替代原先的 indexOf('data:image/') 判断。
+       这里是**到点强提醒的全屏弹层**，用户必然触发，
+       一个被派造的 photo 字段就能在这里注入事件处理器。 */
+    return '<div>' + (ph && safeImgSrc(mm.photo) ? '<img class="rem-photo" src="' + safeImgSrc(mm.photo) + '" alt="药盒照片">' : '') + '· ' + esc(n) + '</div>';
       }).join('') + '</div>' +
       '<div class="rem-footer">' + footer + '</div>' +
       '<div class="rem-actions">' +
@@ -14513,6 +15055,17 @@ EMC.Care = (function () {
       '<div class="form-row"><label class="switch-row">使用云端语音（通义千问，会调用付费接口）' +
         '<input type="checkbox" id="ucCloud" ' + (S.settings.cloudVoice === true ? 'checked' : '') + '></label></div>' +
       '<div class="notice-family" id="ucCloudTip">已开启时，播报由服务器代为合成（密钥不下发到本机，会产生少量接口费用）；关闭后改用手机自带语音，部分国产手机可能没声音。点上方「🔊 测一下能不能说话」可现场自检。</div>' +
+      /* v43 方言跟随：老人说方言就用方言念回答。文字仍是普通话书面语，
+         只有**声音**换成方言 —— 老人听得亲切，又不会因为不识方言字而读不懂。 */
+      '<div class="form-row"><label class="switch-row">识别到方言时，用方言回答（四川话、粤语、闽南话等）' +
+        '<input type="checkbox" id="ucDialect" ' + (S.settings.dialectFollow !== false ? 'checked' : '') + '></label></div>' +
+      /* v44（F-7）：如实说明依赖条件。方言**只在云端语音（千问）下生效** ——
+         浏览器自带 speechSynthesis 没有方言音色。而 cloudVoice 一旦为 false
+         （用户为省费用主动关闭，或云端合成失败自动回退），这个开关就是个摆设，
+         可它默认是勾上的、说明文字还无条件写着"当前支持：四川话、粤语…"，
+         老人会以为功能坏了。 */
+      '<div class="notice-family" id="ucDialectTip">开启后，您用方言说话，智能体就用同一种方言念回答；听不出方言时自动用普通话。文字始终是普通话，不影响阅读。当前支持：四川话、粤语、闽南话、上海话、北京话、南京话、陕西话、天津话。' +
+        '<b id="ucDialectWarn" style="display:none;color:#b26a00">　注意：需开启上方「使用云端语音」方言才有效；关闭云端语音后会自动改用手机自带语音，没有方言效果。</b></div>' +
       '<div class="card-title" style="margin-top:10px">家属联系人</div>' +
       '<div id="ucFam">' + fam + '</div>' +
       '<div class="notice-family">家人可在任意设备打开本应用，用您的账号密码登录，即可查看您的用药、健康与风险记录。</div>' +
@@ -14636,6 +15189,40 @@ EMC.Care = (function () {
         });
       }
 
+      /* v43 方言跟随开关。
+         关闭时顺带清掉已记住的方言：不然老人关掉开关后，
+         这一次会话里仍然会按方言念几次，体验上像是"开关没生效"。 */
+      var diaBox = $id('ucDialect');
+      if (diaBox) {
+        /* v44（F-7）：云端语音关闭时给出明确提示，而不是让方言开关静默失效 */
+        function syncDialectDep() {
+          var warn = $id('ucDialectWarn');
+          if (!warn) return;
+          var cloudOn = !!cloud && cloud.checked;
+          warn.style.display = cloudOn ? 'none' : 'inline';
+          try { diaBox.disabled = !cloudOn; diaBox.style.opacity = cloudOn ? '' : '.5'; } catch (e) {}
+        }
+        try { syncDialectDep(); } catch (e) {}
+        diaBox.addEventListener('change', function (e) {
+          S.settings.dialectFollow = e.target.checked;
+          V.configure({ dialectFollow: e.target.checked });
+          if (!e.target.checked) { try { V.resetDialect(); } catch (e2) {} }
+          store.setSettings(S.settings);
+          toast(e.target.checked
+            ? '已开启方言回答：您说方言，就用方言念回答'
+            : '已关闭方言回答：统一用您选择的音色朗读');
+        });
+        /* 云端语音开关变化时同步提示（两个开关互相影响，必须联动） */
+        try {
+          if (cloud) cloud.addEventListener('change', function () {
+            setTimeout(function () {
+              syncDialectDep();
+              if (!cloud.checked) { try { V.resetDialect(); } catch (e3) {} }
+            }, 0);
+          });
+        } catch (e) {}
+      }
+
       // 显示模式（三态主题）切换
       var themeRow = $id('ucTheme');
       if (themeRow) themeRow.querySelectorAll('.theme-opt').forEach(function (b) {
@@ -14747,6 +15334,16 @@ EMC.Care = (function () {
     }
     try { box.insertAdjacentHTML('beforeend', chatRowHtml(m)); }
     catch (e) { renderChatHistory(); return; }
+    /* v44（F-25）：只把**这条新消息**送进 live 区播报。
+       原来 aria-live 挂在滚动容器上，容器里任何变化（追加、滚动、整体重渲染）
+       都会触发读屏播报；现在容器不再 live，改由这里按条通知。 */
+    try {
+      var liveBox = $id('chatLive');
+      if (liveBox) {
+        var txt = String((m && (m.full || m.text || m.who)) || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+        if (txt) { liveBox.textContent = txt; }
+      }
+    } catch (e3) { /* 无障碍增强失败不影响主流程 */ }
     /* 超出上限时裁掉最旧的一条 */
     while (box.children.length > 30) { box.removeChild(box.firstElementChild); }
     bindHistorySpeak();
@@ -15342,7 +15939,17 @@ EMC.Care = (function () {
   function showImportPreview(dataUrl) {
     var box = $id('importPreview');
     if (!box) return;
-    box.innerHTML = '<img class="imp-thumb" src="' + dataUrl + '" alt="药盒或处方照片">' +
+    /* v44（F-18）：dataUrl 必须过白名单再拼进 src 属性。
+       原来直接拼 '<img src="' + dataUrl + '"'，一旦这个值来自服务端
+       （saveMedCore 确实会上传 photo 字段），一个 '" onerror=... 就能
+       逃逸出属性、注入事件处理器 —— 而本页 CSP 的 script-src 含
+       'unsafe-inline'，恰恰挡不住属性注入。
+       这里只接受 data:image/(png|jpeg|jpg|webp|gif) 且限制长度，
+       用白名单而不是黑名单。 */
+    var safeImg = safeImgSrc(dataUrl);   /* v44：改用公共白名单函数 */
+    box.innerHTML = (safeImg
+      ? '<img class="imp-thumb" src="' + safeImg + '" alt="药盒或处方照片">'
+      : '<div class="imp-thumb" style="display:flex;align-items:center;justify-content:center;background:#f2f2f2;color:#888;font-size:12px">图片无法预览</div>') +
       '<div class="muted small">照片仅用于本次识别，不会离开本机以外的其它用途；识别结果请务必核对。</div>';
     var panel = $id('importPanel');
     if (panel) panel.style.display = 'block';
@@ -16586,13 +17193,27 @@ EMC.Care = (function () {
 </script>
 <script>
   /* 老年人生理特点提示渲染 + 时段选择高亮 */
-  document.getElementById('elderTips').innerHTML = EMC.ELDER_TIPS.map(function (t, i) {
-    return '<div style="padding:6px 0;border-bottom:1px dashed var(--line)"><b>' + t.key + '：</b>' + t.text + '</div>';
-  }).join('');
-  document.querySelectorAll('#medSlots input').forEach(function (b) {
-    b.addEventListener('change', function () { b.parentNode.classList.toggle('on', b.checked); });
-  });
-  document.getElementById('ruleCount').textContent = '规则库 ' + EMC.RULES.length + ' 条';
+  /* v44（F-17）：整块包 IIFE + try/catch。
+     原来这里是裸的顶层脚本：一旦 #elderTips（或 #ruleCount）被后续改动移除，
+     立刻抛 TypeError 并**中断本 script 块的剩余全部语句** ——
+     时段高亮绑定、规则库计数会一起失效，且没有任何提示，现场极难排查。 */
+  (function () {
+    try {
+      var tipsEl = document.getElementById('elderTips');
+      if (tipsEl && EMC.ELDER_TIPS) {
+        tipsEl.innerHTML = EMC.ELDER_TIPS.map(function (t, i) {
+          return '<div style="padding:6px 0;border-bottom:1px dashed var(--line)"><b>' + t.key + '：</b>' + t.text + '</div>';
+        }).join('');
+      }
+      document.querySelectorAll('#medSlots input').forEach(function (b) {
+        b.addEventListener('change', function () { b.parentNode.classList.toggle('on', b.checked); });
+      });
+      var rc = document.getElementById('ruleCount');
+      if (rc && EMC.RULES) rc.textContent = '规则库 ' + EMC.RULES.length + ' 条';
+    } catch (e) {
+      try { console.warn('[elderTips] 渲染失败', e); } catch (e2) {}
+    }
+  })();
 </script>
 <script>
   /* ==========================================================

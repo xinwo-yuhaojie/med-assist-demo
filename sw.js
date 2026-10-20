@@ -32,11 +32,18 @@
  *   E. 只缓存基本响应（200 / 206），错误页与重定向不入缓存。
  * ========================================================== */
 
-const VER = 'v47';
+const VER = 'v55';
 const CACHE = 'kangban-' + VER;
 
 /* install 时预缓存：这些是「断网也必须能打开」的东西 */
-const PRECACHE = ['./', './index.html', './manifest.webmanifest'];
+/* v44（F-12）：把 kb.js 补进预缓存。
+   它是药品知识库（1MB+），而**离线查药正是这个应用最该保证的能力** ——
+   老人在信号不好的地方、或者停药期间要确认"这个药能不能和另一个一起吃"，
+   恰恰最可能断网。原来清单里只有 index.html，kb.js 必须先联网访问过一次
+   才会进缓存，于是「首次安装后直接断网」这种最典型的场景下，
+   知识库是空的 —— 页面能打开，却查不到任何药。
+   逐个 add 已有 try/catch（见下），某一项 404 不会让 install 整体失败。 */
+const PRECACHE = ['./', './index.html', './manifest.webmanifest', './kb.js'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil((async function () {
@@ -69,9 +76,20 @@ self.addEventListener('activate', function (e) {
 
 /** 明确的「取不到」响应。宁可少一个功能，也不要让浏览器解析错类型的内容。 */
 function offlineResponse(req) {
+  /* v44（F-12 续）：按请求类型返回对应 MIME。
+     原来对**所有**类型（CSS / 图片 / JSON / 文档）一律返回
+     content-type: application/javascript —— 浏览器遇到类型不符会直接报错，
+     而这个 504 的真实原因（"没缓存、且当前离线"）反而被掩盖，
+     排障时只看到一堆 MIME 错误，方向全错。 */
+  const dest = (req && req.destination) || '';
+  let ct = 'text/plain; charset=utf-8';
+  if (dest === 'script' || /\.js$/i.test((req && req.url) || '')) ct = 'application/javascript; charset=utf-8';
+  else if (dest === 'style' || /\.css$/i.test((req && req.url) || '')) ct = 'text/css; charset=utf-8';
+  else if (dest === 'image') ct = 'image/svg+xml';
+  else if (dest === 'document') ct = 'text/html; charset=utf-8';
   return new Response(
-    '/* offline: 本资源未缓存 */',
-    { status: 504, statusText: 'Offline', headers: { 'content-type': 'application/javascript; charset=utf-8' } }
+    '/* offline: 本资源未缓存，且当前处于离线状态 */',
+    { status: 504, statusText: 'Offline', headers: { 'content-type': ct } }
   );
 }
 
@@ -106,7 +124,25 @@ self.addEventListener('fetch', function (e) {
       const res = await fetch(req, { cache: cacheMode });
       /* 只缓存成功的基本响应：错误页、重定向、opaque 都不入缓存 */
       if (res && (res.status === 200 || res.status === 206) && res.type === 'basic') {
-        try { const c = await caches.open(CACHE); c.put(req, res.clone()); } catch (err) {}
+        try {
+          const c = await caches.open(CACHE);
+          /* v44（M3）：**静态资源写入时剥掉 query**。
+             页面用 `kb.js?v=KB_BUILD` 加载，而原来按**精确 req**（带 query）put，
+             于是同一个 SW 版本内会同时缓存裸 './kb.js' 与 './kb.js?v=2026xxxx' 两份；
+             每次 KB_BUILD 升版又多一份 1MB+ 副本，而 activate 只删**其它缓存名**，
+             同版本内的旧 query 变体永远不淘汰 —— 缓存持续膨胀，
+             触及配额被浏览器 LRU 驱逐时反而会波及预缓存的 index.html 外壳，
+             把"离线可用"搞坏。
+             现在写入时统一用剥掉 search 的键，离线回退仍按 ignoreSearch 匹配。 */
+          let putKey = req;
+          try {
+            const u = new URL(req.url, self.location.origin);
+            if (u.pathname.endsWith('.js') || u.pathname.endsWith('.css')) {
+              putKey = new Request(u.origin + u.pathname, { method: 'GET' });
+            }
+          } catch (e) { /* 解析失败就用原 req */ }
+          c.put(putKey, res.clone());
+        } catch (err) {}
       }
       return res;
     } catch (err) {
