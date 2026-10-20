@@ -17,9 +17,11 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 KB = r"D:\网站专用\网站式老人慢性病用药辅助智能体\my-first-site\kb.js"
 kb = io.open(KB, encoding="utf-8").read()
 
-exec(compile(io.open(r"D:\网站专用\网站式老人慢性病用药辅助智能体\my-first-site\_kb_new_drugs.py",
-                     encoding="utf-8").read().split("add = [d for d in NEW")[0],
-             "kbdata", "exec"))
+import importlib.util
+_sp = importlib.util.spec_from_file_location("kbdata", r"D:\网站专用\网站式老人慢性病用药辅助智能体\my-first-site\_kb_data.py")
+_m = importlib.util.module_from_spec(_sp)
+_sp.loader.exec_module(_m)
+NEW = _m.NEW
 
 have = set(re.findall(r'"n":"([^"]+)"', kb))
 add = [d for d in NEW if d["n"] not in have]
