@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102010;</script>
+<script>window.KB_BUILD=2026102012;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102010;
+      var KB_BUILD = 2026102012;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -8917,6 +8917,17 @@ window.EMCAuth = (function () {
         var data = null;
         try { data = text ? JSON.parse(text) : {}; } catch (e) { data = {}; }
         // 401 统一处理：清令牌并触发登出（带过渡态 / 宽限期 / 重入保护）
+        /* v44（M-12）：503 + retryable → 自动重试一次。
+           后端在条件写冲突且重试用尽时返回 503 { retryable: true }；
+           打卡/加药这类写操作不重试就会丢记录 —— 老人只看到
+           「系统繁忙」，可能不再重试 → 漏服 → 触发家属提醒。
+           只对非 GET 重试一次（避免无限循环）。 */
+        if (res.status === 503 && data && data.retryable && method !== 'GET' && !opts._retried) {
+          var o2 = {};
+          for (var k2 in opts) { if (Object.prototype.hasOwnProperty.call(opts, k2)) o2[k2] = opts[k2]; }
+          o2._retried = true;
+          return new Promise(function (rs) { setTimeout(rs, 400); }).then(function () { return api(path, o2); });
+        }
         if (res.status === 401) {
           lastUnauthorized = Date.now();
           /* v44：同时记下"这次 401 是否为硬失效"。
@@ -15225,7 +15236,7 @@ next.names.map(function (n) { return esc(n.name) + '（' + esc(n.dose) + '）'; 
          （用户为省费用主动关闭，或云端合成失败自动回退），这个开关就是个摆设，
          可它默认是勾上的、说明文字还无条件写着"当前支持：四川话、粤语…"，
          老人会以为功能坏了。 */
-      '<div class="notice-family" id="ucDialectTip">开启后，您用方言说话，智能体就用同一种方言念回答；听不出方言时自动用普通话。文字始终是普通话，不影响阅读。当前支持：四川话、粤语、闽南话、上海话、北京话、南京话、陕西话、天津话。' +
+      '<div class="notice-family" id="ucDialectTip">开启后，您用方言说话，智能体就用同一种方言念回答；听不出方言时自动用普通话。文字始终是普通话，不影响阅读。当前支持：四川话、粤话、闽南话、上海话、北京话、南京话、陕西话、天津话、客家话（汕尾话）、潮汕话。' +
         '<b id="ucDialectWarn" style="display:none;color:#b26a00">　注意：需开启上方「使用云端语音」方言才有效；关闭云端语音后会自动改用手机自带语音，没有方言效果。</b></div>' +
       '<div class="card-title" style="margin-top:10px">家属联系人</div>' +
       '<div id="ucFam">' + fam + '</div>' +
