@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102009;</script>
+<script>window.KB_BUILD=2026102010;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102009;
+      var KB_BUILD = 2026102010;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -3722,7 +3722,16 @@ body.simple-mode #kbCockpit .cp-foot { display: none; }
  * 【不重造轮子】点击后走的是既有 EMC.Voice（V.speak /
  *   V.stop / V.humanizeForTts），与全局自动播报共用同一队列。
  * ========================================================== */
-.speak-paras { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.speak-paras {
+  /* v44：分段朗读按钮改成行内小标记，放在每个自然段**前面**。 */
+  display: block; margin-top: 6px;
+}
+.speak-para-block {
+  display: block; margin: 0 0 8px; line-height: 1.75;
+}
+.speak-para-block .speak-text {
+  display: inline; white-space: pre-wrap;
+}
 .speak-para {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   /* 移动端热区 ≥48px（与 v19 P0-3 触控热区红线一致） */
@@ -11563,10 +11572,12 @@ EMC.Care = (function () {
       var it = document.createElement('span'); it.className = 'intent'; it.textContent = '智能体 · ' + meta.intentLabel;
       bub.appendChild(it);
     }
-    var body = document.createElement('div'); body.textContent = text; bub.appendChild(body);
-    /* v22 P1-14：为这条回答的每个自然段追加独立「🔊 朗读」按钮。
-       只给机器人回答加；用户自己的话不需要「朗读回来」。*/
-    if (role !== 'user' && !(meta && meta.thinking)) appendParaSpeak(bub, text);
+    var body = document.createElement('div'); bub.appendChild(body);
+    /* v22 P1-14：为这条回答的每个自然段加独立朗读按钮。
+       只给机器人回答加；用户自己的话不需要「朗读回来」。
+       v44：按钮改为放在**对应段落前面**（原来全部堆在末尾，且正文不分行）。 */
+    if (role !== 'user' && !(meta && meta.thinking)) renderParaWithSpeak(body, text);
+    else body.textContent = text;
     if (meta && meta.card) renderCard(bub, meta.card);
     if (meta && meta.followups && meta.followups.length) renderFollowups(bub, meta.followups);
     if (meta && meta.steps && meta.steps.length) {
@@ -17013,34 +17024,43 @@ next.names.map(function (n) { return esc(n.name) + '（' + esc(n.dose) + '）'; 
   var activeParaBtn = null;
 
   /**
-   * 为一条 AI 回答的每个自然段追加独立朗读按钮。
-   * @param {HTMLElement} bub 气泡容器
+   * 把一条 AI 回答按自然段渲染，每段**前面**放一个「📢读」小按钮。
+   * v44：原来所有「🔊 朗读这一段」按钮统一堆在气泡末尾，且正文是一整块
+   *       textContent（换行不分行），老人根本对不上哪个按钮读哪段。
+   * @param {HTMLElement} body 正文容器
    * @param {string} text 回答正文
    */
-  function appendParaSpeak(bub, text) {
-    if (!bub || !text) return;
+  function renderParaWithSpeak(body, text) {
+    if (!body) return;
     /*复用既有净化链路：humanizeForTts（符号可读化）+ splitSegments（分句分段）。
        二者都在 EMC.Voice 内部实现，这里不另写一套文本处理。*/
     var segs = V.splitSegments(V.humanizeForTts(text));
-    /* splitSegments 会把长句再切 180 字；逐段朗读粒度过细反而难用，
-       这里按原文换行合并回「自然段」，超过 6段时只给前 6 段加按钮（其余仍可整条重读）。*/
     var paras = String(text).split(/\n+/).map(function (s) { return s.trim(); }).filter(Boolean);
-    if (paras.length > 6) paras = paras.slice(0, 6);
-    if (!paras.length) return;
+    if (!paras.length) { body.textContent = text; return; }
+    /* 超过 6 段时：前 6 段给按钮，后面的段落只显示文字（整条仍可重读）。 */
+    var withBtn = paras.length > 6 ? 6 : paras.length;
 
-    var box = document.createElement('div');
-    box.className = 'speak-paras';
+    body.innerHTML = '';
     paras.forEach(function (p, i) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'speak-para' + (paras.length === 1 ? ' single' : '');
-      b.setAttribute('data-speak-idx', String(i));
-      b.setAttribute('aria-label', '朗读第' + (i + 1) + '段');
-      b.innerHTML = '<span class="sp-idx">' + (paras.length === 1 ? '' : (i + 1) + '·') + '</span>🔊 朗读这一段';
-      b.addEventListener('click', function () { toggleParaSpeak(b, p, segs); });
-      box.appendChild(b);
+      var blk = document.createElement('div');
+      blk.className = 'speak-para-block';
+      if (i < withBtn) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'speak-para' + (withBtn === 1 ? ' single' : '');
+        b.setAttribute('data-speak-idx', String(i));
+        b.setAttribute('aria-label', '朗读第' + (i + 1) + '段');
+        /* v44：文字只用「📢读」（原来是「🔊 朗读这一段」） */
+        b.textContent = '📢读';
+        b.addEventListener('click', function () { toggleParaSpeak(b, p, segs); });
+        blk.appendChild(b);
+      }
+      var td = document.createElement('span');
+      td.className = 'speak-text';
+      td.textContent = p;
+      blk.appendChild(td);
+      body.appendChild(blk);
     });
-    bub.appendChild(box);
   }
 
   /**
