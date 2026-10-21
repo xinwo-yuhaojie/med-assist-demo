@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102007;</script>
+<script>window.KB_BUILD=2026102008;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102007;
+      var KB_BUILD = 2026102008;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -15773,13 +15773,29 @@ next.names.map(function (n) { return esc(n.name) + '（' + esc(n.dose) + '）'; 
     series.forEach(function (d) { missedTotal += d.missed || 0; anomalyTotal += d.anomalies || 0; if (d.score > 0) recent++; });
     var hasAny = (S.records && S.records.length) || (S.health && S.health.length);
     var chart = '<div class="chart-box">' + EMC.Chart.lines(labels, [{ name: '风险评分', data: data, color: '#B4402F' }], { height: 220, yMax: Math.max(3, maxScore) }) + '</div>';
+
+    /* 数据摘要：把「近 14 天到底有没有数据」写成可核对的数字。
+       之前只有一条提示文案，老人看不懂是「没打卡」还是「没录血压」，
+       也分清不是「图本身没画出来」。
+       现在直接列出：打卡记录数 / 漏服次数 / 指标记录数 / 异常次数 / 最近一次记录日期。 */
+    var recs14 = S.records || [];
+    var hsAll = S.health || [];
+    var taken14 = recs14.filter(function (r) { return r.status === 'taken'; }).length;
+    var missed14 = recs14.filter(function (r) { return r.status === 'missed'; }).length;
+    var hp14 = hsAll.filter(function (h) { return h.type === 'bp'; }).length;
+    var glu14 = hsAll.filter(function (h) { return h.type === 'glu'; }).length;
+    var sum = '<div class="small muted" style="margin-top:6px">近 14 天：打卡 <b>' + taken14
+      + '</b> 次、漏服 <b>' + missed14 + '</b> 次；血压 <b>' + hp14
+      + '</b> 条、血糖 <b>' + glu14 + '</b> 条；指标异常 <b>' + anomalyTotal
+      + '</b> 次，最高风险分 <b>' + maxScore + '</b>。</div>';
+
     var tip = '';
     if (!hasAny) {
       tip = '<div class="muted small" style="margin-top:6px">近 14 天还没有用药打卡或血压记录。开始打卡、录一次血压后，这里就会有趋势了。</div>';
     } else if (recent === 0) {
       tip = '<div class="muted small" style="margin-top:6px">近 14 天没有漏服，压力与血糖指标也都在正常范围——这是好事。</div>';
     }
-    box.innerHTML = chart + tip +
+    box.innerHTML = chart + sum + tip +
       '<div class="small muted" style="margin-top:6px">评分越高代表当日漏服或指标异常越多（0 无 / 1 轻 / 2 中 / 3+ 重）。仅供趋势参考，不替代医生诊断。</div>';
   }
 
