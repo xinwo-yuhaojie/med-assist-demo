@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102008;</script>
+<script>window.KB_BUILD=2026102009;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102008;
+      var KB_BUILD = 2026102009;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -11858,7 +11858,15 @@ EMC.Care = (function () {
   }
   function todayPending() {
     var key = E.fmtDate(new Date());
-    return S.records.filter(function (r) { return r.date === key && r.status === 'pending'; });
+    /* v44：过滤掉**已删除的药品**。
+       后端现在删药时会一并清理 pending 记录，但老数据（删除前就残留的）
+       仍然会让界面显示「待服用」，老人点下就能打卡。
+       这里再做一道前端兜底：只返回仍在 S.meds 里的药品的待服记录。 */
+    var alive = {};
+    (S.meds || []).forEach(function (m) { alive[m.mid] = 1; });
+    return S.records.filter(function (r) {
+      return r.date === key && r.status === 'pending' && alive[r.mid];
+    });
   }
 
   /* ==========================================================
@@ -13406,11 +13414,15 @@ EMC.Care = (function () {
     V.speak(wasEdit ? '药品已更新' : '药品已添加，我会按时提醒您服用');
   }
   async function deleteMed(id) {
+    var nm = (S.meds.filter(function (m) { return m.mid === id; })[0] || {}).name || '该药';
     S.meds = await store.deleteMed(id);
     S.records = await store.getRecords(14);
     renderAll(true);
     try { Bus.emit('meds', { id: id, deleted: true }); } catch (e) {}
     try { kbAnnounce('meds'); } catch (e2) {}
+    /* v44：告诉老人删了哪个药、历史记录怎么处理。
+       不说清楚会让人以为历史也没了，登记会影响依从率统计。 */
+    try { toast('已删除「' + nm + '」，今日待服已取消；以前的打卡记录仍会保留在档案里。'); } catch (e3) {}
   }
   async function refillMed(id) {
     var before = (S.meds.filter(function (m) { return m.id === id; })[0] || {}).remain;
