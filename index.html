@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102013;</script>
+<script>window.KB_BUILD=2026102014;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102013;
+      var KB_BUILD = 2026102014;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -8631,12 +8631,25 @@ EMC.Voice = (function () {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       cache: 'no-store',
-      body: JSON.stringify({ messages: messages, maxTokens: maxTokens || 300 })
+      /* v45：方言回复 —— 把用户当前在说的方言传给后端，后端据此注入
+         「用该方言回答」的 system 指令。优先取 diaNow（语音识别实时判定），
+         其次取用户手动选择的方言；都没有则不传（普通话，不加额外开销）。 */
+      body: (function () {
+        var b = { messages: messages, maxTokens: maxTokens || 300 };
+        var dia = (typeof diaNow === 'string' && diaNow) ? diaNow
+                 : (typeof dialectPref === 'string' && dialectPref ? dialectPref : '');
+        if (dia && dia !== 'zh') b.dialect = dia;
+        return JSON.stringify(b);
+      })()
     };
     if (ctrl) opt.signal = ctrl.signal;
     return fetch('/api/ai/chat', opt)
       .then(function (r) { return r.ok ? r.json() : Promise.reject(Object.assign(new Error('ai http'), { name: 'HttpError', status: r.status })); })
-      .then(function (j) { return done((j && j.text) ? j.text : ''); }, fail);
+      .then(function (j) {
+        /* v45：后端回传本次回复所用方言与音色，供界面标注 */
+        if (j && j.__dialect) { try { window.__lastReplyDialect = j.__dialect; } catch (e) {} }
+        return done((j && j.text) ? j.text : '');
+      }, fail);
   }
 
   /* ==========================================================
