@@ -663,6 +663,44 @@
       $('cumCard').style.display = 'block';
     } catch (e) { $('cumCard').style.display = 'none'; }
 
+    /* v46：血压 / 血糖单元格渲染（抽成独立函数，便于单测与两处复用）。
+       规则：近 7 天有数据 → 均值 + 次数（+偏高）；近 7 天无但有历史 → 最近一次的值 + 日期（+曾偏高）；
+             从未测过 → —。 */
+    function fmtBpCell(p) {
+      p = p || {};
+      if (p.bpSys7 != null && p.bpDia7 != null) {
+        return esc(String(p.bpSys7) + '/' + String(p.bpDia7))
+          + '<span class="n"> ·近7天' + (p.bpCount7 != null ? (p.bpCount7 + '次') : '') + '</span>'
+          + (p.bpHigh ? '<span class="warnflag">偏高</span>' : '');
+      }
+      if (p.bpLast && p.bpLast.sys != null && p.bpLast.dia != null) {
+        return esc(String(p.bpLast.sys) + '/' + String(p.bpLast.dia))
+          + '<span class="n"> ·' + esc(String(p.bpLast.date || '').slice(5)) + '最近</span>'
+          + (p.bpHighAll ? '<span class="warnflag">曾偏高</span>' : '');
+      }
+      if (p.bpCount) {
+        return '<span class="muted">—</span><span class="n"> ·历史' + (p.bpCount || 0) + '次</span>';
+      }
+      return '<span class="muted">—</span>';
+    }
+    function fmtGluCell(p) {
+      p = p || {};
+      if (p.glu7 != null) {
+        return esc(String(p.glu7))
+          + '<span class="n"> ·近7天' + (p.gluCount7 != null ? (p.gluCount7 + '次') : '') + '</span>'
+          + (p.gluHigh ? '<span class="warnflag">偏高</span>' : '');
+      }
+      if (p.gluLast && p.gluLast.val != null) {
+        return esc(String(p.gluLast.val))
+          + '<span class="n"> ·' + esc(String(p.gluLast.date || '').slice(5)) + '最近</span>'
+          + (p.gluHighAll ? '<span class="warnflag">曾偏高</span>' : '');
+      }
+      if (p.gluCount) {
+        return '<span class="muted">—</span><span class="n"> ·历史' + (p.gluCount || 0) + '次</span>';
+      }
+      return '<span class="muted">—</span>';
+    }
+
     /* —— 居民明细 —— */
     var list = s.perUser || [];
     $('tbody').innerHTML = list.map(function (p) {
@@ -676,25 +714,16 @@
         nmCell = '<span class="nm-mask" data-id="' + esc(p.id || '') + '" role="button" tabindex="0"'
           + ' title="点击查看真实姓名">' + esc(p.name) + '<span class="lk">🔒</span></span>';
       }
-      /* v44：血压 / 血糖两列（后端已返回 bpSys7/bpDia7/bpHigh/glu7/gluHigh 等字段，
-         这里之前完全没渲染 —— 数据在后端存着，看板上却看不见）。
-         显示的是近 7 天均值，偏高用红色标注，无数据显示 '—'。 */
-      var bpCell;
-      if (p.bpCount) {
-        bpCell = esc(String(p.bpSys7) + '/' + String(p.bpDia7))
-          + '<span class="n"> ·' + (p.bpCount || 0) + '次</span>'
-          + (p.bpHigh ? '<span class="warnflag">偏高</span>' : '');
-      } else {
-        bpCell = '<span class="muted">—</span>';
-      }
-      var gluCell;
-      if (p.gluCount) {
-        gluCell = esc(String(p.glu7))
-          + '<span class="n"> ·' + (p.gluCount || 0) + '次</span>'
-          + (p.gluHigh ? '<span class="warnflag">偏高</span>' : '');
-      } else {
-        gluCell = '<span class="muted">—</span>';
-      }
+      /* v46：血压 / 血糖两列 —— 把**所有账户**的测量值完整显示出来。
+         原实现有两个问题：
+         ① 只看 p.bpCount（3 年总数）就进分支，却用近 7 天均值拼接
+            —— 3 年内测过、近 7 天没测的账户会显示成 "null/null ·12次"；
+         ② 后端算好的最近一次（bpLast/gluLast）完全没用上。
+         现在：近 7 天有数据 → 均值 + 次数 + 偏高标记；
+               近 7 天无但有历史 → 最近一次的值 + 日期 + 是否曾偏高；
+               从未测过 → —。 */
+      var bpCell = fmtBpCell(p);
+      var gluCell = fmtGluCell(p);
       return '<tr><td>' + nmCell + '</td>' +
         '<td>' + esc(p.gender || '—') + '</td>' +
         '<td class="n">' + (p.meds || 0) + '</td>' +
