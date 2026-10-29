@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102901;</script>
+<script>window.KB_BUILD=2026102902;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102901;
+      var KB_BUILD = 2026102902;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -9623,6 +9623,25 @@ function saveNotify() { lsSave(KEY.notify, cache.notify); } try { markLocalWrite
     function me() {
       return EMCAuth.api('/api/me').then(function (r) { return r.ok ? r.user : null; });
     }
+
+    /* v45：写操作失败必须 reject，不能伪装成「空列表成功」。
+       【为什么必须加】EMCAuth.api() 对任何状态码都 resolve（这是历史约定，
+       读取路径到处依赖它）。于是后端返回 500 时，
+       `r.health || []` 会把「请求失败」变成「服务端返回了空数组」，
+       上层再执行 `S.health = []` —— 一次云端 500 就把老人已有的血压记录
+       从界面上整个抹掉，紧接着还提示「已保存 ✓」。
+       现场表现就是：明明填了血压，档案和风险趋势图却空空如也。
+       这里统一把 ok:false 转成异常，让调用方能明确提示失败并保留原数据。 */
+    function assertWriteOk(r, what) {
+      if (r && r.ok === false) {
+        var e = new Error((r && r.message) || ((what || '保存') + '失败，请稍后重试'));
+        e._status = r._status;
+        e.serviceDown = !!r.serviceDown;
+        e.retryable = !!r.retryable;
+        throw e;
+      }
+      return r;
+    }
     function mapMedFrom(b) {
       var r0 = (typeof b.remain === 'number') ? b.remain : (b.remaining == null ? 30 : b.remaining);
       return {
@@ -9786,6 +9805,7 @@ function saveNotify() { lsSave(KEY.notify, cache.notify); } try { markLocalWrite
                    （游客态走 LocalStore 保留 time，所以只有登录态坏。） */
                 time: (typeof rec.time === 'string') ? rec.time.slice(0, 5) : '' }
         }).then(function (r) {
+          assertWriteOk(r, '服药打卡');
           return { records: (r.records || []).map(mapRecFrom), med: r.med ? mapMedFrom(r.med) : null };
         });
       },
@@ -9794,7 +9814,10 @@ function saveNotify() { lsSave(KEY.notify, cache.notify); } try { markLocalWrite
       },
       addHealth: function (rec) {
         try { markLocalWrite(); } catch (e) {}
-        return EMCAuth.api('/api/health', { method: 'POST', body: rec }).then(function (r) { return r.health || []; });
+        return EMCAuth.api('/api/health', { method: 'POST', body: rec }).then(function (r) {
+          assertWriteOk(r, '血压记录保存');
+          return Array.isArray(r.health) ? r.health : [];
+        });
       },
       /* v20：家属列表走 GET /api/family（后端已补齐该路由）；
          若该接口异常，回退到 /api/me 内的 family 字段，再兜底空数组。 */
@@ -9805,15 +9828,18 @@ function saveNotify() { lsSave(KEY.notify, cache.notify); } try { markLocalWrite
         }).catch(function () { return []; });
       },
       addFamily: function (c) {
-        return EMCAuth.api('/api/family', { method: 'POST', body: c }).then(function (r) { return r.family || []; });
+        return EMCAuth.api('/api/family', { method: 'POST', body: c }).then(function (r) {
+          assertWriteOk(r, '添加家属');
+          return r.family || [];
+        });
       },
       updateFamily: function (id, patch) {
         return EMCAuth.api('/api/family', { method: 'POST', body: Object.assign({ id: id }, patch) })
-          .then(function (r) { return r.family || []; });
+          .then(function (r) { assertWriteOk(r, '修改家属'); return r.family || []; });
       },
       deleteFamily: function (id) {
         return EMCAuth.api('/api/family/' + encodeURIComponent(id), { method: 'DELETE' })
-          .then(function (r) { return r.family || []; });
+          .then(function (r) { assertWriteOk(r, '删除家属'); return r.family || []; });
       },
       /* 云端自动漏服仅作本地演示，不重复 POST 写库（避免通知日志刷屏）：
          与 LocalStore.addNotification 契约一致，返回 Promise<通知日志数组> 以维持 UI 一致。 */
@@ -13536,7 +13562,18 @@ EMC.Care = (function () {
       if (!(val >= 1 && val <= 60)) { healthMsg('血糖数值超出常见范围（1-60 mmol/L），请核对单位后重填'); return; }
       rec = { type: 'glu', sys: null, dia: null, hr: null, val: val, meal: $id('gluMeal').value, note: $id('healthNote').value.trim() };
     }
-    await addHealth(rec);
+    /* v45：保存失败必须明确告知，且**保留已填内容**让老人能直接重试。
+       原来这里没有 try/catch：云端 500 时 addHealth 抛错，
+       后面的「已保存 ✓」不会执行，但输入框已被清空、也没有任何错误提示，
+       老人只看到「界面没变」，不知道到底存没存。
+       现在失败时保留输入、给出可理解的提示、并且不动已有数据。 */
+    try {
+      await addHealth(rec);
+    } catch (e) {
+      var msg = (e && e.message) ? e.message : '网络或服务异常，请稍后重试';
+      healthMsg('保存失败：' + msg + '（已填内容保留，可直接再点一次保存）', false);
+      return;
+    }
     $id('bpSys').value = '';
     $id('bpDia').value = '';
     $id('bpHr').value = '';
