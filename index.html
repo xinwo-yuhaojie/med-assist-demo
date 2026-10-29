@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102014;</script>
+<script>window.KB_BUILD=2026102901;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102014;
+      var KB_BUILD = 2026102901;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -13490,7 +13490,19 @@ EMC.Care = (function () {
     rec.date = E.fmtDate(new Date());
     rec.time = new Date().toTimeString().slice(0, 5);
     // D-01：先 await 落库返回的最新数组，再渲染，保证保存后立即刷新界面
-    S.health = await store.addHealth(rec);
+    var next = await store.addHealth(rec);
+    S.health = Array.isArray(next) ? next : (S.health || []);
+    /* v45：防御后端返回「旧快照」。
+       云端后端曾把事务外的旧数组当写入结果返回，导致新记录在界面上被覆盖掉
+       （血压提示保存成功，但档案、血压均值、风险趋势图都不变）。
+       这里按「日期+时间+类型+数值」兜底补一条：后端已修时不会重复；
+       后端未部署时也能让界面立刻看到刚录的数据，
+       下次后台同步以云端为准回填，不会产生重复条目。 */
+    var has = S.health.some(function (h) {
+      return h && h.date === rec.date && h.time === rec.time
+        && h.type === rec.type && h.sys === rec.sys && h.dia === rec.dia;
+    });
+    if (!has) S.health = S.health.concat([rec]);
     try { Bus.emit('health', rec); } catch (e) {}   /* v24：健康记录 → 驾驶舱/态势条立即联动 */
   try { kbAnnounce('health'); } catch (e2) {}   /* v28：子女在另一台设备量血压，这边立刻看到 */
   }
@@ -15841,19 +15853,24 @@ next.names.map(function (n) { return esc(n.name) + '（' + esc(n.dose) + '）'; 
     /* 近 14 天是否真的有任何记录 */
     var recent = 0, missedTotal = 0, anomalyTotal = 0;
     series.forEach(function (d) { missedTotal += d.missed || 0; anomalyTotal += d.anomalies || 0; if (d.score > 0) recent++; });
-    var hasAny = (S.records && S.records.length) || (S.health && S.health.length);
+    /* v45：统计口径与曲线对齐。
+       原来摘要直接统计 S.records / S.health 的全量数据，标签却写「近 14 天」——
+       历史一多就和曲线对不上（用户看到「血压 1 条」其实是全部历史条数，
+       也会误以为新录的血压根本没被统计）。现在统一按近 14 天窗口过滤。 */
+    var from14 = E.fmtDate(new Date(Date.now() - 13 * 86400000));
+    var recs14 = (S.records || []).filter(function (r) { return (r.date || '') >= from14; });
+    var hsAll = (S.health || []).filter(function (h) { return (h.date || '') >= from14; });
+    var taken14 = recs14.filter(function (r) { return r.status === 'taken'; }).length;
+    var missed14 = recs14.filter(function (r) { return r.status === 'missed'; }).length;
+    var hp14 = hsAll.filter(function (h) { return h.type === 'bp'; }).length;
+    var glu14 = hsAll.filter(function (h) { return h.type === 'glu'; }).length;
+    var hasAny = recs14.length || hsAll.length;
     var chart = '<div class="chart-box">' + EMC.Chart.lines(labels, [{ name: '风险评分', data: data, color: '#B4402F' }], { height: 220, yMax: Math.max(3, maxScore) }) + '</div>';
 
     /* 数据摘要：把「近 14 天到底有没有数据」写成可核对的数字。
        之前只有一条提示文案，老人看不懂是「没打卡」还是「没录血压」，
        也分清不是「图本身没画出来」。
        现在直接列出：打卡记录数 / 漏服次数 / 指标记录数 / 异常次数 / 最近一次记录日期。 */
-    var recs14 = S.records || [];
-    var hsAll = S.health || [];
-    var taken14 = recs14.filter(function (r) { return r.status === 'taken'; }).length;
-    var missed14 = recs14.filter(function (r) { return r.status === 'missed'; }).length;
-    var hp14 = hsAll.filter(function (h) { return h.type === 'bp'; }).length;
-    var glu14 = hsAll.filter(function (h) { return h.type === 'glu'; }).length;
     var sum = '<div class="small muted" style="margin-top:6px">近 14 天：打卡 <b>' + taken14
       + '</b> 次、漏服 <b>' + missed14 + '</b> 次；血压 <b>' + hp14
       + '</b> 条、血糖 <b>' + glu14 + '</b> 条；指标异常 <b>' + anomalyTotal
@@ -15863,7 +15880,15 @@ next.names.map(function (n) { return esc(n.name) + '（' + esc(n.dose) + '）'; 
     if (!hasAny) {
       tip = '<div class="muted small" style="margin-top:6px">近 14 天还没有用药打卡或血压记录。开始打卡、录一次血压后，这里就会有趋势了。</div>';
     } else if (recent === 0) {
-      tip = '<div class="muted small" style="margin-top:6px">近 14 天没有漏服，压力与血糖指标也都在正常范围——这是好事。</div>';
+      /* v45：把「我录了血压，为什么曲线还是平的」讲清楚。
+         风险评分只统计「漏服」与「指标异常」，血压在正常范围内时分数就是 0，
+         曲线自然持平 —— 这不代表没记录。 */
+      tip = '<div class="muted small" style="margin-top:6px">近 14 天没有漏服，'
+        + (hp14 + glu14 > 0
+          ? '已录入血压 ' + hp14 + ' 条、血糖 ' + glu14 + ' 条，指标均在正常范围，'
+            + '因此风险评分为 0，曲线持平属正常（评分只统计漏服与指标异常）。'
+          : '压力与血糖指标也都在正常范围——这是好事。')
+        + '</div>';
     }
     box.innerHTML = chart + sum + tip +
       '<div class="small muted" style="margin-top:6px">评分越高代表当日漏服或指标异常越多（0 无 / 1 轻 / 2 中 / 3+ 重）。仅供趋势参考，不替代医生诊断。</div>';
