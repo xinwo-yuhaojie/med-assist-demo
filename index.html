@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026102903;</script>
+<script>window.KB_BUILD=2026111101;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026102903;
+      var KB_BUILD = 2026111101;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -10193,6 +10193,90 @@ EMC.Care = (function () {
   var SNAP_KEY = 'emc_v27_snapshot';
   var loadDegraded = false;          /* 本次 loadAll 是否发生过降级回退 */
 
+  /* ==========================================================
+   * v47 血压 / 血糖「离线待同步队列」
+   * 【为什么加】线上后端写接口不可用时（实测 POST /api/health 返回 500），
+   *   ApiStore.assertWriteOk 会抛错，原 addHealth 直接中断：S.health 不变、
+   *   Bus 不 emit、风险趋势图不重绘，记录也没落到任何地方 ——
+   *   现场表现就是「连续录了血压，趋势图却一条数据都没有」。
+   *   刷新后 GET /api/health 返回 200 的空数组，pick() 判定为「读取成功」，
+   *   又把 S.health 覆盖成 []，连 v27 的本地快照都不回退。
+   * 【现在】写失败 → 进本地队列 + 灌入 S.health + 立即重绘；
+   *         刷新 → 云端数组与队列合并去重（空数组不再冲掉本地记录）；
+   *         后端恢复 → 自动补传（补传前先 GET 去重，避免重复写入）。
+   * 队列按账号 token 分桶，多账号共用一台设备也不会串数据。
+   * ========================================================== */
+  var PENDING_KEY = 'emc_v47_health_pending';
+  function pendingBucket() {
+    var t = '';
+    try { t = (EMCAuth.getToken && EMCAuth.getToken()) || ''; } catch (e) {}
+    return PENDING_KEY + '::' + (t ? t.slice(0, 12) : 'guest');
+  }
+  function pendingGet() {
+    try { var v = JSON.parse(localStorage.getItem(pendingBucket()) || '[]'); return Array.isArray(v) ? v : []; }
+    catch (e) { return []; }
+  }
+  function pendingSet(list) {
+    try { localStorage.setItem(pendingBucket(), JSON.stringify(list || [])); } catch (e) {}
+  }
+  /* 去重键：同一时刻、同类型、同数值视为同一条记录 */
+  function healthKey(h) {
+    h = h || {};
+    return [h.date || '', h.time || '', h.type || '',
+            h.sys == null ? '' : h.sys, h.dia == null ? '' : h.dia,
+            h.val == null ? '' : h.val, h.meal || ''].join('|');
+  }
+  function pendingAdd(rec) {
+    var q = pendingGet(), k = healthKey(rec);
+    if (q.some(function (h) { return healthKey(h) === k; })) return q.length;
+    q.push(rec); pendingSet(q); return q.length;
+  }
+  function mergeHealth(cloud, local) {
+    var out = [], seen = {};
+    (cloud || []).concat(local || []).forEach(function (h) {
+      if (!h) return;
+      var k = healthKey(h);
+      if (seen[k]) return;
+      seen[k] = 1; out.push(h);
+    });
+    return out;
+  }
+
+  /* 自动补传：串行 + 全局锁；先读云端做幂等判断，POST 成功才从队列移除。
+     后端不可用时整轮静默跳过（队列保留，下次继续），不打扰老人。 */
+  var healthSyncing = false;
+  async function syncPendingHealth() {
+    if (healthSyncing) return;
+    var q = pendingGet();
+    if (!q.length) return;
+    if (!EMCAuth.isLoggedIn || !EMCAuth.isLoggedIn()) return;
+    healthSyncing = true;
+    try {
+      var cloud = [];
+      try { cloud = await store.getHealth(); } catch (e) { return; }
+      var seen = {};
+      (cloud || []).forEach(function (h) { seen[healthKey(h)] = 1; });
+      var keep = [];
+      for (var i = 0; i < q.length; i++) {
+        var k = healthKey(q[i]);
+        if (seen[k]) continue;                 /* 云端已有 → 直接出队 */
+        try { await store.addHealth(q[i]); seen[k] = 1; }
+        catch (e) { keep.push(q[i]); }         /* 仍不可用 → 留到下次 */
+      }
+      pendingSet(keep);
+      if (!keep.length && q.length) {
+        /* 只重绘，不再二次 GET 覆盖 S.health：本地本就有这批记录，
+           云端刚写入的内容与之相同；若存储存在读延迟，二次 GET 反而会把界面冲空。 */
+        try { Bus.emit('health', null); } catch (e4) {}
+        try { kbAnnounce('health'); } catch (e5) {}
+      }
+    } finally { healthSyncing = false; }
+  }
+  function scheduleHealthSync() {
+    setTimeout(function () { try { syncPendingHealth(); } catch (e) {} }, 1200);
+  }
+  try { setInterval(function () { syncPendingHealth(); }, 60000); } catch (e) {}
+
   function snapGet() {
     try { var v = JSON.parse(localStorage.getItem(SNAP_KEY) || '{}'); return (v && typeof v === 'object') ? v : {}; }
     catch (e) { return {}; }
@@ -10329,6 +10413,8 @@ EMC.Care = (function () {
       try { ensureTodayRecords(); } catch (e) {}
     } finally {
       if (EMCAuth.endAuthTransition) EMCAuth.endAuthTransition();
+      /* v47：后端恢复后把离线期间录的血压血糖补传上去（内部有锁与去重） */
+      try { scheduleHealthSync(); } catch (e) {}
     }
   }
 
@@ -10384,7 +10470,10 @@ EMC.Care = (function () {
     var arr = function (v) { return Array.isArray(v) ? v : []; };
     S.meds = arr(pick(2, []));
     S.records = arr(pick(3, []));
-    S.health = arr(pick(4, []));
+    /* v47：云端返回空数组不代表「没有记录」——后端写接口不可用时，
+       近期记录都还在本地待同步队列里。这里改成合并去重，
+       否则每次刷新都会把老人刚录的血压冲掉，风险趋势图永远是空的。 */
+    S.health = mergeHealth(arr(pick(4, [])), pendingGet());
     S.guardian = { contacts: arr(pick(5, [])), notifications: arr(pick(6, [])) };
 
     /* v27：本次至少有一个字段成功读到就刷新快照（供下次断网时兜底） */
@@ -13516,7 +13605,23 @@ EMC.Care = (function () {
     rec.date = E.fmtDate(new Date());
     rec.time = new Date().toTimeString().slice(0, 5);
     // D-01：先 await 落库返回的最新数组，再渲染，保证保存后立即刷新界面
-    var next = await store.addHealth(rec);
+    var next;
+    try {
+      next = await store.addHealth(rec);
+    } catch (e) {
+      /* v47：云端写不可用（线上实测 POST /api/health 返回 500，后端仍是旧包）。
+         原实现在这里直接中断：S.health 不变、Bus 不 emit、风险趋势图不重绘，
+         记录也没落到任何地方 —— 老人「连续两天填了血压，图却一条数据都没有」。
+         现在落到本地待同步队列并立即灌入 S.health + 触发重绘，
+         界面当场可见；后端恢复后由 syncPendingHealth 自动补传。 */
+      var n = pendingAdd(rec);
+      S.health = mergeHealth(S.health || [], [rec]);
+      try { Bus.emit('health', rec); } catch (e1) {}
+      try { kbAnnounce('health'); } catch (e2) {}
+      e.localSaved = true;
+      e.pendingCount = n;
+      throw e;
+    }
     S.health = Array.isArray(next) ? next : (S.health || []);
     /* v45：防御后端返回「旧快照」。
        云端后端曾把事务外的旧数组当写入结果返回，导致新记录在界面上被覆盖掉
@@ -13530,7 +13635,9 @@ EMC.Care = (function () {
     });
     if (!has) S.health = S.health.concat([rec]);
     try { Bus.emit('health', rec); } catch (e) {}   /* v24：健康记录 → 驾驶舱/态势条立即联动 */
-  try { kbAnnounce('health'); } catch (e2) {}   /* v28：子女在另一台设备量血压，这边立刻看到 */
+    try { kbAnnounce('health'); } catch (e2) {}    /* v28：子女在另一台设备量血压，这边立刻看到 */
+    /* 本次写成功说明后端已可用，顺带把离线队列补传掉 */
+    try { scheduleHealthSync(); } catch (e3) {}
   }
   function isAnomaly(h) {
     if (h.type === 'bp') return E.bpStatus(h.sys, h.dia) !== 'normal';
@@ -13544,6 +13651,13 @@ EMC.Care = (function () {
     }
     var gs = E.gluStatus(h.val, h.meal);
     return gs === 'high' ? EMC.HEALTH_ADVICE.gluHigh : (gs === 'low' ? EMC.HEALTH_ADVICE.gluLow : '');
+  }
+  function clearHealthInputs() {
+    $id('bpSys').value = '';
+    $id('bpDia').value = '';
+    $id('bpHr').value = '';
+    $id('gluVal').value = '';
+    $id('healthNote').value = '';
   }
   async function saveHealth() {
     var rec;
@@ -13570,15 +13684,20 @@ EMC.Care = (function () {
     try {
       await addHealth(rec);
     } catch (e) {
+      /* v47：记录已落到本机、界面也已重绘，此时不能报「保存失败」——
+         否则老人会以为数据丢了而反复重试。明确告知「本机已存、云端待同步」。 */
+      if (e && e.localSaved) {
+        clearHealthInputs();
+        healthMsg('已保存到本机 ✓ 云端暂不可用，' + (e.pendingCount || 1)
+          + ' 条记录将在服务恢复后自动同步', true);
+        renderHealth(); renderOverview();
+        return;
+      }
       var msg = (e && e.message) ? e.message : '网络或服务异常，请稍后重试';
       healthMsg('保存失败：' + msg + '（已填内容保留，可直接再点一次保存）', false);
       return;
     }
-    $id('bpSys').value = '';
-    $id('bpDia').value = '';
-    $id('bpHr').value = '';
-    $id('gluVal').value = '';
-    $id('healthNote').value = '';
+    clearHealthInputs();
     healthMsg('已保存' + (healthType === 'bp' ? '血压' : '血糖') + '记录 ✓', true);
     renderHealth(); renderOverview();
   }

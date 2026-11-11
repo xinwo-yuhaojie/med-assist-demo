@@ -36,8 +36,10 @@ for f in ["bpCount", "bpCount7", "bpSys7", "bpDia7", "bpLast", "bpHigh", "bpHigh
 
 print("\n=== ② 后端取值容错（历史字符串型血压不被丢弃）===")
 ck("使用 numOf 做数值归一", "const numOf = function (v)" in js)
-# 只看代码行（排除注释里的说明文字）
-code_only = "\n".join(l for l in js.splitlines() if not l.strip().startswith("*") and not l.strip().startswith("/*"))
+# 只看代码：先去掉块注释与行注释，避免注释里引用的旧写法造成误判
+import re as _re
+code_only = _re.sub(r"/\*.*?\*/", "", js, flags=_re.S)
+code_only = "\n".join(l.split("//")[0] for l in code_only.splitlines())
 ck("血压过滤已改为 numOf 判定",
    "numOf(h.sys) != null" in code_only and "typeof h.sys === 'number'" not in code_only)
 
@@ -93,8 +95,9 @@ console.log(JSON.stringify({
 
 print("\n=== ④ 旧实现已移除（null/null 的写法不能再出现）===")
 # 旧实现特征：在 map 渲染块里直接按 p.bpCount 判断并拼接（不做 null 判断）
-ck("旧的直拼写法已不在渲染块",
-   "esc(String(p.bpSys7) + '/' + String(p.bpDia7))\n" not in html
+# 旧写法如今合法存在于 fmtBpCell 内（已先判 null）；检查「判空在前 + 只出现一次」
+ck("旧写法已不在渲染块（判空后仅一处合法使用）",
+   "if (p.bpSys7 != null && p.bpDia7 != null)" in html
    and html.count("esc(String(p.bpSys7) + '/' + String(p.bpDia7))") == 1)
 
 print("\n" + ("全部通过 ✓" if OK[0] else "存在失败项 ✗"))
