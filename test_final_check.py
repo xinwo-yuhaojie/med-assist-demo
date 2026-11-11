@@ -150,8 +150,8 @@ print()
 print("=" * 74)
 print("### D. \u7248\u672c\u4e0e\u5305")
 print("=" * 74)
-for f, pat, want in [("index.html", r"KB_BUILD\s*=\s*(\d+)", "2026111101"),
-                     ("sw.js", r"const VER = '(\w+)'", "v70")]:
+for f, pat, want in [("index.html", r"KB_BUILD\s*=\s*(\d+)", "2026111102"),
+                     ("sw.js", r"const VER = '(\w+)'", "v71")]:
     m = re.search(pat, files[f])
     got = m.group(1) if m else "?"
     hit = (got == want)

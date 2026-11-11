@@ -65,7 +65,7 @@
      版本自检只用 Range 请求取前 2KB（省掉 700KB 的重复下载），
      而正则要在这里读到 KB_BUILD 才能判定「有没有新版」。
      如果哪天这个声明被挪到文件中段，自检会静默失效（只表现为不再提示更新）。 -->
-<script>window.KB_BUILD=2026111101;</script>
+<script>window.KB_BUILD=2026111102;</script>
 <!-- 接口基址重写 + 本机账号后端（免费、不联网） + 云端 AI/语音 -->
 <script>
 (function () {
@@ -1273,7 +1273,7 @@
 
     /* 16) 版本自检：发现新版只弹「点按更新」横幅，绝不自动导航（零退站风险） */
     try {
-      var KB_BUILD = 2026111101;
+      var KB_BUILD = 2026111102;
       /* v27 修复：原来 KB_BUILD 只是局部变量，从没挂到 window，
          导致 `kb.js?v=' + (window.KB_BUILD || 1)` 永远退化成 v=1，
          老人手机上 kb.js 会被浏览器长期缓存成旧版、药物手册查不到新药。
@@ -10204,36 +10204,100 @@ EMC.Care = (function () {
    * 【现在】写失败 → 进本地队列 + 灌入 S.health + 立即重绘；
    *         刷新 → 云端数组与队列合并去重（空数组不再冲掉本地记录）；
    *         后端恢复 → 自动补传（补传前先 GET 去重，避免重复写入）。
-   * 队列按账号 token 分桶，多账号共用一台设备也不会串数据。
+   * 队列按**稳定账号名**分桶，多账号共用一台设备也不会串数据。
    * ========================================================== */
   var PENDING_KEY = 'emc_v47_health_pending';
-  function pendingBucket() {
-    var t = '';
-    try { t = (EMCAuth.getToken && EMCAuth.getToken()) || ''; } catch (e) {}
-    return PENDING_KEY + '::' + (t ? t.slice(0, 12) : 'guest');
+  var PENDING_MAX = 500;
+  /* 安全修复：初版用 token.slice(0,12) 分桶。token 每次登录都会重新签发
+     （后端 issueToken → newToken），退出重登后旧桶再无人读取 → 离线血压永久丢失；
+     401 清 token 时还会把登录账号的记录写进 guest 桶，同设备下一位游客可见 → 越权读。
+     S.profile.username 来自 /api/me，账号内稳定不变，且不把令牌片段写进 key 名。 */
+  function pendingOwner() {
+    var u = '';
+    try { u = (S.profile && S.profile.username) || ''; } catch (e) {}
+    return String(u || 'guest').replace(/[^\w\u4e00-\u9fa5@.\-]/g, '_').slice(0, 64);
+  }
+  function pendingBucket() { return PENDING_KEY + '::' + pendingOwner(); }
+
+  /* 一次性迁移初版按 token 建的旧桶；只在登录态执行，游客态不并桶以免串数据 */
+  var pendingMigrated = false;
+  function migratePendingBuckets() {
+    if (pendingMigrated) return;
+    try {
+      if (!EMCAuth.isLoggedIn || !EMCAuth.isLoggedIn()) return;
+      pendingMigrated = true;
+      var target = pendingBucket(), stale = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf(PENDING_KEY + '::') === 0 && k !== target) stale.push(k);
+      }
+      if (!stale.length) return;
+      var merged = [];
+      stale.forEach(function (key) {
+        try { var v = JSON.parse(localStorage.getItem(key) || '[]'); if (Array.isArray(v)) merged = merged.concat(v); }
+        catch (e) {}
+        try { localStorage.removeItem(key); } catch (e) {}
+      });
+      if (merged.length) {
+        pendingSet(mergeHealth(pendingGet(), merged).slice(-PENDING_MAX));
+        console.warn('[EMC] 已迁移旧版离线队列 ' + merged.length + ' 条至当前账号');
+      }
+    } catch (e) {}
+  }
+
+  /* 安全修复：localStorage 可被同源脚本、浏览器扩展或共享设备改写。
+     畸形条目一旦灌进 S.health，renderHealth 会 h.date.slice() 抛异常，
+     未转义字段拼进 innerHTML 还会形成存储型 XSS。这里做白名单 + 条数上限。 */
+  function validHealthRec(h) {
+    if (!h || typeof h !== 'object' || Array.isArray(h)) return false;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(h.date || ''))) return false;
+    if (!/^\d{2}:\d{2}(:\d{2})?$/.test(String(h.time || ''))) return false;
+    if (['bp', 'glu', 'adr', 'checkup'].indexOf(h.type) < 0) return false;
+    var nums = ['sys', 'dia', 'val', 'hr', 'pulse'];
+    for (var i = 0; i < nums.length; i++) {
+      var v = h[nums[i]];
+      if (v != null && v !== '' && !isFinite(Number(v))) return false;
+    }
+    if (h.note != null && String(h.note).length > 200) return false;
+    return true;
   }
   function pendingGet() {
-    try { var v = JSON.parse(localStorage.getItem(pendingBucket()) || '[]'); return Array.isArray(v) ? v : []; }
-    catch (e) { return []; }
+    try {
+      var v = JSON.parse(localStorage.getItem(pendingBucket()) || '[]');
+      if (!Array.isArray(v)) return [];
+      var out = v.filter(validHealthRec).slice(-PENDING_MAX);
+      if (out.length !== v.length) console.warn('[EMC] 离线队列丢弃 ' + (v.length - out.length) + ' 条非法记录');
+      return out;
+    } catch (e) { return []; }
   }
   function pendingSet(list) {
-    try { localStorage.setItem(pendingBucket(), JSON.stringify(list || [])); } catch (e) {}
+    try {
+      localStorage.setItem(pendingBucket(), JSON.stringify((list || []).slice(-PENDING_MAX)));
+      return true;
+    } catch (e) { console.warn('[EMC] 离线队列写入失败', e && e.name); return false; }
   }
-  /* 去重键：同一时刻、同类型、同数值视为同一条记录 */
+  /* 去重键只使用**服务端 HEALTH_ALLOW 一定保留**的字段。
+     初版含 meal，但服务端白名单没有 meal/hr，云端记录必然缺该字段：
+     POST 已入库而响应丢失时，下一轮 GET 的 key 对不上 → 重复写入。
+     数值用 Number() 归一，兼容字符串型历史数据。 */
   function healthKey(h) {
     h = h || {};
     return [h.date || '', h.time || '', h.type || '',
-            h.sys == null ? '' : h.sys, h.dia == null ? '' : h.dia,
-            h.val == null ? '' : h.val, h.meal || ''].join('|');
+            h.sys == null ? '' : Number(h.sys), h.dia == null ? '' : Number(h.dia),
+            h.val == null ? '' : Number(h.val)].join('|');
   }
   function pendingAdd(rec) {
     var q = pendingGet(), k = healthKey(rec);
-    if (q.some(function (h) { return healthKey(h) === k; })) return q.length;
-    q.push(rec); pendingSet(q); return q.length;
+    if (q.some(function (h) { return healthKey(h) === k; })) {
+      return { count: q.length, added: false, ok: true };
+    }
+    q.push(rec);
+    var ok = pendingSet(q);
+    return { count: ok ? q.length : q.length - 1, added: ok, ok: ok };
   }
   function mergeHealth(cloud, local) {
     var out = [], seen = {};
-    (cloud || []).concat(local || []).forEach(function (h) {
+    (cloud || []).concat((local || []).filter(validHealthRec)).forEach(function (h) {
       if (!h) return;
       var k = healthKey(h);
       if (seen[k]) return;
@@ -10247,9 +10311,10 @@ EMC.Care = (function () {
   var healthSyncing = false;
   async function syncPendingHealth() {
     if (healthSyncing) return;
+    if (!EMCAuth.isLoggedIn || !EMCAuth.isLoggedIn()) return;   /* 游客态不读队列、不发请求 */
+    try { migratePendingBuckets(); } catch (e) {}
     var q = pendingGet();
     if (!q.length) return;
-    if (!EMCAuth.isLoggedIn || !EMCAuth.isLoggedIn()) return;
     healthSyncing = true;
     try {
       var cloud = [];
@@ -10267,7 +10332,7 @@ EMC.Care = (function () {
       if (!keep.length && q.length) {
         /* 只重绘，不再二次 GET 覆盖 S.health：本地本就有这批记录，
            云端刚写入的内容与之相同；若存储存在读延迟，二次 GET 反而会把界面冲空。 */
-        try { Bus.emit('health', null); } catch (e4) {}
+        try { Bus.emit('health', { remote: true }); } catch (e4) {}
         try { kbAnnounce('health'); } catch (e5) {}
       }
     } finally { healthSyncing = false; }
@@ -10275,7 +10340,12 @@ EMC.Care = (function () {
   function scheduleHealthSync() {
     setTimeout(function () { try { syncPendingHealth(); } catch (e) {} }, 1200);
   }
-  try { setInterval(function () { syncPendingHealth(); }, 60000); } catch (e) {}
+  try {
+    setInterval(function () {
+      if (document.hidden) return;            /* 后台标签页不轮询 */
+      syncPendingHealth();
+    }, 60000);
+  } catch (e) {}
 
   function snapGet() {
     try { var v = JSON.parse(localStorage.getItem(SNAP_KEY) || '{}'); return (v && typeof v === 'object') ? v : {}; }
@@ -10333,13 +10403,16 @@ EMC.Care = (function () {
       try { await store.addMed(g); n++; } catch (e) { failN++; console.warn('[EMC] 补传药品失败：' + (g.name || '')); }
     }
 
-    /* 2) 血压血糖：时间戳去重 */
+    /* 2) 血压血糖：按真实字段去重。
+       v48：原键用 h.ts / h.value，而健康记录字段是 date/time/sys/dia/val，
+       两者恒为 undefined → 键退化成 "|bp|"，同类型游客记录只迁一条，
+       "注册瞬间数据不丢"的承诺实际失效。改用与全局一致的 healthKey。 */
     var hpKey = {};
-    (S.health || []).forEach(function (h) { hpKey[(h.ts || '') + '|' + (h.type || '') + '|' + (h.value || '')] = 1; });
+    (S.health || []).forEach(function (h) { hpKey[healthKey(h)] = 1; });
     for (var j = 0; j < gh.length; j++) {
       var h = gh[j];
       if (!h) continue;
-      var hk = (h.ts || '') + '|' + (h.type || '') + '|' + (h.value || '');
+      var hk = healthKey(h);
       if (hpKey[hk]) continue;
       hpKey[hk] = 1;
       try { await store.addHealth(h); n++; } catch (e) { failN++; console.warn('[EMC] 补传健康记录失败'); }
@@ -12337,8 +12410,13 @@ EMC.Care = (function () {
       var i = a.indexOf(fn); if (i >= 0) a.splice(i, 1);
     },
     emit: function (evt, data) {
-      (this.map[evt] || []).forEach(function (f) { try { f(data); } catch (e) {} });
-      (this.map['*'] || []).forEach(function (f) { try { f({ evt: evt, data: data }); } catch (e) {} });
+      /* v48：订阅者异常原先被完全吞掉，界面表现为"数据不刷新"且无从排查 */
+      (this.map[evt] || []).forEach(function (f) {
+        try { f(data); } catch (e) { console.warn('[Bus] handler error: ' + evt, e); }
+      });
+      (this.map['*'] || []).forEach(function (f) {
+        try { f({ evt: evt, data: data }); } catch (e) { console.warn('[Bus] wildcard handler error: ' + evt, e); }
+      });
     }
   };
   EMC.Bus = Bus;   // 供其他模块订阅（如后续家属端/社区端接入）
@@ -12576,7 +12654,10 @@ EMC.Care = (function () {
           var fpH = kbFp(health);
           if (fpH !== kbSyncFp.health) {
             kbSyncFp.health = fpH;
-            if (JSON.stringify(health) !== JSON.stringify(S.health)) { S.health = health; dirty.push('health'); }
+            /* v48：不能整体替换。S.health 含本地待同步副本，
+               云端数组一来就把离线血压从档案/7天均值/风险趋势图里抹掉了。 */
+            var mergedH = mergeHealth(health, pendingGet());
+            if (JSON.stringify(mergedH) !== JSON.stringify(S.health)) { S.health = mergedH; dirty.push('health'); }
           }
           var fpG = kbFp(fam);
           if (fpG !== kbSyncFp.guardian) {
@@ -13614,12 +13695,19 @@ EMC.Care = (function () {
          记录也没落到任何地方 —— 老人「连续两天填了血压，图却一条数据都没有」。
          现在落到本地待同步队列并立即灌入 S.health + 触发重绘，
          界面当场可见；后端恢复后由 syncPendingHealth 自动补传。 */
-      var n = pendingAdd(rec);
+      /* v48 P0：4xx 是服务端**永久拒绝**（如数值越界），入队只会被每 60 秒
+         无限重试且永远不会成功，界面还会谎称"服务恢复后自动同步"。
+         这类错误直接抛出，交给 saveHealth 明确报错。 */
+      if (e && e._status >= 400 && e._status < 500) throw e;
+      var pr = pendingAdd(rec);
+      /* localStorage 配额满 / Safari 隐私模式：绝不能宣称"已保存到本机" */
+      if (!pr.ok) { e.storageFull = true; throw e; }
       S.health = mergeHealth(S.health || [], [rec]);
       try { Bus.emit('health', rec); } catch (e1) {}
       try { kbAnnounce('health'); } catch (e2) {}
       e.localSaved = true;
-      e.pendingCount = n;
+      e.pendingCount = pr.count;
+      e.merged = !pr.added;
       throw e;
     }
     S.health = Array.isArray(next) ? next : (S.health || []);
@@ -13666,14 +13754,19 @@ EMC.Care = (function () {
       var dia = parseFloat($id('bpDia').value);
       var hrRaw = $id('bpHr').value;
       var hr = hrRaw ? parseFloat(hrRaw) : null;
-      if (!(sys > 0) || !(dia > 0)) { healthMsg('请填写有效的收缩压与舒张压'); return; }
-      if (sys > 300 || dia > 200) { healthMsg('收缩压/舒张压数值超出常见范围（收缩压≤300，舒张压≤200），请核对'); return; }
-      if (hr != null && (hr < 30 || hr > 220)) { healthMsg('心率数值超出常见范围（30-220），请核对'); return; }
-      if (hr != null && !(hr > 0)) { healthMsg('心率填写有误'); return; }
+      /* v48：区间与后端 HP_RANGE 严格对齐。原前端放行 1–49 的收缩压、41–60 的血糖，
+         后端一律 400；这类记录会被误判成"云端故障"塞进离线队列，永远补不上去。 */
+      if (!(sys >= 50 && sys <= 300) || !(dia >= 30 && dia <= 200)) {
+        healthMsg('血压数值需在收缩压 50–300、舒张压 30–200 之间，请核对'); return;
+      }
+      if (hr != null && !(hr >= 30 && hr <= 250)) { healthMsg('心率需在 30–250 之间，请核对'); return; }
       rec = { type: 'bp', sys: sys, dia: dia, hr: hr, val: null, meal: null, note: $id('healthNote').value.trim() };
     } else {
       var val = parseFloat($id('gluVal').value);
-      if (!(val >= 1 && val <= 60)) { healthMsg('血糖数值超出常见范围（1-60 mmol/L），请核对单位后重填'); return; }
+      /* 后端对 70–400 的 mg/dL 会自动 ÷18 换算，前端同步放行该区间 */
+      if (!((val >= 1 && val <= 40) || (val >= 70 && val <= 400))) {
+        healthMsg('血糖需在 1–40 mmol/L（或 70–400 mg/dL）之间，请核对单位'); return;
+      }
       rec = { type: 'glu', sys: null, dia: null, hr: null, val: val, meal: $id('gluMeal').value, note: $id('healthNote').value.trim() };
     }
     /* v45：保存失败必须明确告知，且**保留已填内容**让老人能直接重试。
@@ -13688,9 +13781,17 @@ EMC.Care = (function () {
          否则老人会以为数据丢了而反复重试。明确告知「本机已存、云端待同步」。 */
       if (e && e.localSaved) {
         clearHealthInputs();
-        healthMsg('已保存到本机 ✓ 云端暂不可用，' + (e.pendingCount || 1)
-          + ' 条记录将在服务恢复后自动同步', true);
-        renderHealth(); renderOverview();
+        healthMsg(e.merged
+          ? '与刚才那条记录重复，已合并（本机共 ' + (e.pendingCount || 1) + ' 条待同步）'
+          : '已保存到本机 ✓ 云端暂不可用，共 ' + (e.pendingCount || 1)
+            + ' 条待同步，服务恢复后自动上传', true);
+        /* 渲染异常不能冒泡出 catch：否则提示已显示但界面半更新、控制台红字 */
+        try { renderHealth(); } catch (e6) { console.warn('[EMC] renderHealth 失败', e6); }
+        try { renderOverview(); } catch (e7) { console.warn('[EMC] renderOverview 失败', e7); }
+        return;
+      }
+      if (e && e.storageFull) {
+        healthMsg('本机存储空间不足，记录未能保存。请清理浏览器数据后重试（已填内容保留）', false);
         return;
       }
       var msg = (e && e.message) ? e.message : '网络或服务异常，请稍后重试';
@@ -13735,10 +13836,13 @@ EMC.Care = (function () {
     var trendHtml = '<div class="trend-note">📈 趋势点评：' + esc(E.healthTrend(recent)) + '</div>';
     var anoCards = recent.slice(-6).filter(isAnomaly).reverse().map(function (h) {
       var lv = (h.type === 'bp' ? E.bpStatus(h.sys, h.dia) : E.gluStatus(h.val, h.meal));
-      var valText = h.type === 'bp' ? ('血压 ' + h.sys + '/' + h.dia + ' mmHg') : ('血糖 ' + h.val + ' mmol/L · ' + (h.meal === 'post' ? '餐后' : '空腹'));
+      /* v48：S.health = 云端 ∪ 本地队列，字段一律 esc 后再拼 innerHTML */
+      var valText = h.type === 'bp'
+        ? ('血压 ' + esc(h.sys) + '/' + esc(h.dia) + ' mmHg')
+        : ('血糖 ' + esc(h.val) + ' mmol/L · ' + (h.meal === 'post' ? '餐后' : '空腹'));
       return '<div class="anomaly-card"><h4>⚠ ' + valText + ' <span class="lv ' + (lv === 'high' ? 'danger' : 'warn') + '">' +
         (lv === 'high' ? '偏高' : '偏低') + '</span></h4>' +
-        '<div class="muted small">' + h.date + ' ' + (h.time || '') + '</div>' +
+        '<div class="muted small">' + esc(h.date) + ' ' + esc(h.time || '') + '</div>' +
         '<div class="adv"><b>就医建议：</b>' + esc(healthAdvice(h)) + '</div></div>';
     }).join('');
     var anomalyHtml = anoCards ? '<div class="card"><div class="card-title">🔎 近期异常指标解读 <span class="tag">近 7 天</span></div>' + anoCards + '</div>' : '';
@@ -13748,13 +13852,13 @@ EMC.Care = (function () {
     $id('healthCharts').innerHTML =
       trendHtml + anomalyHtml +
       '<div class="card"><div class="card-title">血压趋势（收缩压 / 舒张压） <span class="tag">折线图</span></div>' +
-      (bpAll.length ? '<div class="chart-box">' + EMC.Chart.lines(bpAll.map(function (d) { return d.date.slice(5); }), [
+      (bpAll.length ? '<div class="chart-box">' + EMC.Chart.lines(bpAll.map(function (d) { return String(d.date || '').slice(5); }), [
         { name: '收缩压', data: bpAll.map(function (d) { return d.sys; }), color: '#0B5FA5' },
         { name: '舒张压', data: bpAll.map(function (d) { return d.dia; }), color: '#F5761A' }
       ], { height: 240 }) + '</div>' + EMC.Chart.legend([{ name: '收缩压', color: '#0B5FA5' }, { name: '舒张压', color: '#F5761A' }])
         : '<div class="empty">暂无血压记录</div>') + '</div>' +
       '<div class="card"><div class="card-title">血糖趋势 <span class="tag">折线图</span></div>' +
-      (gluAll.length ? '<div class="chart-box">' + EMC.Chart.lines(gluAll.map(function (d) { return d.date.slice(5); }), [
+      (gluAll.length ? '<div class="chart-box">' + EMC.Chart.lines(gluAll.map(function (d) { return String(d.date || '').slice(5); }), [
         { name: '血糖(mmol/L)', data: gluAll.map(function (d) { return d.val; }), color: '#2E8B57' }
       ], { height: 220 }) + '</div>'
         : '<div class="empty">暂无血糖记录</div>') + '</div>';
@@ -13766,14 +13870,16 @@ EMC.Care = (function () {
       var lv = h.type === 'bp' ? E.bpStatus(h.sys, h.dia) : E.gluStatus(h.val, h.meal);
       var ano = lv !== 'normal';
       var cls = lv === 'high' ? 'hc-danger' : (lv === 'low' ? 'hc-warn' : 'hc-normal');
-      var valText = h.type === 'bp' ? ('血压 ' + h.sys + '/' + h.dia + (h.hr != null ? ' · 心率 ' + h.hr : '') + ' mmHg')
-        : ('血糖 ' + h.val + ' mmol/L · ' + (h.meal === 'post' ? '餐后' : '空腹'));
+      var valText = h.type === 'bp'
+        ? ('血压 ' + esc(h.sys) + '/' + esc(h.dia) + (h.hr != null ? ' · 心率 ' + esc(h.hr) : '') + ' mmHg')
+        : ('血糖 ' + esc(h.val) + ' mmol/L · ' + (h.meal === 'post' ? '餐后' : '空腹'));
       var tagText = lv === 'high' ? '偏高' : (lv === 'low' ? '偏低' : '达标');
       var mark = '<span class="h-tag ' + cls + '">' + tagText + '</span>';
       var adv = ano ? '<div class="adv"><b>就医建议：</b>' + esc(healthAdvice(h)) + '</div>' : '';
       return '<div class="h-item ' + cls + '"><div class="h-val">' + valText + mark +
         (h.demo ? ' <span class="demo-badge">演示</span>' : '') + '</div>' +
-        '<div class="muted small">' + h.date + ' ' + (h.time || '') + (h.note ? ' · ' + esc(h.note) : '') + '</div>' +
+        '<div class="muted small">' + esc(h.date) + ' ' + esc(h.time || '')
+          + (h.note ? ' · ' + esc(h.note) : '') + '</div>' +
         adv + '</div>';
     }).join('') : '<div class="empty">还没有健康记录，上方表单录入后这里会显示</div>';
   }

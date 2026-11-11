@@ -40,7 +40,11 @@ f_padd = grab(r"  function pendingAdd\(rec\) \{.*?\n  \}\n", "pendingAdd")
 f_merge = grab(r"  function mergeHealth\(cloud, local\) \{.*?\n  \}\n", "mergeHealth")
 f_add = grab(r"  async function addHealth\(rec\) \{.*?\n  \}\n", "addHealth")
 f_sync = grab(r"  async function syncPendingHealth\(\) \{.*?\n  \}\n", "syncPendingHealth")
-ck("抽取 8 个函数", all([f_key, f_pget, f_pset, f_pbucket, f_padd, f_merge, f_add, f_sync]))
+f_owner = grab(r"  function pendingOwner\(\) \{.*?\n  \}\n", "pendingOwner")
+f_valid = grab(r"  function validHealthRec\(h\) \{.*?\n  \}\n", "validHealthRec")
+f_migrate = grab(r"  function migratePendingBuckets\(\) \{.*?\n  \}\n", "migratePendingBuckets")
+ck("抽取 11 个函数", all([f_key, f_pget, f_pset, f_pbucket, f_padd, f_merge, f_add, f_sync,
+                        f_owner, f_valid, f_migrate]))
 
 JS = r"""
 var _ls = {}, _events = [], _schedules = 0, _posts = 0, _announce = 0;
@@ -49,18 +53,23 @@ var localStorage = { getItem: function(k){ return _ls[k] === undefined ? null : 
                      removeItem: function(k){ delete _ls[k]; } };
 var EMCAuth = { getToken: function(){ return 'tok_abcdef123456'; }, isLoggedIn: function(){ return true; } };
 var E = { fmtDate: function(){ return '2026-11-11'; } };
-var S = { health: [] };
+var S = { health: [], profile: { username: 'testuser' } };
 var store = {};
 var Bus = { emit: function(){ _events.push(Array.prototype.slice.call(arguments)); } };
 function kbAnnounce(){ _announce++; }
 function scheduleHealthSync(){ _schedules++; }
 var PENDING_KEY = 'emc_v47_health_pending';
+var PENDING_MAX = 500;
+__POWNER__
 __PBUCKET__
+__VALID__
 __PGET__
 __PSET__
 __KEY__
 __PADD__
 __MERGE__
+var pendingMigrated = false;
+__MIGRATE__
 var healthSyncing = false;
 __SYNC__
 __ADD__
@@ -125,11 +134,57 @@ function failStore(){ return function(){ var e = new Error('服务暂时开小�
   await addHealth(rec1);
   R.s8 = { health: S.health.length, sys: S.health[0] && S.health[0].sys };
 
+  // v48-①：4xx 永久拒绝 → 不入队、不标 localSaved（否则会无限重试并谎称待同步）
+  reset();
+  store = { addHealth: function(){ var e = new Error('测量数值不在合理范围'); e._status = 400; return Promise.reject(e); },
+            getHealth: function(){ return Promise.resolve([]); } };
+  var e4 = null;
+  try { await addHealth({type:'bp', sys:126, dia:78, val:null, meal:null}); } catch(e){ e4 = e; }
+  R.s9 = { localSaved: !!(e4 && e4.localSaved), queue: pendingGet().length,
+           health: S.health.length, status: e4 && e4._status };
+
+  // v48-②：localStorage 写满 → 必须标记 storageFull，绝不能宣称已保存
+  reset();
+  var origSet = localStorage.setItem;
+  localStorage.setItem = function(){ throw new Error('QuotaExceeded'); };
+  store = { addHealth: failStore(), getHealth: function(){ return Promise.resolve([]); } };
+  var e5 = null;
+  try { await addHealth({type:'bp', sys:128, dia:80, val:null, meal:null}); } catch(e){ e5 = e; }
+  localStorage.setItem = origSet;
+  R.s10 = { storageFull: !!(e5 && e5.storageFull), localSaved: !!(e5 && e5.localSaved) };
+
+  // v48-③：云端记录不含 meal，去重键仍须匹配 → 不重复 POST
+  reset();
+  pendingAdd({date:'2026-11-11', time:'08:00', type:'glu', val:6.2, meal:'post'});
+  var cloudNoMeal = [{date:'2026-11-11', time:'08:00', type:'glu', val:6.2}];
+  store = { addHealth: function(){ _posts++; return Promise.resolve([]); },
+            getHealth: function(){ return Promise.resolve(cloudNoMeal); } };
+  await syncPendingHealth();
+  R.s11 = { posts: _posts, queue: pendingGet().length };
+
+  // v48-④：稳定账号分桶——换 token 后队列必须还在（初版按 token 会丢）
+  reset();
+  pendingAdd({date:'2026-11-11', time:'09:00', type:'bp', sys:120, dia:75});
+  var origTok = EMCAuth.getToken;
+  EMCAuth.getToken = function(){ return 'brand_new_token_zzzz'; };
+  R.s12 = { queue: pendingGet().length, bucket: pendingBucket() };
+  EMCAuth.getToken = origTok;
+
+  // v48-⑤：非法队列条目被过滤（畸形 date / 非数值 / 正常记录）
+  reset();
+  _ls[pendingBucket()] = JSON.stringify([
+    {date:'<img src=x onerror=1>', time:'08:00', type:'bp', sys:120, dia:80},
+    {date:'2026-11-11', time:'08:00', type:'bp', sys:'abc', dia:80},
+    {date:'2026-11-11', time:'08:00', type:'bp', sys:120, dia:80}
+  ]);
+  R.s13 = { queue: pendingGet().length, first: pendingGet()[0] && pendingGet()[0].sys };
+
   console.log(JSON.stringify(R));
 })().catch(function(e){ console.log(JSON.stringify({ERROR: String(e && e.stack || e)})); });
 """
 JS = JS.replace("var store = {", "store = {")
-for k, v in [("__PBUCKET__", f_pbucket), ("__PGET__", f_pget), ("__PSET__", f_pset),
+for k, v in [("__POWNER__", f_owner), ("__PBUCKET__", f_pbucket), ("__VALID__", f_valid),
+             ("__PGET__", f_pget), ("__PSET__", f_pset), ("__MIGRATE__", f_migrate),
              ("__KEY__", f_key), ("__PADD__", f_padd), ("__MERGE__", f_merge),
              ("__SYNC__", f_sync), ("__ADD__", f_add)]:
     JS = JS.replace(k, v)
@@ -163,17 +218,46 @@ ck("⑥ 后端恢复 → 自动补传 2 条并清空队列", d["s6"]["posts"] ==
 ck("⑦ 写成功用返回数组并触发补传调度", d["s7"]["health"] == 1 and d["s7"]["sys"] == 128 and d["s7"]["schedules"] >= 1, d["s7"])
 ck("⑧ 后端回传旧数组时兜底补一条", d["s8"]["health"] == 1 and d["s8"]["sys"] == 126, d["s8"])
 
-print("\n=== 静态检查（保存流程 / 加载合并 / 版本号）===")
+print("\n=== v48 漏洞回归场景 ===")
+ck("⑨ 4xx 永久拒绝不入队、不谎称待同步",
+   d["s9"]["status"] == 400 and d["s9"]["localSaved"] is False
+   and d["s9"]["queue"] == 0 and d["s9"]["health"] == 0, d["s9"])
+ck("⑩ 存储写满时标记 storageFull、不标 localSaved",
+   d["s10"]["storageFull"] is True and d["s10"]["localSaved"] is False, d["s10"])
+ck("⑪ 云端无 meal 仍能去重（不重复 POST）",
+   d["s11"]["posts"] == 0 and d["s11"]["queue"] == 0, d["s11"])
+ck("⑫ 换 token 后离线队列仍在（稳定账号分桶）",
+   d["s12"]["queue"] == 1 and "testuser" in d["s12"]["bucket"], d["s12"])
+ck("⑬ 非法队列条目被过滤，仅保留合法一条",
+   d["s13"]["queue"] == 1 and d["s13"]["first"] == 120, d["s13"])
+
+print("\n=== 静态检查（保存流程 / 加载合并 / 后端 / 版本号）===")
 ck("saveHealth 区分 localSaved 分支", "if (e && e.localSaved)" in html)
 ck("提示语为「已保存到本机」", "已保存到本机" in html)
+ck("存储失败有专门提示", "if (e && e.storageFull)" in html and "本机存储空间不足" in html)
+ck("4xx 短路不入队", "e._status >= 400 && e._status < 500" in html)
+ck("渲染异常不冒泡出 catch", "console.warn('[EMC] renderHealth 失败'" in html)
 ck("抽出了 clearHealthInputs 复用（成功/离线两处调用）",
    "function clearHealthInputs()" in html and html.count("clearHealthInputs();") == 2)
 ck("loadAllInner 合并本地队列", "S.health = mergeHealth(arr(pick(4, [])), pendingGet());" in html)
+ck("kbLiveTick 回填也合并队列", "var mergedH = mergeHealth(health, pendingGet());" in html)
 ck("loadAll 结束后触发补传", "scheduleHealthSync(); } catch (e) {}" in html)
-ck("60 秒自动重试已注册", "setInterval(function () { syncPendingHealth(); }, 60000)" in html)
-ck("KB_BUILD 已升到 2026111101", "window.KB_BUILD=2026111101;" in html)
+ck("后台标签页不轮询", "if (document.hidden) return;" in html)
+ck("Bus.emit 异常留痕", "console.warn('[Bus] handler error: '" in html)
+ck("Bus.emit 传对象而非 null", "Bus.emit('health', { remote: true })" in html)
+ck("renderHealth 字段已转义", "esc(h.date) + ' ' + esc(h.time || '')" in html
+   and "'血压 ' + esc(h.sys)" in html)
+ck("游客迁移去重键已修", "var hk = healthKey(h);" in html and "h.value || ''" not in html)
+ck("60 秒自动重试已注册", "syncPendingHealth();\n    }, 60000)" in html)
+ck("KB_BUILD 已升到 2026111102", "window.KB_BUILD=2026111102;" in html)
 sw = io.open(os.path.join(ROOT, "sw.js"), encoding="utf-8").read()
-ck("sw.js 已升到 v70", "const VER = 'v70'" in sw)
+ck("sw.js 已升到 v71", "const VER = 'v71'" in sw)
+
+server = io.open(os.path.join(ROOT, "..", "backend", "fc-web", "server.js"), encoding="utf-8").read()
+ck("后端跳过 null 空值（P0：Number(null)=0 误判越界）",
+   "b[k] === undefined || b[k] === null || b[k] === ''" in server)
+ck("后端 HP_RANGE 补 hr", "hr: [30, 250]" in server)
+ck("后端白名单补 hr / meal", "'pulse', 'hr', 'meal', 'note'" in server)
 
 print("\n" + ("全部通过 ✓" if OK[0] else "存在失败项 ✗"))
 sys.exit(0 if OK[0] else 1)
